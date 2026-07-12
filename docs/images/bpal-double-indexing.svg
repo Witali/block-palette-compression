@@ -1,0 +1,105 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-labelledby="title desc">
+  <title id="title">How a BPAL pixel becomes a color</title>
+  <desc id="desc">An image is divided into blocks. A two-bit pixel value selects one entry in the block palette, which contains an eight-bit index into the shared image palette.</desc>
+  <defs>
+    <linearGradient id="image-gradient" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#8ecae6"/>
+      <stop offset="0.45" stop-color="#b8d8ba"/>
+      <stop offset="1" stop-color="#efc3a4"/>
+    </linearGradient>
+    <pattern id="pixel-grid" width="64" height="64" patternUnits="userSpaceOnUse">
+      <rect width="31" height="31" x="0" y="0" rx="4" class="slot0"/>
+      <rect width="31" height="31" x="33" y="0" rx="4" class="slot1"/>
+      <rect width="31" height="31" x="0" y="33" rx="4" class="slot2"/>
+      <rect width="31" height="31" x="33" y="33" rx="4" class="slot3"/>
+      <text x="15.5" y="20" text-anchor="middle" class="bit">00</text>
+      <text x="48.5" y="20" text-anchor="middle" class="bit">01</text>
+      <text x="15.5" y="53" text-anchor="middle" class="bit">10</text>
+      <text x="48.5" y="53" text-anchor="middle" class="bit">11</text>
+    </pattern>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0 0L8 4L0 8Z" class="arrow-fill"/>
+    </marker>
+    <style>
+      .background{fill:#ffffff}.panel{fill:#f6f8fa;stroke:#d0d7de;stroke-width:1.5}.heading{font:700 22px system-ui,sans-serif;fill:#1f2328}.label{font:600 17px system-ui,sans-serif;fill:#1f2328}.body{font:15px system-ui,sans-serif;fill:#59636e}.small{font:13px system-ui,sans-serif;fill:#59636e}.mono{font:14px ui-monospace,SFMono-Regular,Consolas,monospace;fill:#1f2328}.bit{font:11px ui-monospace,SFMono-Regular,Consolas,monospace;fill:#1f2328}.code{fill:#eaeef2}.line{stroke:#8c959f;stroke-width:2;fill:none}.arrow-fill{fill:#8c959f}.slot0{fill:#b9ddf7}.slot1{fill:#f3d3bd}.slot2{fill:#c8e6d2}.slot3{fill:#efcce0}.selected{fill:#2f81f7;stroke:#0969da;stroke-width:3}.selected-text{font:700 12px ui-monospace,SFMono-Regular,Consolas,monospace;fill:#ffffff}.block{stroke:#ffffff;stroke-width:2}.block-grid{stroke:#8c959f;stroke-width:1;opacity:.55}.focus{fill:none;stroke:#2f81f7;stroke-width:5}.swatch{stroke:#8c959f;stroke-width:1}.flow{fill:#f6f8fa;stroke:#d0d7de;stroke-width:1}.flow-value{font:700 17px system-ui,sans-serif;fill:#1f2328}
+      @media (prefers-color-scheme:dark){.background{fill:#0d1117}.panel,.flow{fill:#161b22;stroke:#30363d}.heading,.label,.mono,.bit,.flow-value{fill:#f0f6fc}.body,.small{fill:#8b949e}.code{fill:#21262d}.line{stroke:#6e7681}.arrow-fill{fill:#6e7681}.block-grid,.swatch{stroke:#6e7681}}
+    </style>
+  </defs>
+
+  <rect width="1280" height="720" class="background"/>
+  <text x="40" y="48" class="heading">How one BPAL pixel becomes a color</text>
+  <text x="40" y="76" class="body">The pixel stores a local slot; the block table turns it into an index in the shared palette.</text>
+
+  <g transform="translate(40 112)">
+    <text x="0" y="22" class="label">1 · Image blocks</text>
+    <text x="0" y="47" class="small">24×16 px example · six 8×8 blocks</text>
+    <rect x="0" y="70" width="252" height="192" rx="10" fill="url(#image-gradient)"/>
+    <rect x="4" y="74" width="80" height="92" rx="5" fill="#a9d6e5" class="block" opacity=".75"/>
+    <rect x="86" y="74" width="80" height="92" rx="5" fill="#e9c46a" class="block" opacity=".55"/>
+    <rect x="168" y="74" width="80" height="92" rx="5" fill="#cdb4db" class="block" opacity=".65"/>
+    <rect x="4" y="168" width="80" height="90" rx="5" fill="#90be6d" class="block" opacity=".55"/>
+    <rect x="86" y="168" width="80" height="90" rx="5" fill="#8ecae6" class="block" opacity=".75"/>
+    <rect x="168" y="168" width="80" height="90" rx="5" fill="#f4a261" class="block" opacity=".55"/>
+    <path d="M84 70V262M166 70V262M0 166H252" class="block-grid"/>
+    <rect x="84" y="166" width="84" height="96" rx="7" class="focus"/>
+    <text x="0" y="292" class="body">Block count</text>
+    <rect x="0" y="306" width="216" height="30" rx="7" class="code"/>
+    <text x="108" y="326" text-anchor="middle" class="mono">ceil(W/S) × ceil(H/S)</text>
+  </g>
+
+  <path d="M310 284H338" class="line" marker-end="url(#arrow)"/>
+
+  <g transform="translate(350 112)">
+    <text x="0" y="22" class="label">2 · Pixels in one block</text>
+    <text x="0" y="47" class="small">Each pixel stores a local palette slot</text>
+    <rect x="0" y="70" width="256" height="256" rx="6" fill="url(#pixel-grid)" stroke="#8c959f" stroke-width="1"/>
+    <rect x="96" y="134" width="31" height="31" rx="4" class="selected"/>
+    <text x="111.5" y="154" text-anchor="middle" class="selected-text">00</text>
+    <text x="0" y="356" class="body">4 local colors</text>
+    <rect x="0" y="370" width="208" height="30" rx="7" class="code"/>
+    <text x="104" y="390" text-anchor="middle" class="mono">log2(4) = 2 bits/px</text>
+  </g>
+
+  <path d="M624 284H652" class="line" marker-end="url(#arrow)"/>
+
+  <g transform="translate(664 112)">
+    <text x="0" y="22" class="label">3 · Block table</text>
+    <text x="0" y="47" class="small">Four indices into the shared palette</text>
+    <g transform="translate(0 76)">
+      <circle cx="12" cy="16" r="10" fill="#b9ddf7"/><rect x="36" y="0" width="50" height="32" rx="8" class="code"/><text x="61" y="21" text-anchor="middle" class="mono">00₂</text><text x="100" y="21" class="mono">→</text><rect x="126" y="0" width="164" height="32" rx="8" class="code"/><text x="208" y="21" text-anchor="middle" class="mono">00010010₂ = 18</text>
+      <circle cx="12" cy="66" r="10" fill="#f3d3bd"/><rect x="36" y="50" width="50" height="32" rx="8" class="code"/><text x="61" y="71" text-anchor="middle" class="mono">01₂</text><text x="100" y="71" class="mono">→</text><rect x="126" y="50" width="164" height="32" rx="8" class="code"/><text x="208" y="71" text-anchor="middle" class="mono">01001110₂ = 78</text>
+      <circle cx="12" cy="116" r="10" fill="#c8e6d2"/><rect x="36" y="100" width="50" height="32" rx="8" class="code"/><text x="61" y="121" text-anchor="middle" class="mono">10₂</text><text x="100" y="121" class="mono">→</text><rect x="126" y="100" width="164" height="32" rx="8" class="code"/><text x="208" y="121" text-anchor="middle" class="mono">10100011₂ = 163</text>
+      <circle cx="12" cy="166" r="10" fill="#efcce0"/><rect x="36" y="150" width="50" height="32" rx="8" class="code"/><text x="61" y="171" text-anchor="middle" class="mono">11₂</text><text x="100" y="171" class="mono">→</text><rect x="126" y="150" width="164" height="32" rx="8" class="code"/><text x="208" y="171" text-anchor="middle" class="mono">11110000₂ = 240</text>
+    </g>
+    <text x="0" y="286" class="body">Per block</text>
+    <rect x="0" y="300" width="196" height="30" rx="7" class="code"/>
+    <text x="98" y="320" text-anchor="middle" class="mono">4 × 8 = 32 bits</text>
+  </g>
+
+  <path d="M966 284H994" class="line" marker-end="url(#arrow)"/>
+
+  <g transform="translate(1006 112)">
+    <text x="0" y="22" class="label">4 · Shared palette</text>
+    <text x="0" y="47" class="small">Indices 0…255 · RGB888</text>
+    <g transform="translate(0 76)">
+      <rect x="0" y="0" width="20" height="84" fill="#eaeef2"/><rect x="22" y="0" width="20" height="84" fill="#eaeef2"/><rect x="44" y="0" width="20" height="84" fill="#b9ddf7" class="swatch"/><rect x="66" y="0" width="20" height="84" fill="#eaeef2"/><rect x="88" y="0" width="20" height="84" fill="#eaeef2"/><rect x="110" y="0" width="20" height="84" fill="#f3d3bd" class="swatch"/><rect x="132" y="0" width="20" height="84" fill="#eaeef2"/><rect x="154" y="0" width="20" height="84" fill="#c8e6d2" class="swatch"/><rect x="176" y="0" width="20" height="84" fill="#eaeef2"/><rect x="198" y="0" width="20" height="84" fill="#efcce0" class="swatch"/>
+      <text x="54" y="103" text-anchor="middle" class="small">18</text><text x="120" y="103" text-anchor="middle" class="small">78</text><text x="164" y="103" text-anchor="middle" class="small">163</text><text x="208" y="103" text-anchor="middle" class="small">240</text>
+    </g>
+    <text x="0" y="220" class="body">Explicit palette size</text>
+    <rect x="0" y="234" width="216" height="30" rx="7" class="code"/>
+    <text x="108" y="254" text-anchor="middle" class="mono">256 × 24 = 768 bytes</text>
+  </g>
+
+  <g transform="translate(40 600)">
+    <rect x="0" y="0" width="1200" height="86" rx="18" class="flow"/>
+    <text x="70" y="30" text-anchor="middle" class="small">pixel</text><text x="70" y="58" text-anchor="middle" class="flow-value">(3, 2)</text>
+    <text x="220" y="50" class="body">→</text>
+    <rect x="272" y="26" width="60" height="34" rx="8" class="code"/><text x="302" y="49" text-anchor="middle" class="mono">00₂</text><text x="344" y="49" class="body">local slot</text>
+    <text x="532" y="50" class="body">→</text>
+    <rect x="584" y="26" width="148" height="34" rx="8" class="code"/><text x="658" y="49" text-anchor="middle" class="mono">00010010₂ = 18</text>
+    <text x="790" y="50" class="body">→</text>
+    <text x="854" y="50" class="flow-value">P[18]</text>
+    <text x="958" y="50" class="body">→</text>
+    <rect x="1020" y="23" width="38" height="38" rx="9" fill="#b9ddf7" class="swatch"/><text x="1074" y="49" class="flow-value">final RGB</text>
+  </g>
+</svg>

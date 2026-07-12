@@ -4,6 +4,20 @@ An experimental browser codec for BPAL block-palette images. A BPAL image uses
 one shared color palette and a small table of shared-palette indices in every
 block. Pixels store only indices into their block's local table.
 
+## How BPAL works
+
+The image is split into fixed-size blocks. A pixel stores a compact local slot,
+the block table maps that slot to an index in the shared image palette, and the
+shared palette provides the final RGB color.
+
+![BPAL double indexing from image blocks to the final RGB color](./docs/images/bpal-double-indexing.svg)
+
+The file uses a single tightly packed bitstream. Header fields, palette colors,
+block-table indices, and pixel indices begin immediately after one another;
+only the final byte may need zero padding.
+
+![Tightly packed BPAL v3 header and payload](./docs/images/bpal-bitstream-layout.svg)
+
 The project contains:
 
 - [`block-palette.html`](./block-palette.html) — CPU/WebGL2 encoder, preview,
