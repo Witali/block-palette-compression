@@ -225,6 +225,54 @@
     }
   }
 
+  function reconstructBplmMipPixels(image, mipIndex) {
+    if (!image || !Array.isArray(image.mipLevels) || !Array.isArray(image.palette)) {
+      throw new TypeError("Decoded BPLM image is invalid");
+    }
+
+    if (!Number.isInteger(mipIndex) || mipIndex < 0 || mipIndex >= image.mipLevels.length) {
+      throw new RangeError(`BPLM mip index is out of range: ${mipIndex}`);
+    }
+
+    const level = image.mipLevels[mipIndex];
+    const pixels = new Uint8ClampedArray(level.width * level.height * 4);
+
+    for (let y = 0; y < level.height; y += 1) {
+      for (let x = 0; x < level.width; x += 1) {
+        const pixelIndex = y * level.width + x;
+        let globalIndex;
+
+        if (level.direct) {
+          globalIndex = level.directGlobalIndices[pixelIndex];
+        } else {
+          const blockX = Math.floor(x / level.blockSize);
+          const blockY = Math.floor(y / level.blockSize);
+          const blockIndex = blockY * level.blocksX + blockX;
+          const localIndex = level.pixelIndices[pixelIndex];
+
+          globalIndex = level.blockPaletteIndices[
+            blockIndex * level.localColorCount + localIndex
+          ];
+        }
+
+        const color = image.palette[globalIndex];
+
+        if (!color) {
+          throw new RangeError(`BPLM mip ${mipIndex} references palette index ${globalIndex}`);
+        }
+
+        const target = pixelIndex * 4;
+
+        pixels[target] = color.r;
+        pixels[target + 1] = color.g;
+        pixels[target + 2] = color.b;
+        pixels[target + 3] = 255;
+      }
+    }
+
+    return pixels;
+  }
+
   function encodeLevel(level, base) {
     const layout = getLevelLayout(
       level.width,
@@ -431,5 +479,6 @@
     encodeBplmFile,
     decodeBplmFile,
     isBplmFile,
+    reconstructBplmMipPixels,
   };
 });

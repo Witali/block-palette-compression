@@ -49,6 +49,33 @@ test("uses stored BPLM levels when building WebGL shader atlases", () => {
   );
 });
 
+test("reconstructs regular and direct BPLM mip levels into RGBA pixels", () => {
+  const decoded = BplmFormat.decodeBplmFile(BplmFormat.encodeBplmFile(createFixture()));
+
+  decoded.mipLevels.forEach((level, mip) => {
+    const pixels = BplmFormat.reconstructBplmMipPixels(decoded, mip);
+
+    assert.ok(pixels instanceof Uint8ClampedArray);
+    assert.equal(pixels.length, level.width * level.height * 4);
+    assert.ok(Array.from({ length: level.width * level.height }, (_, pixel) =>
+      pixels[pixel * 4 + 3] === 255
+    ).every(Boolean));
+  });
+
+  assert.deepEqual(
+    BplmFormat.reconstructBplmMipPixels(decoded, 0),
+    decoded.pixels
+  );
+  assert.equal(decoded.mipLevels.at(-1).direct, true);
+});
+
+test("rejects invalid BPLM mip selections", () => {
+  const decoded = BplmFormat.decodeBplmFile(BplmFormat.encodeBplmFile(createFixture()));
+
+  assert.throws(() => BplmFormat.reconstructBplmMipPixels(decoded, -1), /out of range/);
+  assert.throws(() => BplmFormat.reconstructBplmMipPixels(decoded, decoded.mipCount), /out of range/);
+});
+
 test("identifies BPLM files without accepting BPAL files", () => {
   const image = createFixture();
 
