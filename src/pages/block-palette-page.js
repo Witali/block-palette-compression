@@ -74,7 +74,8 @@ const state = {
 
 const MIN_ZOOM = 0.125;
 const MAX_ZOOM = 16;
-const DRAG_THRESHOLD = 3;
+const DRAG_THRESHOLD = 5;
+const DRAG_DELAY_MS = 140;
 
 controls.addEventListener("submit", (event) => {
   event.preventDefault();
@@ -566,8 +567,10 @@ function startViewportDrag(event) {
     pointerId: event.pointerId,
     startX: event.clientX,
     startY: event.clientY,
+    startedAt: event.timeStamp,
     scrollLeft: viewport.scrollLeft,
     scrollTop: viewport.scrollTop,
+    active: false,
     moved: false,
   };
   try {
@@ -575,8 +578,6 @@ function startViewportDrag(event) {
   } catch (_error) {
     // Synthetic pointer events used by tests may not have a capturable pointer.
   }
-  viewport.classList.add("is-dragging");
-  event.preventDefault();
 }
 
 function moveViewportDrag(event) {
@@ -588,8 +589,20 @@ function moveViewportDrag(event) {
 
   const deltaX = event.clientX - drag.startX;
   const deltaY = event.clientY - drag.startY;
+  const distance = Math.hypot(deltaX, deltaY);
 
-  drag.moved = drag.moved || Math.hypot(deltaX, deltaY) >= DRAG_THRESHOLD;
+  if (!drag.active) {
+    const heldLongEnough = event.timeStamp - drag.startedAt >= DRAG_DELAY_MS;
+
+    if (!heldLongEnough || distance < DRAG_THRESHOLD) {
+      return;
+    }
+
+    drag.active = true;
+    drag.viewport.classList.add("is-dragging");
+  }
+
+  drag.moved = true;
   drag.viewport.scrollLeft = drag.scrollLeft - deltaX;
   drag.viewport.scrollTop = drag.scrollTop - deltaY;
   state.synchronizingScroll = false;
@@ -610,7 +623,7 @@ function finishViewportDrag(event) {
   state.viewportDrag = null;
   drag.viewport.classList.remove("is-dragging");
 
-  if (drag.moved && drag.viewport === resultViewport) {
+  if (drag.active && drag.moved && drag.viewport === resultViewport) {
     state.suppressResultClick = true;
     window.setTimeout(() => {
       state.suppressResultClick = false;

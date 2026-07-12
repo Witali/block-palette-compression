@@ -34,6 +34,10 @@ test("pans both compression previews by dragging", () => {
   assert.match(source, /drag\.viewport\.scrollTop = drag\.scrollTop - deltaY/);
   assert.match(source, /synchronizeScroll\(/);
   assert.match(source, /selectBlockUnlessDragging/);
+  assert.match(source, /const DRAG_DELAY_MS = 140/);
+  assert.match(source, /event\.timeStamp - drag\.startedAt >= DRAG_DELAY_MS/);
+  assert.match(source, /distance < DRAG_THRESHOLD/);
+  assert.match(source, /if \(drag\.active && drag\.moved && drag\.viewport === resultViewport\)/);
 });
 
 function test(name, callback) {
