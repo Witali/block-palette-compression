@@ -33,6 +33,18 @@ body {
   color: #aab5c2;
 }
 
+.home-header a {
+  color: #86bdfd;
+  font-weight: 600;
+  text-underline-offset: 3px;
+}
+
+.home-header a:hover,
+.home-header a:focus-visible {
+  color: #b7d8ff;
+  outline: none;
+}
+
 .demo-links {
   display: grid;
   gap: 12px;

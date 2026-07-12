@@ -53,6 +53,16 @@ test("shows the language selector only on the home page", () => {
   assert.deepEqual(pagesWithSwitcher, ["index.html"]);
 });
 
+test("shows the GitHub README link in the home description", () => {
+  const root = path.resolve(__dirname, "..");
+  const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
+  const header = html.match(/<header class="home-header">([\s\S]*?)<\/header>/)[1];
+  const navigation = html.match(/<nav class="demo-links"[\s\S]*?<\/nav>/)[0];
+
+  assert.match(header, /href="https:\/\/github\.com\/Witali\/block-palette-compression#readme"/);
+  assert.doesNotMatch(navigation, /github\.com\/Witali\/block-palette-compression/);
+});
+
 test("defines every translation key referenced by localized page scripts", () => {
   const root = path.resolve(__dirname, "..");
   const missing = [];
