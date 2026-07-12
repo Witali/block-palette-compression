@@ -76,6 +76,8 @@
     "home.block.description": "Сжатие блоков локальными индексами цветов, ссылающимися на общую палитру изображения.",
     "home.viewer.title": "Просмотр BPAL",
     "home.viewer.description": "Открытие BPAL и обычных изображений с масштабированием и перемещением.",
+    "home.readme.title": "README на GitHub",
+    "home.readme.description": "Описание проекта, инструкция по использованию и ссылки на документацию.",
     "home.retro.title": "Ретро-конвертер",
     "home.retro.description": "Экспорт экранов ZX Spectrum .scr и планарных данных PC VGA Mode X.",
     "home.benchmarks.title": "Тесты производительности",
