@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title data-i18n="home.title">Block Palette Compression</title>
+    <link rel="stylesheet" href="./home.css">
+    <link rel="stylesheet" href="./i18n.css">
+  </head>
+  <body data-language-switcher>
+    <main class="home-shell" aria-labelledby="page-title">
+      <header class="home-header">
+        <h1 id="page-title" data-i18n="home.title">Block Palette Compression</h1>
+        <p data-i18n="home.description">BPAL compression, viewing, and shader texture demos.</p>
+      </header>
+
+      <nav class="demo-links" aria-label="Demo pages" data-i18n-aria-label="home.nav">
+        <a href="./block-palette.html">
+          <span data-i18n="home.block.title">Block palette compression</span>
+          <small data-i18n="home.block.description">Compress blocks with local color indices that reference one shared image palette.</small>
+        </a>
+        <a href="./bpal-viewer.html">
+          <span data-i18n="home.viewer.title">BPAL Viewer</span>
+          <small data-i18n="home.viewer.description">Open BPAL files or regular images and inspect them with zoom and pan controls.</small>
+        </a>
+        <a href="./cube.html">
+          <span data-i18n="home.cube.title">Cube</span>
+          <small data-i18n="home.cube.description">Render a BPAL texture with double palette indexing in the fragment shader.</small>
+        </a>
+        <a href="./cube-bpal-sampler.html">
+          <span data-i18n="home.sampler.title">BPAL texture sampler</span>
+          <small data-i18n="home.sampler.description">Sample BPAL mip levels in a shader with bilinear, trilinear, or anisotropic filtering.</small>
+        </a>
+      </nav>
+    </main>
+
+    <script src="./src/i18n/en.js"></script>
+    <script src="./src/i18n/ru.js"></script>
+    <script src="./src/i18n/i18n.js"></script>
+  </body>
+</html>

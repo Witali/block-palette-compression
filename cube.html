@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title data-i18n="cube.title">WebGL Rotating Cube</title>
+    <link rel="stylesheet" href="./style.css?v=cube-bpal-shader-texture">
+    <link rel="stylesheet" href="./i18n.css">
+  </head>
+  <body>
+    <a class="back-link" href="./index.html" data-i18n="common.homeShort">Home</a>
+    <div id="fps-counter" aria-live="polite">0 FPS</div>
+    <form id="material-controls" class="material-controls" aria-label="Material controls" data-i18n-aria-label="cube.controls">
+      <fieldset>
+        <legend data-i18n="common.material">Material</legend>
+        <label class="material-option">
+          <input type="radio" name="material" value="matte" checked>
+          <span data-i18n="common.matte">Matte</span>
+        </label>
+        <label class="material-option">
+          <input type="radio" name="material" value="glossy">
+          <span data-i18n="common.glossy">Glossy</span>
+        </label>
+      </fieldset>
+      <label class="relief-control">
+        <span><span data-i18n="cube.relief">Relief</span> <output id="height-strength-value" for="height-strength">0.60</output></span>
+        <input id="height-strength" type="range" min="0" max="1" step="0.05" value="0.60">
+      </label>
+      <label class="bpal-upload">
+        <input id="bpal-file" type="file" accept=".bpal,application/octet-stream">
+        <span data-i18n="common.uploadBpal">Upload BPAL</span>
+      </label>
+      <label class="material-option" title="Perform both BPAL index lookups in the fragment shader" data-i18n-title="cube.shaderTitle">
+        <input id="bpal-shader-texture" type="checkbox" disabled>
+        <span data-i18n="cube.shaderTexture">BPAL in shader</span>
+      </label>
+      <output id="bpal-status" class="bpal-status" role="status" aria-live="polite" data-i18n="cube.defaultJpeg">Default JPEG</output>
+    </form>
+    <canvas id="gl-canvas" aria-label="Rotating WebGL cube" data-i18n-aria-label="cube.canvasAria"></canvas>
+    <script src="./src/i18n/en.js"></script>
+    <script src="./src/i18n/ru.js"></script>
+    <script src="./src/i18n/i18n.js"></script>
+    <script src="./src/decoders/gpu-jpeg.js"></script>
+    <script src="./src/palette/block-palette-format.js?v=block-palette-3"></script>
+    <script src="./src/decoders/bpal-texture.js?v=bpal-shader-texture"></script>
+    <script src="./src/core/textured-cube.js?v=bpal-shader-texture"></script>
+    <script src="./src/pages/cube-page.js?v=i18n-1"></script>
+  </body>
+</html>
