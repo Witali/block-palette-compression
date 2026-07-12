@@ -115,6 +115,7 @@
     "block.optimize": "Подобрать настройки",
     "block.optimizeTitle": "Найти баланс качества и размера файла",
     "block.downloadBpal": "Скачать BPAL",
+    "block.saveBplm": "Сохранить BPLM",
     "block.metrics": "Метрики сжатия",
     "block.blocks": "Блоков",
     "block.payload": "Полезная нагрузка",
