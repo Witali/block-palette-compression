@@ -19,6 +19,7 @@ const fileInput = document.getElementById("image-file");
 const processButton = document.getElementById("process-button");
 const optimizeButton = document.getElementById("optimize-button");
 const downloadFileButton = document.getElementById("download-file-button");
+const downloadBplmButton = document.getElementById("download-bplm-button");
 const downloadButton = document.getElementById("download-button");
 const showGridInput = document.getElementById("show-grid");
 const statusElement = document.getElementById("status");
@@ -127,6 +128,7 @@ fileInput.addEventListener("change", () => {
 });
 
 downloadFileButton.addEventListener("click", downloadBlockPaletteFile);
+downloadBplmButton.addEventListener("click", downloadBlockPaletteMipmapFile);
 downloadButton.addEventListener("click", downloadResult);
 showGridInput.addEventListener("change", drawGrid);
 resultCanvas.addEventListener("click", selectBlockFromPointer);
@@ -315,6 +317,7 @@ function renderResult(result) {
   renderSelectedBlock();
   drawGrid();
   downloadFileButton.disabled = false;
+  downloadBplmButton.disabled = false;
   downloadButton.disabled = false;
 
   window.__blockPaletteResult = {
@@ -613,6 +616,25 @@ function downloadBlockPaletteFile() {
   }
 }
 
+function downloadBlockPaletteMipmapFile() {
+  if (!state.result || downloadBplmButton.disabled) {
+    return;
+  }
+
+  try {
+    const settings = getSettings();
+    const bytes = window.BplmFormat.encodeBplmFile(state.result);
+    const blob = new Blob([bytes], { type: "application/vnd.block-palette-mipmap" });
+
+    downloadBlob(
+      blob,
+      `${state.sourceName}-blocks-${settings.blockSize}-local-${settings.localColorCount}-global-${settings.globalColorCount}-${settings.paletteColorBits}bit.bplm`
+    );
+  } catch (error) {
+    showError(error);
+  }
+}
+
 function downloadBlob(blob, fileName) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
@@ -785,6 +807,7 @@ function resetResultMetrics() {
   blockPaletteElement.replaceChildren();
   globalPaletteElement.replaceChildren();
   downloadFileButton.disabled = true;
+  downloadBplmButton.disabled = true;
   downloadButton.disabled = true;
   delete window.__blockPaletteResult;
 }

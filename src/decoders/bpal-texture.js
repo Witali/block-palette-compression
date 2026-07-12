@@ -95,55 +95,17 @@
   }
 
   function createMipmappedShaderTextureData(texture, maxTextureSize, options) {
-    if (
-      !texture ||
-      !(texture.pixels instanceof Uint8ClampedArray) ||
-      !Array.isArray(texture.palette)
-    ) {
-      throw new TypeError("Decoded BPAL texture cannot be converted into a mip chain");
-    }
-
     const settings = options || {};
     const maximumMipLevels = Math.floor(
       Math.max(1, Math.min(16, Number(settings.maxMipLevels) || 16))
     );
-    const palettePoints = texture.palette.map((color) => [
-      srgbByteToLinear(color.r),
-      srgbByteToLinear(color.g),
-      srgbByteToLinear(color.b),
-    ]);
-    const paletteSearchTree = buildPaletteSearchTree(
-      palettePoints.map((point, index) => ({ point, index })),
-      0
-    );
-    const levels = [{
-      width: texture.width,
-      height: texture.height,
-      blocksX: texture.blocksX,
-      blocksY: Math.ceil(texture.height / texture.blockSize),
-      pixelIndices: texture.pixelIndices,
-      blockPaletteIndices: texture.blockPaletteIndices,
-    }];
-    let sourcePixels = texture.pixels;
-    let width = texture.width;
-    let height = texture.height;
+    const sourceLevels = Array.isArray(texture && texture.mipLevels)
+      ? texture.mipLevels
+      : createMipLevels(texture, { maxMipLevels: maximumMipLevels });
+    const levels = sourceLevels.slice(0, maximumMipLevels).map((level) => ({ ...level }));
 
-    while ((width > 1 || height > 1) && levels.length < maximumMipLevels) {
-      const downsampled = downsampleRgba(sourcePixels, width, height);
-      const encoded = encodeMipLevel(
-        downsampled.pixels,
-        downsampled.width,
-        downsampled.height,
-        texture.blockSize,
-        texture.localColorCount,
-        palettePoints,
-        paletteSearchTree
-      );
-
-      levels.push(encoded);
-      sourcePixels = downsampled.pixels;
-      width = downsampled.width;
-      height = downsampled.height;
+    if (levels.length === 0) {
+      throw new RangeError("Decoded BPAL texture has no mip levels");
     }
 
     let pixelCount = 0;
@@ -152,16 +114,25 @@
     levels.forEach((level) => {
       level.pixelOffset = pixelCount;
       level.blockPaletteOffset = blockPaletteEntryCount;
-      pixelCount += level.pixelIndices.length;
-      blockPaletteEntryCount += level.blockPaletteIndices.length;
+      level.direct = Boolean(level.direct || level.directGlobalIndices);
+      pixelCount += level.pixelIndices ? level.pixelIndices.length : 0;
+      blockPaletteEntryCount += level.direct
+        ? level.directGlobalIndices.length
+        : level.blockPaletteIndices.length;
     });
 
     const pixelIndices = new Uint8Array(pixelCount);
     const blockPaletteIndices = new Uint16Array(blockPaletteEntryCount);
 
     levels.forEach((level) => {
-      pixelIndices.set(level.pixelIndices, level.pixelOffset);
-      blockPaletteIndices.set(level.blockPaletteIndices, level.blockPaletteOffset);
+      if (level.pixelIndices) {
+        pixelIndices.set(level.pixelIndices, level.pixelOffset);
+      }
+
+      blockPaletteIndices.set(
+        level.direct ? level.directGlobalIndices : level.blockPaletteIndices,
+        level.blockPaletteOffset
+      );
     });
 
     const pixelAtlas = createAtlas(pixelIndices, 1, maxTextureSize, (target, offset, value) => {
@@ -188,8 +159,8 @@
       width: texture.width,
       height: texture.height,
       blockSize: texture.blockSize,
-      blocksX: texture.blocksX,
       localColorCount: texture.localColorCount,
+      blocksX: texture.blocksX,
       mipCount: levels.length,
       levels,
       pixelAtlas,
@@ -199,6 +170,76 @@
         blockPaletteAtlas.data.byteLength +
         paletteAtlas.data.byteLength,
     };
+  }
+
+  function createMipLevels(texture, options) {
+    if (
+      !texture ||
+      !(texture.pixels instanceof Uint8ClampedArray) ||
+      !Array.isArray(texture.palette)
+    ) {
+      throw new TypeError("Decoded BPAL texture cannot be converted into a mip chain");
+    }
+
+    const settings = options || {};
+    const maximumMipLevels = Math.floor(
+      Math.max(1, Math.min(255, Number(settings.maxMipLevels) || 255))
+    );
+    const palettePoints = texture.palette.map((color) => [
+      srgbByteToLinear(color.r),
+      srgbByteToLinear(color.g),
+      srgbByteToLinear(color.b),
+    ]);
+    const paletteSearchTree = buildPaletteSearchTree(
+      palettePoints.map((point, index) => ({ point, index })),
+      0
+    );
+    const levels = [{
+      width: texture.width,
+      height: texture.height,
+      blockSize: texture.blockSize,
+      localColorCount: texture.localColorCount,
+      blocksX: texture.blocksX,
+      blocksY: Math.ceil(texture.height / texture.blockSize),
+      pixelIndices: texture.pixelIndices,
+      blockPaletteIndices: texture.blockPaletteIndices,
+    }];
+    let sourcePixels = texture.pixels;
+    let width = texture.width;
+    let height = texture.height;
+    let blockSize = texture.blockSize;
+
+    while ((width > 1 || height > 1) && levels.length < maximumMipLevels) {
+      const downsampled = downsampleRgba(sourcePixels, width, height);
+      blockSize = Math.max(1, blockSize / 2);
+      const localColorCount = Math.min(texture.localColorCount, blockSize * blockSize);
+      const direct = localColorCount === blockSize * blockSize;
+      const encoded = direct
+        ? encodeDirectMipLevel(
+          downsampled.pixels,
+          downsampled.width,
+          downsampled.height,
+          blockSize,
+          localColorCount,
+          paletteSearchTree
+        )
+        : encodeMipLevel(
+          downsampled.pixels,
+          downsampled.width,
+          downsampled.height,
+          blockSize,
+          localColorCount,
+          palettePoints,
+          paletteSearchTree
+        );
+
+      levels.push(encoded);
+      sourcePixels = downsampled.pixels;
+      width = downsampled.width;
+      height = downsampled.height;
+    }
+
+    return levels;
   }
 
   function downsampleRgba(source, width, height) {
@@ -254,26 +295,7 @@
   ) {
     const blocksX = Math.ceil(width / blockSize);
     const blocksY = Math.ceil(height / blockSize);
-    const assignments = new Uint16Array(width * height);
-    const assignmentCache = new Map();
-
-    for (let pixel = 0; pixel < width * height; pixel += 1) {
-      const offset = pixel * 4;
-      const key = pixels[offset] << 16 | pixels[offset + 1] << 8 | pixels[offset + 2];
-      let globalIndex = assignmentCache.get(key);
-
-      if (globalIndex === undefined) {
-        globalIndex = nearestPalettePoint([
-          srgbByteToLinear(pixels[offset]),
-          srgbByteToLinear(pixels[offset + 1]),
-          srgbByteToLinear(pixels[offset + 2]),
-        ], paletteSearchTree).index;
-        assignmentCache.set(key, globalIndex);
-      }
-
-      assignments[pixel] = globalIndex;
-    }
-
+    const assignments = assignPixelsToPalette(pixels, width, height, paletteSearchTree);
     const blockPaletteIndices = new Uint16Array(blocksX * blocksY * localColorCount);
     const pixelIndices = new Uint8Array(width * height);
 
@@ -336,11 +358,57 @@
     return {
       width,
       height,
+      blockSize,
+      localColorCount,
       blocksX,
       blocksY,
       blockPaletteIndices,
       pixelIndices,
     };
+  }
+
+  function encodeDirectMipLevel(
+    pixels,
+    width,
+    height,
+    blockSize,
+    localColorCount,
+    paletteSearchTree
+  ) {
+    return {
+      width,
+      height,
+      blockSize,
+      localColorCount,
+      blocksX: Math.ceil(width / blockSize),
+      blocksY: Math.ceil(height / blockSize),
+      direct: true,
+      directGlobalIndices: assignPixelsToPalette(pixels, width, height, paletteSearchTree),
+    };
+  }
+
+  function assignPixelsToPalette(pixels, width, height, paletteSearchTree) {
+    const assignments = new Uint16Array(width * height);
+    const assignmentCache = new Map();
+
+    for (let pixel = 0; pixel < width * height; pixel += 1) {
+      const offset = pixel * 4;
+      const key = pixels[offset] << 16 | pixels[offset + 1] << 8 | pixels[offset + 2];
+      let globalIndex = assignmentCache.get(key);
+
+      if (globalIndex === undefined) {
+        globalIndex = nearestPalettePoint([
+          srgbByteToLinear(pixels[offset]),
+          srgbByteToLinear(pixels[offset + 1]),
+          srgbByteToLinear(pixels[offset + 2]),
+        ], paletteSearchTree).index;
+        assignmentCache.set(key, globalIndex);
+      }
+
+      assignments[pixel] = globalIndex;
+    }
+
+    return assignments;
   }
 
   function buildPaletteSearchTree(entries, depth) {
@@ -422,5 +490,5 @@
     return { width, height, data, channels };
   }
 
-  return { decode, createShaderTextureData, createMipmappedShaderTextureData };
+  return { decode, createShaderTextureData, createMipLevels, createMipmappedShaderTextureData };
 });

@@ -2,7 +2,7 @@
  * Purpose: WebGL demo entry point that renders the rotating textured cube.
  * Processing blocks:
  * - Create the shared textured cube renderer.
- * - Load the default BPAL stone texture through the shared texture path.
+ * - Load the default BPLM stone texture through the shared texture path.
  * - Run the animation loop, pointer controls, and FPS counter.
  */
 "use strict";
@@ -44,8 +44,8 @@ const AUTO_ROTATE_X_SPEED = 0.0007;
 const AUTO_ROTATE_Y_SPEED = 0.001;
 const POINTER_ROTATE_SPEED = 0.01;
 const CLICK_DRAG_THRESHOLD = 4;
-const DEFAULT_BPAL_TEXTURE_URL = "assets/bpal/stone-texture-wic-2.38bpp.bpal";
-const DEFAULT_BPAL_TEXTURE_NAME = "stone-texture-wic-2.38bpp.bpal";
+const DEFAULT_BPAL_TEXTURE_URL = "assets/bpal/stone-texture-wic.bplm";
+const DEFAULT_BPAL_TEXTURE_NAME = "stone-texture-wic.bplm";
 let cubeRenderer = null;
 let bpalLoadId = 0;
 let loadedBpalTexture = null;
@@ -236,7 +236,7 @@ async function loadBpalTextureSource(source, fileName) {
       return;
     }
 
-    const decoded = window.BpalTextureDecoder.decode(bytes);
+    const decoded = decodeBlockPaletteTexture(bytes);
     const shaderTextureData = window.BpalTextureDecoder.createShaderTextureData(
       decoded,
       gl.getParameter(gl.MAX_TEXTURE_SIZE)
@@ -258,6 +258,8 @@ async function loadBpalTextureSource(source, fileName) {
       width: decoded.width,
       height: decoded.height,
       version: decoded.version,
+      format: decoded.containerMagic || "BPAL",
+      formatVersion: decoded.containerVersion || decoded.version,
       blockSize: decoded.blockSize,
       localColorCount: decoded.localColorCount,
       globalColorCount: decoded.globalColorCount,
@@ -286,9 +288,15 @@ function updateLoadedBpalStatus() {
 
   setBpalStatus(
     `${loadedBpalTexture.name} · ${loadedBpalTexture.width}×${loadedBpalTexture.height} · ` +
-      `BPAL v${loadedBpalTexture.version} · ${renderMode}`,
+      `${loadedBpalTexture.format} v${loadedBpalTexture.formatVersion} · ${renderMode}`,
     false
   );
+}
+
+function decodeBlockPaletteTexture(bytes) {
+  return window.BplmFormat && window.BplmFormat.isBplmFile(bytes)
+    ? window.BplmFormat.decodeBplmFile(bytes)
+    : window.BpalTextureDecoder.decode(bytes);
 }
 
 function setBpalStatus(message, isError) {
