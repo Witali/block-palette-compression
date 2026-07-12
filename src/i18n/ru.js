@@ -49,6 +49,7 @@
     "common.matte": "Матовый",
     "common.glossy": "Глянцевый",
     "common.uploadBpal": "Загрузить BPAL/BPLM",
+    "common.builtInBpal": "Встроенный BPAL/BPLM",
     "units.bytes": "{value} Б",
     "units.kib": "{value} КиБ",
     "units.mib": "{value} МиБ",

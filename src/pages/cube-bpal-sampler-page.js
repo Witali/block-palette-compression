@@ -13,6 +13,7 @@ const localized = (english, russian) => window.I18n.getLanguage() === "ru" ? rus
 const canvas = document.getElementById("gl-canvas");
 const fpsCounter = document.getElementById("fps-counter");
 const controls = document.getElementById("sampler-controls");
+const bpalExampleSelect = document.getElementById("bpal-example");
 const bpalFileInput = document.getElementById("bpal-file");
 const bpalStatus = document.getElementById("bpal-status");
 const samplerStats = document.getElementById("sampler-stats");
@@ -39,8 +40,6 @@ const AUTO_ROTATE_X_SPEED = 0.0007;
 const AUTO_ROTATE_Y_SPEED = 0.001;
 const POINTER_ROTATE_SPEED = 0.01;
 const CLICK_DRAG_THRESHOLD = 4;
-const DEFAULT_BPAL_TEXTURE_URL = "assets/bpal/stone-texture-wic.bplm";
-const DEFAULT_BPAL_TEXTURE_NAME = "stone-texture-wic.bplm";
 let renderer = null;
 let loadId = 0;
 let loadedTexture = null;
@@ -88,9 +87,9 @@ async function start() {
   applyMaterial();
 
   try {
-    await loadDefaultBpalTexture();
+    await initializeBundledBpalTexture();
   } catch (error) {
-    console.warn("Default BPAL sampler texture could not be loaded.", error);
+    console.warn("Bundled BPAL sampler texture could not be loaded.", error);
     await renderer.loadTexture("assets/stone-texture-wic.jpg", { materialMaps: false });
     setStatus(t("sampler.defaultStatus"), false);
     samplerStats.textContent = t("sampler.initialStats");
@@ -112,6 +111,16 @@ function render(time) {
 }
 
 function initializeControls() {
+  bpalExampleSelect.addEventListener("change", () => {
+    const example = window.BpalExampleCatalog.getSelectedExample(bpalExampleSelect);
+
+    if (example) {
+      loadBundledBpalTexture(example.url, example.name).catch((error) => {
+        console.error("Bundled BPAL mip texture load failed.", error);
+        setStatus(error && error.message ? error.message : String(error), true);
+      });
+    }
+  });
   bpalFileInput.addEventListener("change", () => {
     const file = bpalFileInput.files && bpalFileInput.files[0];
 
@@ -133,17 +142,21 @@ function initializeControls() {
 }
 
 async function loadBpal(file) {
+  return loadBpalSource(file, file.name);
+}
+
+async function loadBpalSource(source, fileName) {
   if (!window.BpalTextureDecoder) {
     throw new Error("BPAL decoder is unavailable");
   }
 
   const currentLoadId = ++loadId;
 
-  bpalFileInput.disabled = true;
-  setStatus(localized(`Reading ${file.name}…`, `Чтение ${file.name}…`), false);
+  setBpalControlsDisabled(true);
+  setStatus(localized(`Reading ${fileName}…`, `Чтение ${fileName}…`), false);
 
   try {
-    const bytes = await file.arrayBuffer();
+    const bytes = await source.arrayBuffer();
 
     if (currentLoadId !== loadId) {
       return;
@@ -162,40 +175,41 @@ async function loadBpal(file) {
     }
 
     activateBpalTexture(decoded, {
-      name: file.name,
+      name: fileName,
       fileBytes: bytes.byteLength,
     });
   } finally {
     if (currentLoadId === loadId) {
-      bpalFileInput.disabled = false;
+      setBpalControlsDisabled(false);
       bpalFileInput.value = "";
     }
   }
 }
 
-async function loadDefaultBpalTexture() {
-  if (!window.BpalTextureDecoder) {
-    throw new Error("BPAL decoder is unavailable");
-  }
+async function initializeBundledBpalTexture() {
+  const manifest = await window.BpalExampleCatalog.loadManifest();
+  const example = window.BpalExampleCatalog.populateSelect(bpalExampleSelect, manifest);
 
-  setStatus(localized(
-    "Loading the built-in BPAL texture…",
-    "Загрузка встроенной BPAL-текстуры…"
-  ), false);
+  return loadBundledBpalTexture(example.url, example.name);
+}
 
-  const response = await fetch(DEFAULT_BPAL_TEXTURE_URL);
+async function loadBundledBpalTexture(url, fileName) {
+  return loadBpalSource({
+    async arrayBuffer() {
+      const response = await fetch(url);
 
-  if (!response.ok) {
-    throw new Error(`Could not load ${DEFAULT_BPAL_TEXTURE_NAME}: ${response.status} ${response.statusText}`);
-  }
+      if (!response.ok) {
+        throw new Error(`Could not load ${fileName}: ${response.status} ${response.statusText}`);
+      }
 
-  const bytes = await response.arrayBuffer();
-  const decoded = decodeBlockPaletteTexture(bytes);
+      return response.arrayBuffer();
+    },
+  }, fileName);
+}
 
-  activateBpalTexture(decoded, {
-    name: DEFAULT_BPAL_TEXTURE_NAME,
-    fileBytes: bytes.byteLength,
-  });
+function setBpalControlsDisabled(disabled) {
+  bpalFileInput.disabled = disabled;
+  bpalExampleSelect.disabled = disabled || bpalExampleSelect.options.length === 0;
 }
 
 function activateBpalTexture(decoded, metadata) {

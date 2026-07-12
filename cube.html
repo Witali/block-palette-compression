@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title data-i18n="cube.title">WebGL Rotating Cube</title>
-    <link rel="stylesheet" href="./style.css?v=cube-bpal-shader-texture">
+    <link rel="stylesheet" href="./style.css?v=bpal-catalog-1">
     <link rel="stylesheet" href="./i18n.css">
   </head>
   <body>
@@ -36,6 +36,10 @@
           <option value="100">100</option>
         </select>
       </label>
+      <label class="bpal-example-control">
+        <span data-i18n="common.builtInBpal">Built-in BPAL/BPLM</span>
+        <select id="bpal-example" disabled></select>
+      </label>
       <label class="bpal-upload">
         <input id="bpal-file" type="file" accept=".bpal,.bplm,application/octet-stream">
         <span data-i18n="common.uploadBpal">Upload BPAL/BPLM</span>
@@ -47,8 +51,8 @@
       <output id="bpal-status" class="bpal-status" role="status" aria-live="polite" data-i18n="cube.loadingDefaultBpal">Loading default BPAL texture…</output>
     </form>
     <canvas id="gl-canvas" aria-label="Rotating WebGL cube" data-i18n-aria-label="cube.canvasAria"></canvas>
-    <script src="./src/i18n/en.js?v=default-cube-bpal-1"></script>
-    <script src="./src/i18n/ru.js?v=default-cube-bpal-1"></script>
+    <script src="./src/i18n/en.js?v=cube-bpal-catalog-1"></script>
+    <script src="./src/i18n/ru.js?v=cube-bpal-catalog-1"></script>
     <script src="./src/i18n/i18n.js"></script>
     <script src="./src/decoders/gpu-jpeg.js"></script>
     <script src="./src/palette/block-palette-format.js?v=block-palette-3"></script>
@@ -57,6 +61,7 @@
     <script src="./src/core/textured-cube.js?v=multi-cube-1"></script>
     <script src="./src/pages/cube-wheel-zoom.js?v=2"></script>
     <script src="./src/pages/cube-grid-layout.js?v=multi-cube-1"></script>
-    <script src="./src/pages/cube-page.js?v=zoom-range-1"></script>
+    <script src="./src/pages/bpal-example-catalog.js?v=1"></script>
+    <script src="./src/pages/cube-page.js?v=bpal-catalog-1"></script>
   </body>
 </html>

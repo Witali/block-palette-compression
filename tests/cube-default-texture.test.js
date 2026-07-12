@@ -7,16 +7,24 @@ const BplmFormat = require("../src/palette/bplm-format.js");
 
 const root = path.resolve(__dirname, "..");
 const defaultTextureName = "stone-texture-wic.bplm";
-const defaultTextureUrl = `assets/bpal/${defaultTextureName}`;
 const cubeHtml = fs.readFileSync(path.join(root, "cube.html"), "utf8");
+const samplerHtml = fs.readFileSync(path.join(root, "cube-bpal-sampler.html"), "utf8");
 const cubeSource = fs.readFileSync(path.join(root, "src", "pages", "cube-page.js"), "utf8");
 const samplerSource = fs.readFileSync(path.join(root, "src", "pages", "cube-bpal-sampler-page.js"), "utf8");
 
-test("uses the bundled WIC BPLM texture on both cube pages", () => {
-  assert.match(cubeSource, new RegExp(escapeRegExp(defaultTextureUrl)));
-  assert.match(samplerSource, new RegExp(escapeRegExp(defaultTextureUrl)));
-  assert.match(cubeSource, /await loadDefaultBpalTexture\(\)/);
-  assert.match(samplerSource, /await loadDefaultBpalTexture\(\)/);
+test("loads the manifest-selected BPAL texture on both cube pages", () => {
+  for (const html of [cubeHtml, samplerHtml]) {
+    assert.match(html, /<select id="bpal-example" disabled><\/select>/);
+    assert.match(html, /src="\.\/src\/pages\/bpal-example-catalog\.js\?v=1"/);
+  }
+
+  for (const source of [cubeSource, samplerSource]) {
+    assert.match(source, /await initializeBundledBpalTexture\(\)/);
+    assert.match(source, /BpalExampleCatalog\.loadManifest\(\)/);
+    assert.match(source, /BpalExampleCatalog\.populateSelect\(bpalExampleSelect, manifest\)/);
+    assert.match(source, /bpalExampleSelect\.addEventListener\("change"/);
+    assert.match(source, /loadBundledBpalTexture\(example\.url, example\.name\)/);
+  }
 });
 
 test("enables shader BPAL sampling by default on the cube page", () => {
@@ -44,10 +52,6 @@ test("does not recompress a JPEG for the default BPAL sampler texture", () => {
   assert.doesNotMatch(samplerSource, /BlockPaletteCodec|compressImage|loadImagePixels/);
   assert.doesNotMatch(samplerHtml, /palette-quantizer\.js|block-palette-codec\.js/);
 });
-
-function escapeRegExp(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
 
 function test(name, callback) {
   try {

@@ -15,6 +15,7 @@ const materialControls = document.getElementById("material-controls");
 const heightStrengthInput = document.getElementById("height-strength");
 const heightStrengthValue = document.getElementById("height-strength-value");
 const cubeCountInput = document.getElementById("cube-count");
+const bpalExampleSelect = document.getElementById("bpal-example");
 const bpalFileInput = document.getElementById("bpal-file");
 const bpalShaderTextureInput = document.getElementById("bpal-shader-texture");
 const bpalStatus = document.getElementById("bpal-status");
@@ -44,8 +45,6 @@ const AUTO_ROTATE_X_SPEED = 0.0007;
 const AUTO_ROTATE_Y_SPEED = 0.001;
 const POINTER_ROTATE_SPEED = 0.01;
 const CLICK_DRAG_THRESHOLD = 4;
-const DEFAULT_BPAL_TEXTURE_URL = "assets/bpal/stone-texture-wic.bplm";
-const DEFAULT_BPAL_TEXTURE_NAME = "stone-texture-wic.bplm";
 let cubeRenderer = null;
 let bpalLoadId = 0;
 let loadedBpalTexture = null;
@@ -76,9 +75,9 @@ async function start() {
   initializeBpalTextureControls();
 
   try {
-    await loadDefaultBpalTexture();
+    await initializeBundledBpalTexture();
   } catch (error) {
-    console.warn("Default BPAL cube texture could not be loaded.", error);
+    console.warn("Bundled BPAL cube texture could not be loaded.", error);
     await cubeRenderer.loadTexture("assets/stone-texture-wic.jpg");
     setBpalStatus(localized("Default JPEG fallback", "Резервная JPEG-текстура"), false);
   }
@@ -175,9 +174,20 @@ function initializeMaterialControls() {
 }
 
 function initializeBpalTextureControls() {
-  if (!bpalFileInput || !bpalStatus) {
+  if (!bpalExampleSelect || !bpalFileInput || !bpalStatus) {
     return;
   }
+
+  bpalExampleSelect.addEventListener("change", () => {
+    const example = window.BpalExampleCatalog.getSelectedExample(bpalExampleSelect);
+
+    if (example) {
+      loadBundledBpalTexture(example.url, example.name).catch((error) => {
+        console.error("Bundled BPAL texture load failed.", error);
+        setBpalStatus(error && error.message ? error.message : String(error), true);
+      });
+    }
+  });
 
   bpalFileInput.addEventListener("change", () => {
     const file = bpalFileInput.files && bpalFileInput.files[0];
@@ -209,14 +219,25 @@ async function loadBpalTextureFile(file) {
   return loadBpalTextureSource(file, file.name);
 }
 
-async function loadDefaultBpalTexture() {
-  const response = await fetch(DEFAULT_BPAL_TEXTURE_URL);
+async function initializeBundledBpalTexture() {
+  const manifest = await window.BpalExampleCatalog.loadManifest();
+  const example = window.BpalExampleCatalog.populateSelect(bpalExampleSelect, manifest);
 
-  if (!response.ok) {
-    throw new Error(`Could not load ${DEFAULT_BPAL_TEXTURE_NAME}: ${response.status} ${response.statusText}`);
-  }
+  return loadBundledBpalTexture(example.url, example.name);
+}
 
-  await loadBpalTextureSource(response, DEFAULT_BPAL_TEXTURE_NAME);
+async function loadBundledBpalTexture(url, fileName) {
+  return loadBpalTextureSource({
+    async arrayBuffer() {
+      const response = await fetch(url);
+
+      if (!response.ok) {
+        throw new Error(`Could not load ${fileName}: ${response.status} ${response.statusText}`);
+      }
+
+      return response.arrayBuffer();
+    },
+  }, fileName);
 }
 
 async function loadBpalTextureSource(source, fileName) {
@@ -226,7 +247,7 @@ async function loadBpalTextureSource(source, fileName) {
 
   const loadId = ++bpalLoadId;
 
-  bpalFileInput.disabled = true;
+  setBpalControlsDisabled(true);
   setBpalStatus(localized(`Reading ${fileName}…`, `Чтение ${fileName}…`), false);
 
   try {
@@ -271,10 +292,15 @@ async function loadBpalTextureSource(source, fileName) {
     updateLoadedBpalStatus();
   } finally {
     if (loadId === bpalLoadId) {
-      bpalFileInput.disabled = false;
+      setBpalControlsDisabled(false);
       bpalFileInput.value = "";
     }
   }
+}
+
+function setBpalControlsDisabled(disabled) {
+  bpalFileInput.disabled = disabled;
+  bpalExampleSelect.disabled = disabled || bpalExampleSelect.options.length === 0;
 }
 
 function updateLoadedBpalStatus() {

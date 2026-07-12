@@ -8,6 +8,7 @@ const BplmFormat = require("../src/palette/bplm-format.js");
 const english = require("../src/i18n/en.js");
 const russian = require("../src/i18n/ru.js");
 const { createBpalManifest } = require("../tools/generate-bpal-manifest.js");
+const BpalExampleCatalog = require("../src/pages/bpal-example-catalog.js");
 
 const root = path.resolve(__dirname, "..");
 const viewerHtml = fs.readFileSync(path.join(root, "bpal-viewer.html"), "utf8");
@@ -23,8 +24,25 @@ test("generates every bundled BPAL and BPLM image for the viewer", () => {
   assert.deepEqual(manifest.files, assetNames);
   assert.equal(manifest.default, "stone-texture-wic.bplm");
   assert.match(viewerHtml, /<select id="example-image" disabled><\/select>/);
-  assert.match(viewerSource, /fetch\(BUNDLED_MANIFEST_URL\)/);
-  assert.match(viewerSource, /exampleSelect\.replaceChildren\(\.\.\.options\)/);
+  assert.match(viewerSource, /BpalExampleCatalog\.loadManifest\(\)/);
+  assert.match(viewerSource, /BpalExampleCatalog\.populateSelect\(exampleSelect, manifest\)/);
+  assert.match(viewerHtml, /src="\.\/src\/pages\/bpal-example-catalog\.js\?v=1"/);
+});
+
+test("validates bundled BPAL manifest names in the shared catalog", () => {
+  const manifest = createBpalManifest(path.join(root, "assets", "bpal"));
+  const validated = BpalExampleCatalog.validateManifest(manifest);
+
+  assert.deepEqual(validated, manifest);
+  assert.notEqual(validated.files, manifest.files);
+  assert.throws(
+    () => BpalExampleCatalog.validateManifest({ ...manifest, files: ["../outside.bpal"] }),
+    /Invalid bundled BPAL manifest entries/,
+  );
+  assert.throws(
+    () => BpalExampleCatalog.validateManifest({ ...manifest, default: "missing.bplm" }),
+    /Invalid default bundled BPAL image/,
+  );
 });
 
 test("generates the BPAL manifest before uploading the Pages artifact", () => {
@@ -40,7 +58,7 @@ test("selects the WIC BPLM image by default", () => {
   const manifest = createBpalManifest(path.join(root, "assets", "bpal"));
 
   assert.equal(manifest.default, "stone-texture-wic.bplm");
-  assert.match(viewerSource, /fileName === manifest\.default/);
+  assert.equal(BpalExampleCatalog.validateManifest(manifest).default, manifest.default);
 });
 
 test("decodes every bundled block-palette viewer image", () => {
@@ -86,11 +104,13 @@ test("switches between reconstructed BPLM mip levels", () => {
 test("loads BPLM dependencies before the viewer page", () => {
   const decoderIndex = viewerHtml.indexOf("src/decoders/bpal-texture.js");
   const formatIndex = viewerHtml.indexOf("src/palette/bplm-format.js");
+  const catalogIndex = viewerHtml.indexOf("src/pages/bpal-example-catalog.js");
   const pageIndex = viewerHtml.indexOf("src/pages/bpal-viewer-page.js");
 
   assert.ok(decoderIndex >= 0);
   assert.ok(formatIndex > decoderIndex);
-  assert.ok(pageIndex > formatIndex);
+  assert.ok(catalogIndex > formatIndex);
+  assert.ok(pageIndex > catalogIndex);
 });
 
 test("selects fit by default and toggles between fit and actual size", () => {

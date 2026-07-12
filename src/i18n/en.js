@@ -49,6 +49,7 @@
     "common.matte": "Matte",
     "common.glossy": "Glossy",
     "common.uploadBpal": "Upload BPAL/BPLM",
+    "common.builtInBpal": "Built-in BPAL/BPLM",
     "units.bytes": "{value} B",
     "units.kib": "{value} KiB",
     "units.mib": "{value} MiB",

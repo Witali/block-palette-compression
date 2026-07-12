@@ -15,7 +15,9 @@ const samplerShader = read("src/shaders/cube-bpal-sampler.frag.glsl");
 test("accepts BPLM uploads on both WebGL pages", () => {
   for (const html of [cubeHtml, samplerHtml]) {
     assert.match(html, /accept="\.bpal,\.bplm,application\/octet-stream"/);
+    assert.match(html, /id="bpal-example" disabled/);
     assert.match(html, /src="\.\/src\/palette\/bplm-format\.js\?v=bplm-1"/);
+    assert.match(html, /src="\.\/src\/pages\/bpal-example-catalog\.js\?v=1"/);
   }
 
   for (const source of [cubeSource, samplerSource]) {

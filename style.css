@@ -82,7 +82,8 @@ canvas {
 
 .material-controls legend,
 .relief-control span,
-.cube-count-control > span {
+.cube-count-control > span,
+.bpal-example-control > span {
   margin-bottom: 5px;
   color: #aeb8c4;
   font-size: 11px;
@@ -123,6 +124,7 @@ canvas {
 .material-option input:focus-visible + span,
 #height-strength:focus-visible,
 .cube-count-control select:focus-visible,
+.bpal-example-control select:focus-visible,
 .bpal-upload input:focus-visible + span {
   outline: 2px solid #8fbfff;
   outline-offset: 2px;
@@ -138,7 +140,13 @@ canvas {
   gap: 5px;
 }
 
-.cube-count-control select {
+.bpal-example-control {
+  display: grid;
+  gap: 5px;
+}
+
+.cube-count-control select,
+.bpal-example-control select {
   min-width: 78px;
   height: 31px;
   padding: 0 26px 0 9px;
@@ -147,6 +155,15 @@ canvas {
   background: rgba(28, 33, 40, 0.9);
   color: #eef2f5;
   font: inherit;
+}
+
+.bpal-example-control select {
+  min-width: 190px;
+  max-width: 260px;
+}
+
+.bpal-example-control select:disabled {
+  opacity: 0.48;
 }
 
 .relief-control span {
@@ -213,6 +230,7 @@ canvas {
   .material-controls fieldset,
   .relief-control,
   .cube-count-control,
+  .bpal-example-control,
   .bpal-upload,
   .bpal-status {
     width: 100%;
@@ -224,6 +242,11 @@ canvas {
 
   #height-strength {
     width: 100%;
+  }
+
+  .bpal-example-control select {
+    width: 100%;
+    max-width: none;
   }
 
   .bpal-upload span {
