@@ -28,20 +28,24 @@ body {
 }
 
 .home-header p {
-  max-width: 560px;
+  max-width: 720px;
   margin: 0;
   color: #aab5c2;
 }
 
+.read-description {
+  white-space: nowrap;
+}
+
 .home-header a {
-  color: #86bdfd;
+  color: #78a9d8;
   font-weight: 600;
   text-underline-offset: 3px;
 }
 
 .home-header a:hover,
 .home-header a:focus-visible {
-  color: #b7d8ff;
+  color: #a9cae9;
   outline: none;
 }
 

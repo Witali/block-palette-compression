@@ -61,9 +61,18 @@ test("links the description prompt to the GitHub README", () => {
 
   assert.match(
     header,
-    /<span data-i18n="home\.readDescriptionPrefix">Read the<\/span>\s*<a href="https:\/\/github\.com\/Witali\/block-palette-compression\/blob\/main\/README\.md" data-i18n="home\.readDescriptionLink">description<\/a>\./,
+    /<span class="read-description"><span data-i18n="home\.readDescriptionPrefix">Read the<\/span> <a href="https:\/\/github\.com\/Witali\/block-palette-compression\/blob\/main\/README\.md" data-i18n="home\.readDescriptionLink">description<\/a>\.<\/span>/,
   );
   assert.doesNotMatch(navigation, /github\.com\/Witali\/block-palette-compression/);
+});
+
+test("cache-busts home styles and translation catalogs", () => {
+  const root = path.resolve(__dirname, "..");
+  const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
+
+  assert.match(html, /href="\.\/home\.css\?v=[^"]+"/);
+  assert.match(html, /src="\.\/src\/i18n\/en\.js\?v=[^"]+"/);
+  assert.match(html, /src="\.\/src\/i18n\/ru\.js\?v=[^"]+"/);
 });
 
 test("defines every translation key referenced by localized page scripts", () => {
