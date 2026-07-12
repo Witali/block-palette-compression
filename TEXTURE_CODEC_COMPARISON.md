@@ -1,65 +1,66 @@
-# Сравнение BPAL/BPLM с форматами сжатия текстур
+# BPAL/BPLM compared with texture compression formats
 
-Дата исследования: 12 июля 2026 года.
+[Russian version](./TEXTURE_CODEC_COMPARISON_ru.md)
 
-## Краткий вывод
+Research date: July 12, 2026.
 
-BPAL — интересный экспериментальный формат для непрозрачных LDR-изображений,
-в которых одни и те же цвета или близкие оттенки многократно используются в
-разных частях изображения. Его сильная сторона — гибкий размер файла: общая
-палитра амортизируется на всё изображение, а каждый блок хранит только небольшое
-подмножество этой палитры. Файлы из репозитория занимают от 1,75 до 4,52 бит на
-пиксель без mip-уровней.
+## Executive summary
 
-Однако BPAL/BPLM пока нельзя считать прямой заменой BCn, ETC2 или ASTC. Эти
-форматы декодируются специальным блоком GPU и фильтруются обычным текстурным
-семплером. Текущая WebGL-реализация BPAL раскладывает данные в три несжатых
-атласа и реконструирует каждый texel в fragment shader. Поэтому небольшой файл
-не означает столь же маленькое потребление GPU-памяти или такую же скорость
-семплирования.
+BPAL is an interesting experimental format for opaque LDR images in which the
+same colors or nearby shades are reused across different parts of the image.
+Its main strength is a flexible file size: one shared palette is amortized over
+the complete image, while each block stores only a small subset of that
+palette. Files currently included in the repository range from 1.75 to 4.52
+bits per pixel without mip levels.
 
-Практический итог:
+However, BPAL/BPLM cannot yet be considered a direct replacement for BCn, ETC2,
+or ASTC. Those formats are decoded by dedicated GPU hardware and filtered by a
+regular texture sampler. The current WebGL implementation expands BPAL data
+into three uncompressed atlases and reconstructs every texel in the fragment
+shader. A small file therefore does not imply equally low GPU memory usage or
+equivalent sampling speed.
 
-- для исследовательского кодека, доставки непрозрачных текстур и полностью
-  контролируемого WebGL-рендерера BPAL/BPLM уже представляет интерес;
-- для обычного production-рендеринга предпочтительнее BC7/BC5 на desktop,
-  ASTC на современных mobile GPU, ETC2 как мобильный fallback;
-- для одного переносимого файла лучше всего сравнивать BPLM не с конкретным
-  аппаратным форматом, а с KTX2 + Basis Universal, который транскодируется в
-  поддерживаемый GPU формат при загрузке.
+The practical conclusion is:
 
-## Что именно сравнивается
+- BPAL/BPLM is already useful as a research codec, an opaque texture delivery
+  format, and a format for fully controlled WebGL renderers;
+- BC7/BC5 on desktop, ASTC on modern mobile GPUs, and ETC2 as a mobile fallback
+  remain preferable for conventional production rendering;
+- for a single portable file, BPLM is best compared not with one particular
+  hardware format but with KTX2 + Basis Universal, which is transcoded at load
+  time into a format supported by the target GPU.
 
-У текстурного кодека есть три независимые метрики:
+## What is being compared
 
-1. **Размер при хранении и передаче** — размер `.bpal`, `.bplm`, `.ktx2`,
-   `.dds` и других файлов.
-2. **Размер в GPU-памяти и трафик памяти** — объём данных после подготовки к
-   семплированию.
-3. **Стоимость одного texture sample** — число чтений памяти, операций
-   декодирования и способ фильтрации.
+A texture codec has three independent metrics:
 
-Обычные PNG/JPEG/WebP/AVIF оптимизируют прежде всего первый пункт: после
-декодирования они обычно становятся RGB/RGBA-текстурами. BCn, ETC2, ASTC и
-PVRTC оптимизируют второй и третий пункты: данные остаются сжатыми в GPU-памяти
-и допускают произвольный доступ к небольшому блоку. Это различие отдельно
-подчёркивает [документация Imagination Technologies][img-texture-compression].
+1. **Storage and transmission size** — the size of `.bpal`, `.bplm`, `.ktx2`,
+   `.dds`, and other files.
+2. **GPU memory size and memory traffic** — the amount of data after it has
+   been prepared for sampling.
+3. **Cost of one texture sample** — the number of memory reads, decoding
+   operations, and the filtering method.
 
-BPAL занимает промежуточное положение: его файловое представление компактно,
-но на GPU используется собственная структура данных и программный декодер.
+Conventional PNG/JPEG/WebP/AVIF files primarily optimize the first metric: once
+decoded, they normally become RGB/RGBA textures. BCn, ETC2, ASTC, and PVRTC
+optimize the second and third metrics: data stays compressed in GPU memory and
+supports random access to a small block. This distinction is explicitly
+described by [Imagination Technologies documentation][img-texture-compression].
 
-## Устройство BPAL и BPLM
+BPAL sits between these categories: its file representation is compact, but
+the GPU uses a custom data structure and a programmable decoder.
 
-BPAL v3 хранит:
+## BPAL and BPLM structure
 
-- 14-байтный заголовок;
-- одну общую палитру из 8–4096 цветов в RGB565 или RGB888;
-- для каждого блока размером 4×4–64×64 — 2, 4, 8 или 16 индексов общей
-  палитры;
-- для каждого пикселя — локальный индекс цвета внутри своего блока.
+BPAL v3 stores:
 
-Для изображения `W × H`, блока `S × S`, `L` локальных цветов, `G` общих
-цветов и `C` бит на цвет размер BPAL равен:
+- a 14-byte header;
+- one shared palette of 8–4096 colors in RGB565 or RGB888;
+- 2, 4, 8, or 16 shared-palette indices for every 4×4–64×64 block;
+- one local color index for every pixel in its block.
+
+For a `W × H` image, an `S × S` block, `L` local colors, `G` shared colors,
+and `C` bits per color, BPAL size is:
 
 ```text
 14 bytes
@@ -68,292 +69,292 @@ BPAL v3 хранит:
 + W × H × log2(L) bits
 ```
 
-При больших изображениях поддерживаемые настройки дают примерно от 1,001 до
-16 бит на пиксель без учёта одноразовой общей палитры и заголовка. Это диапазон
-параметров, а не диапазон одинакового качества.
+For large images, the supported settings produce approximately 1.001 to 16
+bits per pixel before the one-time shared palette and header. This is a range
+of configuration rates, not a range of equivalent quality levels.
 
-BPLM v1 добавляет к полноценному базовому BPAL заранее рассчитанную mip-цепочку.
-Ширина, высота и размер блока на каждом уровне уменьшаются вдвое. Все уровни
-используют общую палитру базового изображения. Число локальных цветов
-ограничивается числом пикселей блока. Когда эти числа равны, уровень хранит
-только прямой индекс общей палитры для каждого пикселя, без локальной палитры и
-локальных индексов.
+BPLM v1 adds a precomputed mip chain to one complete base BPAL image. Width,
+height, and block size are halved at every level. All levels use the palette
+from the base image. The number of local colors is limited to the number of
+pixels in a block. When those values are equal, the level stores only one
+direct shared-palette index per pixel, with no local palette or local indices.
 
-Подробности реализации находятся в [описании кодека](./BLOCK_PALETTE_README.md),
-[спецификации BPAL v3](./BLOCK_PALETTE_FORMAT.md) и
-[спецификации BPLM v1](./BPLM_FORMAT.md).
+Implementation details are available in the [codec description](./BLOCK_PALETTE_README.md),
+the [BPAL v3 specification](./BLOCK_PALETTE_FORMAT.md), and the
+[BPLM v1 specification](./BPLM_FORMAT.md).
 
-## Общая таблица
+## Overall comparison
 
-Ставки ниже указаны для базового mip-уровня. Полная стандартная mip-цепочка
-фиксированного bpp обычно добавляет около одной трети объёма. У BPAL/BPLM
-соотношение другое из-за общей палитры, заголовков, уменьшения блока и прямого
-режима малых mip-уровней.
+The rates below describe the base mip level. A complete conventional mip chain
+at a fixed bpp usually adds about one third to the size. The ratio differs for
+BPAL/BPLM because of the shared palette, headers, shrinking block size, and
+direct mode in small mip levels.
 
-| Формат | Ставка базового уровня | Каналы и диапазон | Семплирование GPU | Сильные стороны | Ограничения |
+| Format | Base-level rate | Channels and range | GPU sampling | Strengths | Limitations |
 | --- | ---: | --- | --- | --- | --- |
-| **BPAL v3** | Переменная; практически 1,75–4,52 bpp в текущем наборе файлов | RGB LDR; RGB565 или RGB888; без alpha | Только собственный shader/предварительная реконструкция | Гибкая ставка; общая палитра хорошо использует повторение цветов между блоками; произвольные размеры; простой детерминированный bitstream | Нет аппаратного декодера; нет alpha/HDR/R/RG-режимов; качество зависит от глобальной квантизации и фиксированного числа цветов блока; нестандартный формат |
-| **BPLM v1** | Переменная; 3,175 bpp у `stone-texture-wic.bplm` вместе с 11 уровнями | Как BPAL | Собственный shader; mip-фильтрация реализована вручную | Готовая mip-цепочка; одна общая палитра; прямые индексы на малых уровнях | Base level расположен первым, что неудобно для low-mip-first streaming; палитра базового уровня ограничивает все mip; текущий shader поддерживает не более 16 уровней |
-| **BC1 / DXT1** | 4 bpp (8 bytes на 4×4) | RGB или RGB + 1-bit alpha | Нативное | Очень дешёвый и широко используемый desktop-формат; вдвое меньше BC3/BC7 | Низкая точность endpoints RGB565; заметные артефакты на градиентах; только 1-bit alpha |
-| **BC2/BC3 / DXT3/DXT5** | 8 bpp (16 bytes на 4×4) | RGB + alpha | Нативное | Стандартный desktop RGBA; BC3 хорошо подходит для плавной alpha по сравнению с BC1 | Цветовая часть сохраняет ограничения BC1; BC2 обычно менее выгоден BC3; фиксированные 8 bpp |
-| **BC4 / BC5 (RGTC)** | 4 / 8 bpp | Один / два signed или unsigned канала | Нативное | Хороший выбор для масок, height maps и normal maps; не тратит место на ненужные RGB-каналы | Не является универсальным RGB/RGBA-кодеком; WebGL требует расширение `EXT_texture_compression_rgtc` |
-| **BC6H / BC7 (BPTC)** | 8 bpp | BC6H: HDR RGB без alpha; BC7: LDR RGB/RGBA | Нативное | BC7 даёт высокое качество LDR и много режимов блока; BC6H закрывает HDR | Более сложное и медленное кодирование; фиксированные 8 bpp; в WebGL требуется `EXT_texture_compression_bptc` |
-| **ETC2 / EAC** | 4 bpp для RGB, punch-through alpha и R11; 8 bpp для RGBA и RG11 | RGB/RGBA, signed/unsigned R/RG | Нативное | Семейство core-форматов OpenGL ES 3.0; подходит для mobile; отдельные форматы данных и alpha | Менее гибкая ставка, чем ASTC; качество 4 bpp зависит от контента; в WebGL доступность проверяется через расширение |
-| **ASTC 2D** | 8,00–0,89 bpp, блоки от 4×4 до 12×12 | R/RG/RGB/RGBA, LDR/sRGB; возможен HDR profile | Нативное | Самый широкий выбор quality/size среди стандартных GPU-форматов; alpha включена в тот же 128-bit block; режимы выбираются по блокам | Поддержка зависит от GPU/profile; кодирование сложное; самые крупные блоки резко снижают качество мелких деталей |
-| **PVRTC1** | 2 или 4 bpp | RGB/RGBA | Нативное на поддерживаемом PowerVR | Очень низкая фиксированная ставка, включая RGBA | В WebGL расширение объявлено deprecated; требуются power-of-two размеры; Khronos рекомендует ETC или ASTC |
-| **KTX2 + Basis Universal** | Переменная передача; UASTC LDR без supercompression — 8 bpp, ETC1S ориентирован на меньший размер | Переносимые LDR RGB/RGBA; современная реализация имеет и HDR-режимы | Сначала transcode, затем нативный target format | Один распространяемый файл для разных GPU; mip, cubemap, array, streaming и metadata; target получает аппаратную фильтрацию | Нельзя семплировать исходный ETC1S/UASTC supercompressed stream напрямую; нужны transcoder, временная память и время загрузки; итоговый GPU-размер определяется target format |
-| **RGBA8 без сжатия** | 32 bpp | RGBA LDR | Нативное | Точное и простое представление, универсальная поддержка | В 4–36 раз больше типичных сжатых текстурных форматов; высокий расход bandwidth и cache |
+| **BPAL v3** | Variable; 1.75–4.52 bpp in the current file set | LDR RGB; RGB565 or RGB888; no alpha | Custom shader or prior reconstruction only | Flexible rate; the shared palette exploits color reuse between blocks; arbitrary dimensions; simple deterministic bitstream | No hardware decoder; no alpha/HDR/R/RG modes; quality depends on global quantization and a fixed number of block colors; nonstandard format |
+| **BPLM v1** | Variable; `stone-texture-wic.bplm` is 3.175 bpp with 11 levels | Same as BPAL | Custom shader; mip filtering is implemented manually | Ready-to-use mip chain; one shared palette; direct indices at small levels | The base level comes first, which is inconvenient for low-mip-first streaming; the base palette constrains every mip; the current shader supports at most 16 levels |
+| **BC1 / DXT1** | 4 bpp (8 bytes per 4×4 block) | RGB or RGB + 1-bit alpha | Native | Very cheap and widely used desktop format; half the size of BC3/BC7 | Low-precision RGB565 endpoints; visible gradient artifacts; only 1-bit alpha |
+| **BC2/BC3 / DXT3/DXT5** | 8 bpp (16 bytes per 4×4 block) | RGB + alpha | Native | Standard desktop RGBA; BC3 handles smooth alpha better than BC1 | The color part retains BC1 limitations; BC2 is usually less useful than BC3; fixed 8 bpp |
+| **BC4 / BC5 (RGTC)** | 4 / 8 bpp | One / two signed or unsigned channels | Native | Good choice for masks, height maps, and normal maps; does not spend bits on unused RGB channels | Not a general RGB/RGBA codec; WebGL requires `EXT_texture_compression_rgtc` |
+| **BC6H / BC7 (BPTC)** | 8 bpp | BC6H: HDR RGB without alpha; BC7: LDR RGB/RGBA | Native | BC7 provides high LDR quality and multiple block modes; BC6H covers HDR | More complex and slower encoding; fixed 8 bpp; WebGL requires `EXT_texture_compression_bptc` |
+| **ETC2 / EAC** | 4 bpp for RGB, punch-through alpha, and R11; 8 bpp for RGBA and RG11 | RGB/RGBA, signed/unsigned R/RG | Native | OpenGL ES 3.0 core format family; suitable for mobile; separate data and alpha formats | Less rate flexibility than ASTC; 4 bpp quality depends on content; WebGL availability must be checked through an extension |
+| **ASTC 2D** | 8.00–0.89 bpp, blocks from 4×4 to 12×12 | R/RG/RGB/RGBA, LDR/sRGB; optional HDR profile | Native | Widest quality/size choice among standard GPU formats; alpha shares the same 128-bit block; modes are selected per block | Support depends on the GPU/profile; complex encoding; the largest blocks sharply reduce fine-detail quality |
+| **PVRTC1** | 2 or 4 bpp | RGB/RGBA | Native on supported PowerVR hardware | Very low fixed rate, including RGBA | The WebGL extension is deprecated; requires power-of-two dimensions; Khronos recommends ETC or ASTC |
+| **KTX2 + Basis Universal** | Variable transmission rate; UASTC LDR without supercompression is 8 bpp, while ETC1S targets smaller files | Portable LDR RGB/RGBA; the current implementation also includes HDR modes | Transcode first, then sample a native target format | One distributable file for different GPUs; mip, cubemap, array, streaming, and metadata support; the target gets hardware filtering | The original ETC1S/UASTC supercompressed stream cannot be sampled directly; requires a transcoder, temporary memory, and load time; final GPU size depends on the target format |
+| **Uncompressed RGBA8** | 32 bpp | LDR RGBA | Native | Exact and simple representation with universal support | 4–36 times larger than typical compressed texture formats; high bandwidth and cache usage |
 
-Размеры BC/S3TC подтверждаются [спецификацией WebGL S3TC][webgl-s3tc] и
-[документацией Microsoft][ms-bc]. BC6H и BC7 используют 128-bit block 4×4,
-то есть 8 bpp ([BC6H][ms-bc6h], [BC7][ms-bc7]). ETC2/EAC использует 8- или
-16-байтные блоки 4×4 в зависимости от числа каналов
-([Khronos ETC][webgl-etc]). Каждый ASTC-блок занимает 128 бит, а footprint
-задаёт ставку от 8,00 до 0,89 bpp ([спецификация ASTC][astc-spec]). PVRTC1
-имеет ставки 2 и 4 bpp; его WebGL-расширение теперь помечено deprecated
-([Khronos PVRTC][webgl-pvrtc]).
+BC/S3TC sizes are confirmed by the [WebGL S3TC specification][webgl-s3tc]
+and [Microsoft documentation][ms-bc]. BC6H and BC7 use a 128-bit 4×4 block,
+which is 8 bpp ([BC6H][ms-bc6h], [BC7][ms-bc7]). ETC2/EAC uses 8- or 16-byte
+4×4 blocks depending on the channel count ([Khronos ETC][webgl-etc]). Every
+ASTC block occupies 128 bits, while its footprint sets the rate from 8.00 to
+0.89 bpp ([ASTC specification][astc-spec]). PVRTC1 provides 2 and 4 bpp rates;
+its WebGL extension is now deprecated ([Khronos PVRTC][webgl-pvrtc]).
 
-## Сравнение на текущей WIC-текстуре
+## Comparison on the current WIC texture
 
-Это сравнение **только размеров**, а не качества при одинаковой ошибке. Для
-содержательного rate-distortion вывода каждый конкурентный формат нужно
-закодировать несколькими quality-профилями и измерить одинаковыми метриками.
+This comparison covers **size only**, not quality at equal distortion. A
+meaningful rate-distortion conclusion requires encoding every competing format
+at multiple quality profiles and measuring all of them with the same metrics.
 
-Базовое изображение: `1100 × 734`, 807 400 пикселей, 11 mip-уровней.
+Base image: `1100 × 734`, 807,400 pixels, 11 mip levels.
 
-| Представление полной mip-цепочки | Bytes | Бит на пиксель базового изображения | Примечание |
+| Full mip-chain representation | Bytes | Bits per base-image pixel | Note |
 | --- | ---: | ---: | --- |
-| Embedded BPAL base внутри BPLM | 215 328 | 2,134 | Только уровень 0, блок 16×16, 4 локальных и 256 общих цветов |
-| **Текущий BPLM-файл** | **320 450** | **3,175** | Все 11 уровней; mip-цепочка добавила 48,8% к embedded BPAL base |
-| ASTC 12×12 | 122 080 | 1,210 | Теоретический размер блоков; качество не сопоставлено |
-| ASTC 8×8 | 271 520 | 2,690 | Теоретический размер блоков; качество не сопоставлено |
-| ASTC 6×6 | 484 176 | 4,797 | Теоретический размер блоков; качество не сопоставлено |
-| BC1 / ETC2 RGB | 540 440 | 5,355 | 8 bytes на каждый 4×4 block |
-| BC3 / BC7 / ETC2 RGBA | 1 080 880 | 10,710 | 16 bytes на каждый 4×4 block |
-| **Текущие BPAL GPU-атласы** | **1 328 128** | **13,160** | `MAX_TEXTURE_SIZE = 16384`; индексы распакованы в 8/32-bit texels |
-| RGBA8 | 4 304 352 | 42,649 | Точная сумма пикселей 11 уровней без учёта API alignment |
+| Embedded BPAL base inside BPLM | 215,328 | 2.134 | Level 0 only, 16×16 blocks, 4 local and 256 shared colors |
+| **Current BPLM file** | **320,450** | **3.175** | All 11 levels; the mip chain added 48.8% to the embedded BPAL base |
+| ASTC 12×12 | 122,080 | 1.210 | Theoretical block size; quality was not compared |
+| ASTC 8×8 | 271,520 | 2.690 | Theoretical block size; quality was not compared |
+| ASTC 6×6 | 484,176 | 4.797 | Theoretical block size; quality was not compared |
+| BC1 / ETC2 RGB | 540,440 | 5.355 | 8 bytes for every 4×4 block |
+| BC3 / BC7 / ETC2 RGBA | 1,080,880 | 10.710 | 16 bytes for every 4×4 block |
+| **Current BPAL GPU atlases** | **1,328,128** | **13.160** | `MAX_TEXTURE_SIZE = 16384`; indices are unpacked into 8/32-bit texels |
+| RGBA8 | 4,304,352 | 42.649 | Exact sum of pixels across 11 levels, excluding API alignment |
 
-Почему BPLM-файл 3,175 bpp превращается в 13,160 bpp на GPU:
+Why a 3.175 bpp BPLM file becomes 13.160 bpp on the GPU:
 
-- локальный индекс занимает целый 8-bit texel атласа, даже если в файле ему
-  нужны только 1–4 бита;
-- индекс общей палитры хранится в RGBA8 texel, то есть занимает 32 бита вместо
-  3–12 упакованных бит;
-- общая палитра тоже загружается как RGBA8;
-- последний ряд каждого атласа может содержать небольшой padding.
+- a local index occupies a complete 8-bit atlas texel even when the file needs
+  only 1–4 bits;
+- a shared-palette index is stored in an RGBA8 texel, occupying 32 bits instead
+  of 3–12 packed bits;
+- the shared palette is also uploaded as RGBA8;
+- the final row of each atlas may contain a small amount of padding.
 
-Даже в таком виде GPU-атласы этой текстуры примерно в 3,24 раза меньше полной
-RGBA8 mip-цепочки, но больше BC7 и существенно больше BC1/ETC2 RGB. Это
-показывает главный резерв оптимизации текущей реализации: упаковка файла уже
-эффективна, а GPU-представление — ещё нет.
+Even in this form, the GPU atlases for this texture are approximately 3.24
+times smaller than a complete RGBA8 mip chain, but they are larger than BC7 and
+substantially larger than BC1/ETC2 RGB. This reveals the largest optimization
+opportunity in the current implementation: file packing is already efficient,
+but the GPU representation is not.
 
-## Стоимость семплирования
+## Sampling cost
 
-Для обычного texel текущий BPAL shader выполняет:
+For a regular texel, the current BPAL shader performs:
 
-1. чтение локального индекса пикселя;
-2. чтение соответствующего индекса общей палитры из палитры блока;
-3. чтение итогового RGB из общей палитры.
+1. one read of the pixel's local index;
+2. one read of the corresponding shared-palette index from the block palette;
+3. one read of the final RGB value from the shared palette.
 
-В direct mip-режиме первые два шага объединяются, поэтому остаются два чтения.
-Ручная фильтрация повторяет этот путь:
+In direct mip mode, the first two steps are combined, leaving two reads. Manual
+filtering repeats this path:
 
-| Режим BPAL | Реконструируемых texels | До скольких atlas texture reads для обычного уровня |
+| BPAL mode | Reconstructed texels | Maximum atlas texture reads for a regular level |
 | --- | ---: | ---: |
 | Nearest | 1 | 3 |
 | Bilinear | 4 | 12 |
 | Trilinear | 8 | 24 |
-| 8× anisotropic + trilinear | до 64 | до 192 |
+| 8× anisotropic + trilinear | up to 64 | up to 192 |
 
-Это верхняя оценка из структуры текущего shader; реальные затраты зависят от
-compiler, texture cache, выбранных mip-уровней и direct mode. У BCn/ETC2/ASTC
-shader делает обычный texture sample, а декодирование, bilinear/trilinear и
-anisotropic filtering выполняются текстурным блоком GPU. Следовательно, BPAL
-может выигрывать по размеру передачи, но проигрывать по texture bandwidth,
-числу инструкций и давлению на texture cache.
+This is an upper bound derived from the current shader structure; actual cost
+depends on the compiler, texture cache, selected mip levels, and direct mode.
+With BCn/ETC2/ASTC, the shader performs a regular texture sample while decode,
+bilinear/trilinear filtering, and anisotropic filtering are handled by the GPU
+texture unit. BPAL may therefore win in transmission size while losing in
+texture bandwidth, instruction count, and texture-cache pressure.
 
-Небольшая общая палитра потенциально хорошо кешируется. С другой стороны,
-чтения pixel atlas, block-palette atlas и global-palette atlas образуют три
-разных потока доступа, тогда как стандартный block codec читает локальный
-64/128-bit блок.
+A small shared palette may cache well. On the other hand, reads from the pixel
+atlas, block-palette atlas, and shared-palette atlas create three independent
+access streams, while a standard block codec reads one local 64/128-bit block.
 
-## Плюсы BPAL/BPLM
+## BPAL/BPLM advantages
 
-### Формат и степень сжатия
+### Format and compression ratio
 
-- Переменная ставка регулируется независимо размером блока, числом локальных
-  цветов, размером общей палитры и форматом цвета.
-- Общая палитра устраняет повторное хранение близких endpoints в каждом блоке.
-- Двойная индексация особенно эффективна для иллюстраций, stylized art,
-  интерфейсов, voxel/pixel-art-подобных материалов и текстур с повторяющейся
-  цветовой гаммой.
-- Bitstream плотно упакован без промежуточного byte alignment.
-- Поддерживаются произвольные размеры изображения, включая NPOT.
-- BPLM не дублирует глобальную палитру на каждом mip-уровне.
-- Direct mode избегает бессмысленной локальной индексации, когда каждому
-  пикселю блока можно назначить собственный глобальный индекс.
+- Rate is independently controlled by block size, local color count, shared
+  palette size, and color format.
+- The shared palette avoids storing similar endpoints repeatedly in every
+  block.
+- Double indexing is particularly effective for illustrations, stylized art,
+  user interfaces, voxel/pixel-art-like materials, and textures with a
+  recurring color gamut.
+- The bitstream is tightly packed without intermediate byte alignment.
+- Arbitrary image dimensions, including NPOT, are supported.
+- BPLM does not duplicate the shared palette at every mip level.
+- Direct mode avoids pointless local indexing when every block pixel can have
+  its own shared-palette index.
 
-### Управляемость качества
+### Quality controls
 
-- Encoder предлагает RGB и OKLab, K-means/K-medians, ordered и
+- The encoder provides RGB and OKLab, K-means/K-medians, ordered dithering, and
   Floyd–Steinberg dithering.
-- Можно выбирать компромисс «точность — разнообразие», что полезно для редких,
-  но визуально важных цветов.
-- Автопоиск строит Pareto-front по размеру и RMSE вместо одного жёсткого
-  профиля.
-- Палитры блоков доступны для визуализации и анализа, поэтому артефакты проще
-  объяснять, чем у многорежимных BC7/ASTC blocks.
+- The accuracy–diversity tradeoff can preserve rare but visually important
+  colors.
+- Automatic search builds a size/RMSE Pareto front instead of selecting one
+  hard-coded profile.
+- Block palettes can be visualized and inspected, making artifacts easier to
+  explain than those produced by multi-mode BC7/ASTC blocks.
 
-### Реализация и переносимость эксперимента
+### Implementation and experimental portability
 
-- Формат не зависит от наличия S3TC/ASTC/ETC2 extension: достаточно обычных
-  WebGL-текстур и программного shader.
-- CPU decoder концептуально прост: два индексных lookup и чтение RGB.
-- BPLM демонстрирует nearest, bilinear, trilinear и ограниченную anisotropic
-  filtering без зависимости от аппаратного compressed format.
-- Одна и та же файловая структура даёт одинаковые декодированные цвета на
-  разных GPU, если shader и цветовые преобразования совпадают.
+- The format does not depend on an S3TC/ASTC/ETC2 extension; ordinary WebGL
+  textures and a programmable shader are sufficient.
+- The CPU decoder is conceptually simple: two index lookups followed by an RGB
+  read.
+- BPLM demonstrates nearest, bilinear, trilinear, and limited anisotropic
+  filtering without depending on a hardware compressed format.
+- The same file structure yields the same decoded colors across GPUs when the
+  shader and color conversions match.
 
-## Минусы и риски BPAL/BPLM
+## BPAL/BPLM disadvantages and risks
 
-### Ограничения данных
+### Data limitations
 
-- Alpha channel отсутствует. Это исключает foliage, decals, particles, UI
-  atlases, волосы, дым и многие другие распространённые игровые текстуры.
-- Нет HDR, signed channels, R/RG-профилей и специальных метрик normal maps.
-- Нет явных metadata для color primaries, transfer function, orientation,
-  swizzle и premultiplied alpha.
-- Один тип RGB-квантования не заменяет специализированные BC4/BC5/EAC R/RG и
-  BC6H/ASTC HDR.
+- There is no alpha channel. This excludes foliage, decals, particles, UI
+  atlases, hair, smoke, and many other common game textures.
+- There is no HDR, no signed-channel support, no R/RG profiles, and no
+  specialized normal-map metric.
+- There is no explicit metadata for color primaries, transfer function,
+  orientation, swizzle, or premultiplied alpha.
+- A single RGB quantization model cannot replace specialized BC4/BC5/EAC R/RG
+  formats or BC6H/ASTC HDR.
 
-### Артефакты качества
+### Quality artifacts
 
-- Все цвета сначала ограничиваются одной глобальной палитрой. Градиенты,
-  фотографии, шум, roughness и мелкие цветовые вариации могут потребовать
-  большую палитру или проявить banding.
-- Каждый блок затем ограничивается ещё и локальным подмножеством. На границах
-  блоков возможны discontinuities и прямоугольные структуры.
-- Увеличение блока снижает служебную стоимость, но оставляет меньше цветов на
-  большую площадь; увеличение локальной палитры повышает bpp.
-- Floyd–Steinberg намеренно не переносит ошибку между блоками, поэтому не может
-  полностью скрыть смену локальной палитры.
-- Все mip-уровни BPLM привязаны к палитре base level. Цвет, важный только после
-  downsampling, может быть представлен хуже, если построение общей палитры не
-  учитывало всю mip-цепочку.
+- All colors are first restricted to one shared palette. Gradients,
+  photographs, noise, roughness, and small color variations may need a large
+  palette or exhibit banding.
+- Every block is then restricted to a local subset. Discontinuities and
+  rectangular patterns may appear at block boundaries.
+- A larger block reduces overhead but leaves fewer colors for a larger area;
+  increasing the local palette raises bpp.
+- Floyd–Steinberg error intentionally does not cross block boundaries, so it
+  cannot completely hide local-palette transitions.
+- Every BPLM mip level is tied to the base-level palette. A color that becomes
+  important only after downsampling may be represented poorly when shared
+  palette construction did not account for the full mip chain.
 
-### GPU-производительность
+### GPU performance
 
-- Нет аппаратного decode path и обычной compressed texture filtering.
-- Один BPAL sample требует нескольких зависимых texture reads. Следующий адрес
-  вычисляется из результата предыдущего чтения, что ограничивает параллелизм.
-- Bilinear/trilinear/anisotropic filtering умножает число программных
-  реконструкций texel.
-- Текущие GPU-атласы не сохраняют плотную битовую упаковку файла.
-- Три атласа используют несколько texture units и создают отдельные cache
+- There is no hardware decode path or conventional compressed-texture
+  filtering.
+- One BPAL sample requires several dependent texture reads. Each next address
+  is calculated from the previous read, limiting parallelism.
+- Bilinear, trilinear, and anisotropic filtering multiply the number of
+  programmatically reconstructed texels.
+- The current GPU atlases do not retain the file's dense bit packing.
+- Three atlases consume multiple texture units and create separate cache
   working sets.
-- Максимальный размер BPAL ограничивается не только исходными размерами, но и
-  тем, помещаются ли линейные массивы индексов в разрешённый 2D atlas.
+- Maximum BPAL size is constrained not only by source dimensions but also by
+  whether the linear index arrays fit into the permitted 2D atlas dimensions.
 
-### Формат и экосистема
+### Format and ecosystem
 
-- Нет нативной поддержки в WebGL, Vulkan, Direct3D, Metal, игровых движках,
-  редакторах и content pipelines.
-- Нет стандартного контейнера для cubemap, texture arrays, 3D textures,
-  animation, metadata и level index.
-- BPLM кладёт base level перед меньшими mip. В отличие от KTX2, который
-  располагает уровни в порядке, удобном для отправки малых mip первыми, BPLM
-  нельзя эффективно начать показывать с low resolution без чтения данных перед
-  ним.
-- Совместимость формата и shader полностью лежит на приложении.
-- Пока нет большого независимого benchmark corpus и сравнения при одинаковых
-  SSIM/PSNR/LPIPS, поэтому нельзя утверждать, что 2 bpp BPAL лучше или хуже
-  2 bpp ASTC/PVRTC/Basis только по размеру.
+- There is no native support in WebGL, Vulkan, Direct3D, Metal, game engines,
+  editors, or content pipelines.
+- There is no standard container for cubemaps, texture arrays, 3D textures,
+  animation, metadata, or a level index.
+- BPLM places the base level before smaller mips. Unlike KTX2, which orders
+  levels to support sending small mips first, BPLM cannot efficiently start
+  with a low-resolution image without reading the preceding data.
+- Format/shader compatibility is entirely the application's responsibility.
+- There is not yet a large independent benchmark corpus with equal-rate
+  SSIM/PSNR/LPIPS comparisons, so size alone cannot establish whether 2 bpp
+  BPAL is better or worse than 2 bpp ASTC/PVRTC/Basis.
 
-## Где BPAL наиболее уместен
+## Where BPAL fits best
 
-Хорошие кандидаты:
+Good candidates:
 
-- непрозрачные albedo/emissive-текстуры с ограниченной или повторяющейся
-  палитрой;
-- stylized art, карты, диаграммы, UI без alpha, pixel/voxel art;
-- texture collections, для которых экономия download/storage важнее стоимости
-  fragment shader;
-- исследование глобальных и локальных palette models;
-- software rendering или платформы, где приложение полностью контролирует
-  представление и декодер.
+- opaque albedo/emissive textures with a limited or recurring palette;
+- stylized art, maps, diagrams, alpha-free UI, and pixel/voxel art;
+- texture collections where download/storage savings matter more than fragment
+  shader cost;
+- research into shared and local palette models;
+- software rendering or platforms where the application fully controls the
+  representation and decoder.
 
-Плохие кандидаты в текущем виде:
+Poor candidates in the current implementation:
 
-- alpha textures: foliage, decals, particles, fonts/UI atlases;
-- HDR environment maps и lightmaps;
-- normal maps, где важна angular error, и одно-/двухканальные data maps;
-- высокочастотный шум, film grain и фотографии с плавными градиентами;
-- fill-rate-bound сцены с trilinear/anisotropic filtering;
-- универсальные игровые assets, которые должны загружаться стандартным API без
-  специального shader.
+- alpha textures such as foliage, decals, particles, and font/UI atlases;
+- HDR environment maps and lightmaps;
+- normal maps, where angular error matters, and one-/two-channel data maps;
+- high-frequency noise, film grain, and photographs with smooth gradients;
+- fill-rate-bound scenes with trilinear or anisotropic filtering;
+- universal game assets that must load through standard APIs without a custom
+  shader.
 
-## Что улучшать в первую очередь
+## Highest-priority improvements
 
-1. **Добавить alpha и channel profiles.** Минимум: RGB+A, R и RG, signed RG.
-   Для normal maps оптимизировать angular error, а не RGB RMSE.
-2. **Сохранить плотность на GPU.** Исследовать packed index textures,
-   `R8UI`/`R16UI` в WebGL2, несколько индексов на texel и более компактный
-   block-palette atlas. Измерять не только bytes, но и дополнительную стоимость
+1. **Add alpha and channel profiles.** At minimum: RGB+A, R, RG, and signed RG.
+   Optimize angular error rather than RGB RMSE for normal maps.
+2. **Preserve density on the GPU.** Evaluate packed index textures,
+   `R8UI`/`R16UI` in WebGL2, multiple indices per texel, and a more compact
+   block-palette atlas. Measure both byte savings and the additional cost of
    bit extraction.
-3. **Добавить быстрый runtime path.** Рассмотреть транскодирование BPAL/BPLM в
-   BC/ETC2/ASTC при загрузке. Это потеряет уникальный shader decode, но даст
-   нативную фильтрацию и понятный GPU footprint.
-4. **Строить глобальную палитру с учётом mip-цепочки.** Веса цветов должны
-   учитывать все уровни, иначе base image монополизирует palette budget.
-5. **Переработать BPLM для streaming.** Добавить level index с offsets/lengths и
-   хранить малые mip раньше либо разрешить независимый порядок уровней.
-6. **Добавить metadata и типы ресурсов.** Color space, orientation, swizzle,
-   cubemap, arrays, 3D textures. Практичный вариант — определить перенос BPAL в
-   KTX2 как vendor/transcodable payload вместо расширения собственного
-   контейнера во всех направлениях.
-7. **Провести честный rate-distortion benchmark.** Один corpus, одинаковые mip,
-   несколько ставок, PSNR/SSIM/LPIPS, alpha-weighted error, angular normal-map
-   error, encode time, load/transcode time, GPU bytes и GPU frame time.
+3. **Add a fast runtime path.** Consider transcoding BPAL/BPLM into BC/ETC2/ASTC
+   at load time. This gives up the unique shader decoder but enables native
+   filtering and a predictable GPU footprint.
+4. **Build the shared palette with the mip chain in mind.** Color weights must
+   include all levels; otherwise the base image monopolizes the palette budget.
+5. **Redesign BPLM for streaming.** Add a level index with offsets/lengths and
+   store small mips first, or permit an independent level order.
+6. **Add metadata and resource types.** Color space, orientation, swizzle,
+   cubemaps, arrays, and 3D textures. A practical option is to define BPAL as a
+   vendor/transcodable KTX2 payload instead of growing the custom container in
+   every direction.
+7. **Run a fair rate-distortion benchmark.** Use one corpus, identical mips,
+   several rates, PSNR/SSIM/LPIPS, alpha-weighted error, angular normal-map
+   error, encode time, load/transcode time, GPU bytes, and GPU frame time.
 
-## Рекомендуемая матрица выбора
+## Recommended selection matrix
 
-| Задача | Практичный первый выбор | Роль BPAL/BPLM |
+| Task | Practical first choice | BPAL/BPLM role |
 | --- | --- | --- |
-| Desktop albedo высокого качества | BC7 | Экспериментальная альтернатива при повторяемой палитре и жёстком download budget |
-| Desktop normal map | BC5 | Пока не подходит без RG/angular профиля |
-| HDR environment/lightmap | BC6H или ASTC HDR | Пока не подходит |
-| Современный mobile | ASTC 6×6/8×8, профиль по качеству | Может дать меньший файл, но требует дорогого shader path |
-| Mobile fallback | ETC2/EAC | BPAL полезен, если расширение недоступно и custom shader приемлем |
-| Один asset для Web/разных GPU | KTX2 + Basis Universal | Ближайший стратегический конкурент BPLM |
-| Непрозрачная stylized/paletted texture | Сравнить BPAL с ASTC/Basis на corpus | Наиболее сильный сценарий BPAL |
-| Минимальная runtime стоимость | Нативный BC/ETC2/ASTC | BPAL проигрывает до появления transcode/native path |
+| High-quality desktop albedo | BC7 | Experimental alternative for recurring palettes and a strict download budget |
+| Desktop normal map | BC5 | Not suitable yet without an RG/angular profile |
+| HDR environment/lightmap | BC6H or ASTC HDR | Not suitable yet |
+| Modern mobile | ASTC 6×6/8×8, selected by quality | May produce a smaller file but requires an expensive shader path |
+| Mobile fallback | ETC2/EAC | Useful when the extension is unavailable and a custom shader is acceptable |
+| One asset for Web/different GPUs | KTX2 + Basis Universal | BPLM's closest strategic competitor |
+| Opaque stylized/paletted texture | Compare BPAL with ASTC/Basis on a corpus | BPAL's strongest use case |
+| Minimum runtime cost | Native BC/ETC2/ASTC | BPAL loses until a transcode/native path is available |
 
-## Методологические ограничения
+## Methodological limitations
 
-- В исследовании сравниваются спецификации и текущая реализация репозитория,
-  а не результаты общего encoder benchmark.
-- bpp не является мерой качества. Два формата одинакового размера могут иметь
-  разный PSNR/SSIM и разные типы артефактов.
-- Теоретические размеры BC/ETC2/ASTC для WIC рассчитаны из размеров блоков с
-  округлением каждого mip вверх до целого блока; сами изображения этими
-  encoder не кодировались.
-- GPU-числа BPAL относятся к текущему WebGL atlas layout и лимиту текстуры
-  16384. Другая упаковка изменит результат.
-- Поддержка форматов зависит от API, GPU, драйвера и WebGL extensions; её нужно
-  определять во время выполнения.
+- This study compares specifications and the current repository implementation,
+  not the results of a shared encoder benchmark.
+- bpp is not a quality metric. Two equally sized formats may have different
+  PSNR/SSIM values and different artifact types.
+- Theoretical BC/ETC2/ASTC sizes for the WIC texture are calculated from block
+  sizes, rounding every mip up to a complete block; the image was not actually
+  encoded by those encoders.
+- BPAL GPU figures refer to the current WebGL atlas layout and a texture limit
+  of 16384. A different packing scheme will change the result.
+- Format support depends on the API, GPU, driver, and WebGL extensions and must
+  be detected at runtime.
 
-## Источники
+## Sources
 
-Локальная спецификация и реализация:
+Local specification and implementation:
 
-- [Описание BPAL и encoder](./BLOCK_PALETTE_README.md)
+- [BPAL and encoder description](./BLOCK_PALETTE_README.md)
 - [BPAL v3](./BLOCK_PALETTE_FORMAT.md)
 - [BPLM v1](./BPLM_FORMAT.md)
-- [Создание mip и GPU-атласов](./src/decoders/bpal-texture.js)
+- [Mip and GPU atlas construction](./src/decoders/bpal-texture.js)
 - [BPAL mip sampler shader](./src/shaders/cube-bpal-sampler.frag.glsl)
 - [BPLM encoder/decoder](./src/palette/bplm-format.js)
 
-Официальные внешние источники:
+Official external sources:
 
 - [Microsoft: Block Compression][ms-bc]
 - [Microsoft: BC6H][ms-bc6h]
