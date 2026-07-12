@@ -11,6 +11,9 @@ const cubeSource = read("src/pages/cube-page.js");
 const samplerSource = read("src/pages/cube-bpal-sampler-page.js");
 const rendererSource = read("src/core/textured-cube.js");
 const samplerShader = read("src/shaders/cube-bpal-sampler.frag.glsl");
+const compactVertexShader = read("src/shaders/cube-webgl2.vert.glsl");
+const compactFragmentShader = read("src/shaders/cube-webgl2.frag.glsl");
+const compactRendererSource = read("src/core/textured-cube-webgl2.js");
 
 test("accepts BPLM uploads on both WebGL pages", () => {
   for (const html of [cubeHtml, samplerHtml]) {
@@ -59,6 +62,16 @@ test("keeps the programmable BPAL sampler shader-only without decoded RGBA textu
   assert.match(samplerSource, /renderer\.discardColorTexture\(\)/);
   assert.doesNotMatch(samplerSource, /renderer\.loadTexturePixels\(/);
   assert.match(samplerSource, /RGBA not uploaded/);
+});
+
+test("uses packed R32UI bitstreams in the optional WebGL2 renderer", () => {
+  assert.match(compactRendererSource, /compactBpal: true/);
+  assert.match(compactVertexShader, /#version 300 es/);
+  assert.match(compactFragmentShader, /uniform highp usampler2D uBpalPixelIndices/);
+  assert.match(compactFragmentShader, /fetchPackedValue\(/);
+  assert.match(compactFragmentShader, /texelFetch\(/);
+  assert.match(rendererSource, /gl\.R32UI/);
+  assert.match(rendererSource, /gl\.RED_INTEGER/);
 });
 
 function read(fileName) {

@@ -6,6 +6,7 @@ const {
   decode,
   createMipLevels,
   createShaderTextureData,
+  createCompactShaderTextureData,
   createMipmappedShaderTextureData,
 } = require("../src/decoders/bpal-texture.js");
 
@@ -79,6 +80,57 @@ test("packs BPAL double indices into WebGL shader atlases", () => {
   assert.deepEqual(
     Array.from(shaderTexture.paletteAtlas.data.slice(0, 8)),
     [12, 34, 56, 255, 210, 180, 90, 255]
+  );
+});
+
+test("bit-packs BPAL indices and palette colors for WebGL2 integer textures", () => {
+  const texture = decode(encodeBlockPaletteFile({
+    width: 2,
+    height: 2,
+    blockSize: 2,
+    localColorCount: 2,
+    globalColorCount: 2,
+    paletteColorBits: 24,
+    paletteMode: "explicit",
+    palette: [
+      { r: 12, g: 34, b: 56 },
+      { r: 210, g: 180, b: 90 },
+    ],
+    blockPaletteIndices: new Uint16Array([0, 1]),
+    pixelIndices: new Uint8Array([0, 1, 1, 0]),
+  }));
+  const compact = createCompactShaderTextureData(texture, 4);
+
+  assert.equal(compact.compact, true);
+  assert.equal(compact.localIndexBits, 1);
+  assert.equal(compact.globalIndexBits, 1);
+  assert.equal(compact.paletteColorBits, 24);
+  assert.ok(compact.pixelAtlas.data instanceof Uint32Array);
+  assert.deepEqual(
+    Array.from({ length: 4 }, (_, index) => readPackedValue(
+      compact.pixelAtlas.data,
+      index,
+      compact.localIndexBits
+    )),
+    [0, 1, 1, 0]
+  );
+  assert.deepEqual(
+    Array.from({ length: 2 }, (_, index) => readPackedValue(
+      compact.blockPaletteAtlas.data,
+      index,
+      compact.globalIndexBits
+    )),
+    [0, 1]
+  );
+  assert.equal(
+    readPackedValue(compact.paletteAtlas.data, 0, 24),
+    12 | 34 << 8 | 56 << 16
+  );
+  assert.equal(
+    compact.gpuBytes,
+    compact.pixelAtlas.data.byteLength +
+      compact.blockPaletteAtlas.data.byteLength +
+      compact.paletteAtlas.data.byteLength
   );
 });
 
@@ -186,4 +238,17 @@ function test(name, callback) {
     console.error(`not ok - ${name}`);
     throw error;
   }
+}
+
+function readPackedValue(words, valueIndex, bitsPerValue) {
+  const bitOffset = valueIndex * bitsPerValue;
+  const wordIndex = Math.floor(bitOffset / 32);
+  const wordBit = bitOffset % 32;
+  let value = words[wordIndex] >>> wordBit;
+
+  if (wordBit + bitsPerValue > 32) {
+    value |= words[wordIndex + 1] << (32 - wordBit);
+  }
+
+  return value & (2 ** bitsPerValue - 1);
 }

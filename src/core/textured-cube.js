@@ -93,11 +93,17 @@
       this.texture = this.fallbackTexture;
       this.heightTexture = createSolidTexture(gl, [128, 128, 128, 255], 1);
       this.specularTexture = createSolidTexture(gl, [255, 255, 255, 255], 2);
-      this.bpalTextures = {
-        pixelIndices: createSolidTexture(gl, [0, 0, 0, 255], 3),
-        blockPalettes: createSolidTexture(gl, [0, 0, 0, 255], 4),
-        globalPalette: createSolidTexture(gl, [120, 120, 120, 255], 5),
-      };
+      this.bpalTextures = this.options.compactBpal
+        ? {
+          pixelIndices: createSolidUintTexture(gl, 0, 3),
+          blockPalettes: createSolidUintTexture(gl, 0, 4),
+          globalPalette: createSolidUintTexture(gl, 0, 5),
+        }
+        : {
+          pixelIndices: createSolidTexture(gl, [0, 0, 0, 255], 3),
+          blockPalettes: createSolidTexture(gl, [0, 0, 0, 255], 4),
+          globalPalette: createSolidTexture(gl, [120, 120, 120, 255], 5),
+        };
       this.bpalTextureInfo = null;
       this.bpalShaderTextureEnabled = false;
       this.bpalSamplerOptions = {
@@ -214,9 +220,9 @@
       }
 
       try {
-        uploadDataTexture(gl, bpalTextures.pixelIndices, shaderData.pixelAtlas, 3);
-        uploadDataTexture(gl, bpalTextures.blockPalettes, shaderData.blockPaletteAtlas, 4);
-        uploadDataTexture(gl, bpalTextures.globalPalette, shaderData.paletteAtlas, 5);
+        uploadBpalDataTexture(gl, bpalTextures.pixelIndices, shaderData.pixelAtlas, 3);
+        uploadBpalDataTexture(gl, bpalTextures.blockPalettes, shaderData.blockPaletteAtlas, 4);
+        uploadBpalDataTexture(gl, bpalTextures.globalPalette, shaderData.paletteAtlas, 5);
       } catch (error) {
         deleteTextureSet(gl, bpalTextures);
         throw error;
@@ -272,9 +278,9 @@
       }
 
       try {
-        uploadDataTexture(gl, textures.pixelIndices, shaderData.pixelAtlas, 3);
-        uploadDataTexture(gl, textures.blockPalettes, shaderData.blockPaletteAtlas, 4);
-        uploadDataTexture(gl, textures.globalPalette, shaderData.paletteAtlas, 5);
+        uploadBpalDataTexture(gl, textures.pixelIndices, shaderData.pixelAtlas, 3);
+        uploadBpalDataTexture(gl, textures.blockPalettes, shaderData.blockPaletteAtlas, 4);
+        uploadBpalDataTexture(gl, textures.globalPalette, shaderData.paletteAtlas, 5);
       } catch (error) {
         deleteTextureSet(gl, textures);
         throw error;
@@ -305,6 +311,32 @@
       gl.uniform1f(this.locations.useBpalTexture, this.bpalShaderTextureEnabled && info ? 1 : 0);
 
       if (!info) {
+        return;
+      }
+
+      if (info.compact) {
+        gl.uniform2ui(this.locations.bpalImageSize, info.width, info.height);
+        gl.uniform1ui(this.locations.bpalBlockSize, info.blockSize);
+        gl.uniform1ui(this.locations.bpalBlocksX, info.blocksX);
+        gl.uniform1ui(this.locations.bpalLocalColorCount, info.localColorCount);
+        gl.uniform1ui(this.locations.bpalLocalIndexBits, info.localIndexBits);
+        gl.uniform1ui(this.locations.bpalGlobalIndexBits, info.globalIndexBits);
+        gl.uniform1ui(this.locations.bpalPaletteColorBits, info.paletteColorBits);
+        gl.uniform2ui(
+          this.locations.bpalPixelAtlasSize,
+          info.pixelAtlas.width,
+          info.pixelAtlas.height
+        );
+        gl.uniform2ui(
+          this.locations.bpalBlockPaletteAtlasSize,
+          info.blockPaletteAtlas.width,
+          info.blockPaletteAtlas.height
+        );
+        gl.uniform2ui(
+          this.locations.bpalPaletteAtlasSize,
+          info.paletteAtlas.width,
+          info.paletteAtlas.height
+        );
         return;
       }
 
@@ -651,6 +683,9 @@
       bpalBlockSize: gl.getUniformLocation(program, "uBpalBlockSize"),
       bpalBlocksX: gl.getUniformLocation(program, "uBpalBlocksX"),
       bpalLocalColorCount: gl.getUniformLocation(program, "uBpalLocalColorCount"),
+      bpalLocalIndexBits: gl.getUniformLocation(program, "uBpalLocalIndexBits"),
+      bpalGlobalIndexBits: gl.getUniformLocation(program, "uBpalGlobalIndexBits"),
+      bpalPaletteColorBits: gl.getUniformLocation(program, "uBpalPaletteColorBits"),
       bpalPixelAtlasSize: gl.getUniformLocation(program, "uBpalPixelAtlasSize"),
       bpalBlockPaletteAtlasSize: gl.getUniformLocation(program, "uBpalBlockPaletteAtlasSize"),
       bpalPaletteAtlasSize: gl.getUniformLocation(program, "uBpalPaletteAtlasSize"),
@@ -815,6 +850,30 @@
     return texture;
   }
 
+  function createSolidUintTexture(gl, value, unit) {
+    const texture = gl.createTexture();
+
+    gl.activeTexture(gl.TEXTURE0 + unit);
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      gl.R32UI,
+      1,
+      1,
+      0,
+      gl.RED_INTEGER,
+      gl.UNSIGNED_INT,
+      new Uint32Array([value >>> 0])
+    );
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+
+    return texture;
+  }
+
   async function loadImageTexture(gl, texture, url, unit, options) {
     const image = await loadImage(resolveProjectUrl(url));
 
@@ -902,6 +961,36 @@
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
   }
 
+  function uploadBpalDataTexture(gl, texture, atlas, unit) {
+    if (atlas.data instanceof Uint32Array) {
+      uploadPackedUintTexture(gl, texture, atlas, unit);
+      return;
+    }
+
+    uploadDataTexture(gl, texture, atlas, unit);
+  }
+
+  function uploadPackedUintTexture(gl, texture, atlas, unit) {
+    gl.activeTexture(gl.TEXTURE0 + unit);
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      gl.R32UI,
+      atlas.width,
+      atlas.height,
+      0,
+      gl.RED_INTEGER,
+      gl.UNSIGNED_INT,
+      atlas.data
+    );
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  }
+
   function validateBpalShaderTextureData(data) {
     const atlases = data && [data.pixelAtlas, data.blockPaletteAtlas, data.paletteAtlas];
 
@@ -913,7 +1002,11 @@
       !Number.isInteger(data.blocksX) ||
       !Number.isInteger(data.localColorCount) ||
       !atlases ||
-      atlases.some((atlas) => !atlas || !(atlas.data instanceof Uint8Array))
+      atlases.some((atlas) => (
+        !atlas ||
+        !(atlas.data instanceof Uint8Array) &&
+        !(atlas.data instanceof Uint32Array)
+      ))
     ) {
       throw new TypeError("BPAL shader texture data is invalid");
     }

@@ -204,6 +204,8 @@
     "cube.controls": "Material controls",
     "cube.relief": "Relief",
     "cube.count": "Cubes",
+    "cube.webgl2Compact": "WebGL2 compact",
+    "cube.webgl2CompactTitle": "Use bit-packed integer BPAL textures in WebGL2",
     "cube.perCubeTextures": "Texture per cube",
     "cube.perCubeTexturesTitle": "Assign a separate texture instance to every cube",
     "cube.defaultJpeg": "Default JPEG",

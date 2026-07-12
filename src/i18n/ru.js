@@ -204,6 +204,8 @@
     "cube.controls": "Настройки материала",
     "cube.relief": "Рельеф",
     "cube.count": "Кубы",
+    "cube.webgl2Compact": "WebGL2 compact",
+    "cube.webgl2CompactTitle": "Использовать битово-упакованные целочисленные BPAL-текстуры в WebGL2",
     "cube.perCubeTextures": "Для каждого куба своя текстура",
     "cube.perCubeTexturesTitle": "Назначить каждому кубу отдельный экземпляр текстуры",
     "cube.defaultJpeg": "JPEG по умолчанию",

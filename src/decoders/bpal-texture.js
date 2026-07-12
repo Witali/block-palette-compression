@@ -94,6 +94,58 @@
     };
   }
 
+  function createCompactShaderTextureData(texture, maxTextureSize) {
+    if (!texture || !Number.isInteger(texture.width) || !Number.isInteger(texture.height)) {
+      throw new TypeError("Decoded BPAL texture metadata is invalid");
+    }
+
+    const textureLimit = Number(maxTextureSize);
+
+    if (!Number.isInteger(textureLimit) || textureLimit < 1) {
+      throw new RangeError("WebGL maximum texture size must be a positive integer");
+    }
+
+    const localIndexBits = indexBitCount(texture.localColorCount);
+    const globalIndexBits = indexBitCount(texture.palette.length);
+    const paletteColorBits = texture.paletteColorBits === 16 ? 16 : 24;
+    const pixelAtlas = createPackedUintAtlas(
+      texture.pixelIndices,
+      localIndexBits,
+      textureLimit,
+      (value) => value
+    );
+    const blockPaletteAtlas = createPackedUintAtlas(
+      texture.blockPaletteIndices,
+      globalIndexBits,
+      textureLimit,
+      (value) => value
+    );
+    const paletteAtlas = createPackedUintAtlas(
+      texture.palette,
+      paletteColorBits,
+      textureLimit,
+      (color) => encodePaletteColor(color, paletteColorBits)
+    );
+
+    return {
+      compact: true,
+      width: texture.width,
+      height: texture.height,
+      blockSize: texture.blockSize,
+      blocksX: texture.blocksX,
+      localColorCount: texture.localColorCount,
+      localIndexBits,
+      globalIndexBits,
+      paletteColorBits,
+      pixelAtlas,
+      blockPaletteAtlas,
+      paletteAtlas,
+      gpuBytes: pixelAtlas.data.byteLength +
+        blockPaletteAtlas.data.byteLength +
+        paletteAtlas.data.byteLength,
+    };
+  }
+
   function createMipmappedShaderTextureData(texture, maxTextureSize, options) {
     const settings = options || {};
     const maximumMipLevels = Math.floor(
@@ -490,5 +542,68 @@
     return { width, height, data, channels };
   }
 
-  return { decode, createShaderTextureData, createMipLevels, createMipmappedShaderTextureData };
+  function createPackedUintAtlas(values, bitsPerValue, maxTextureSize, transformValue) {
+    if (!values || typeof values.length !== "number" || values.length < 1) {
+      throw new RangeError("BPAL compact atlas source is empty");
+    }
+
+    const wordCount = Math.ceil(values.length * bitsPerValue / 32);
+    const height = Math.ceil(wordCount / maxTextureSize);
+    const width = Math.ceil(wordCount / height);
+
+    if (height > maxTextureSize) {
+      throw new RangeError("BPAL compact data exceeds the WebGL texture size limit");
+    }
+
+    const data = new Uint32Array(width * height);
+    const valueLimit = 2 ** bitsPerValue;
+
+    for (let index = 0; index < values.length; index += 1) {
+      const value = Number(transformValue(values[index]));
+
+      if (!Number.isInteger(value) || value < 0 || value >= valueLimit) {
+        throw new RangeError("BPAL compact atlas value does not fit its bit width");
+      }
+
+      const bitOffset = index * bitsPerValue;
+      const wordIndex = Math.floor(bitOffset / 32);
+      const wordBit = bitOffset % 32;
+
+      data[wordIndex] = (data[wordIndex] | value << wordBit) >>> 0;
+
+      if (wordBit + bitsPerValue > 32) {
+        data[wordIndex + 1] = (data[wordIndex + 1] | value >>> (32 - wordBit)) >>> 0;
+      }
+    }
+
+    return { width, height, data, bitsPerValue };
+  }
+
+  function indexBitCount(valueCount) {
+    if (!Number.isInteger(valueCount) || valueCount < 1) {
+      throw new RangeError("BPAL index value count must be positive");
+    }
+
+    return Math.max(1, Math.ceil(Math.log2(valueCount)));
+  }
+
+  function encodePaletteColor(color, paletteColorBits) {
+    if (paletteColorBits === 16) {
+      const red = Math.round(color.r * 31 / 255);
+      const green = Math.round(color.g * 63 / 255);
+      const blue = Math.round(color.b * 31 / 255);
+
+      return red << 11 | green << 5 | blue;
+    }
+
+    return color.r | color.g << 8 | color.b << 16;
+  }
+
+  return {
+    decode,
+    createShaderTextureData,
+    createCompactShaderTextureData,
+    createMipLevels,
+    createMipmappedShaderTextureData,
+  };
 });

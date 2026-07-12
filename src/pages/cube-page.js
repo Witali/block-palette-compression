@@ -14,12 +14,20 @@ const fpsCounter = document.getElementById("fps-counter");
 const materialControls = document.getElementById("material-controls");
 const heightStrengthInput = document.getElementById("height-strength");
 const heightStrengthValue = document.getElementById("height-strength-value");
+const webgl2CompactInput = document.getElementById("webgl2-compact");
 const cubeCountInput = document.getElementById("cube-count");
 const bpalExampleSelect = document.getElementById("bpal-example");
 const bpalFileInput = document.getElementById("bpal-file");
 const perCubeTexturesInput = document.getElementById("per-cube-textures");
 const bpalStatus = document.getElementById("bpal-status");
-const gl = canvas.getContext("webgl", { antialias: true });
+const requestedCompactRenderer = new URLSearchParams(window.location.search).get("renderer") === "webgl2";
+let compactRendererEnabled = requestedCompactRenderer;
+let gl = canvas.getContext(compactRendererEnabled ? "webgl2" : "webgl", { antialias: true });
+
+if (!gl && compactRendererEnabled) {
+  compactRendererEnabled = false;
+  gl = canvas.getContext("webgl", { antialias: true });
+}
 const fpsState = {
   frameCount: 0,
   lastUpdateTime: 0,
@@ -77,8 +85,12 @@ start().catch((error) => {
 });
 
 async function start() {
-  cubeRenderer = await TexturedCubeRenderer.create(gl);
+  initializeRendererModeControl();
+  cubeRenderer = compactRendererEnabled
+    ? await CompactTexturedCubeRenderer.create(gl)
+    : await TexturedCubeRenderer.create(gl);
   window.__texturedCubeRenderer = cubeRenderer;
+  window.__cubeRendererMode = compactRendererEnabled ? "webgl2-compact" : "webgl1";
   window.__cubeMotionState = cubeMotionState;
   window.__cubeGridState = cubeGridState;
   window.__cubeTextureInstances = cubeGridState.textureInstances;
@@ -193,6 +205,27 @@ function initializeMaterialControls() {
   cubeMotionState.cubeCount = Number(cubeCountInput.value);
   cubeMotionState.perCubeTextures = Boolean(perCubeTexturesInput && perCubeTexturesInput.checked);
   applySelectedMaterial();
+}
+
+function initializeRendererModeControl() {
+  if (!webgl2CompactInput) {
+    return;
+  }
+
+  webgl2CompactInput.checked = compactRendererEnabled;
+  webgl2CompactInput.disabled = !compactRendererEnabled &&
+    typeof window.WebGL2RenderingContext === "undefined";
+  webgl2CompactInput.addEventListener("change", () => {
+    const url = new URL(window.location.href);
+
+    if (webgl2CompactInput.checked) {
+      url.searchParams.set("renderer", "webgl2");
+    } else {
+      url.searchParams.delete("renderer");
+    }
+
+    window.location.replace(url.href);
+  });
 }
 
 function initializeBpalTextureControls() {
@@ -347,22 +380,58 @@ function updateLoadedBpalStatus() {
       `экземпляров текстур: ${cubeGridState.textureInstances.length}`
     )
     : localized("one shared texture", "одна общая текстура");
+  const rendererMode = compactRendererEnabled
+    ? localized("WebGL2 compact R32UI", "WebGL2 compact R32UI")
+    : localized("WebGL1 compatible", "WebGL1 совместимый");
+  const gpuBytes = getAssignedGpuBytes();
 
   setBpalStatus(
     `${loadedBpalTexture.name} · ${loadedBpalTexture.width}×${loadedBpalTexture.height} · ` +
-      `${loadedBpalTexture.format} v${loadedBpalTexture.formatVersion} · ${renderMode} · ${textureMode}`,
+      `${loadedBpalTexture.format} v${loadedBpalTexture.formatVersion} · ${rendererMode} · ` +
+      `${renderMode} · ${textureMode} · GPU ${formatBytes(gpuBytes)}`,
     false
   );
 }
 
 function createBpalTextureData(bytes) {
   const decoded = decodeBlockPaletteTexture(bytes);
-  const shaderTextureData = window.BpalTextureDecoder.createShaderTextureData(
-    decoded,
-    gl.getParameter(gl.MAX_TEXTURE_SIZE)
-  );
+  const shaderTextureData = compactRendererEnabled
+    ? window.BpalTextureDecoder.createCompactShaderTextureData(
+      decoded,
+      gl.getParameter(gl.MAX_TEXTURE_SIZE)
+    )
+    : window.BpalTextureDecoder.createShaderTextureData(
+      decoded,
+      gl.getParameter(gl.MAX_TEXTURE_SIZE)
+    );
+
+  if (!Number.isFinite(shaderTextureData.gpuBytes)) {
+    shaderTextureData.gpuBytes = shaderTextureData.pixelAtlas.data.byteLength +
+      shaderTextureData.blockPaletteAtlas.data.byteLength +
+      shaderTextureData.paletteAtlas.data.byteLength;
+  }
 
   return { decoded, shaderTextureData };
+}
+
+function getAssignedGpuBytes() {
+  const resources = new Set(cubeGridState.textureInstances.filter(Boolean));
+
+  return Array.from(resources).reduce((total, resource) => (
+    total + (resource.bpalTextureInfo && resource.bpalTextureInfo.gpuBytes || 0)
+  ), 0);
+}
+
+function formatBytes(bytes) {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KiB`;
+  }
+
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MiB`;
 }
 
 function getOrderedBpalExamples() {
