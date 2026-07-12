@@ -33,11 +33,19 @@ test("pans both compression previews by dragging", () => {
   assert.match(source, /drag\.viewport\.scrollLeft = drag\.scrollLeft - deltaX/);
   assert.match(source, /drag\.viewport\.scrollTop = drag\.scrollTop - deltaY/);
   assert.match(source, /synchronizeScroll\(/);
-  assert.match(source, /selectBlockUnlessDragging/);
   assert.match(source, /const DRAG_DELAY_MS = 140/);
   assert.match(source, /event\.timeStamp - drag\.startedAt >= DRAG_DELAY_MS/);
   assert.match(source, /distance < DRAG_THRESHOLD/);
-  assert.match(source, /if \(drag\.active && drag\.moved && drag\.viewport === resultViewport\)/);
+  assert.match(source, /viewport === resultViewport && isPointerInsideResultCanvas\(event\)/);
+  assert.match(source, /selectBlockFromPointer\(event\)/);
+  assert.doesNotMatch(source, /resultCanvas\.addEventListener\("click"/);
+});
+
+test("highlights the selected block even when the grid is hidden", () => {
+  assert.match(source, /if \(showGridInput\.checked\) \{/);
+  assert.doesNotMatch(source, /if \(!result \|\| !showGridInput\.checked\)/);
+  assert.match(source, /context\.fillStyle = "rgba\(41, 182, 255, 0\.24\)"/);
+  assert.match(source, /context\.strokeStyle = "#7ddcff"/);
 });
 
 function test(name, callback) {

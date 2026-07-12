@@ -68,7 +68,6 @@ const state = {
   zoom: 1,
   synchronizingScroll: false,
   viewportDrag: null,
-  suppressResultClick: false,
   optimizationApplied: false,
 };
 
@@ -135,7 +134,6 @@ downloadFileButton.addEventListener("click", downloadBlockPaletteFile);
 downloadBplmButton.addEventListener("click", downloadBlockPaletteMipmapFile);
 downloadButton.addEventListener("click", downloadResult);
 showGridInput.addEventListener("change", drawGrid);
-resultCanvas.addEventListener("click", selectBlockUnlessDragging);
 sourceViewport.addEventListener("scroll", () => synchronizeScroll(sourceViewport, resultViewport), { passive: true });
 resultViewport.addEventListener("scroll", () => synchronizeScroll(resultViewport, sourceViewport), { passive: true });
 sourceViewport.addEventListener("wheel", zoomFromWheel, { passive: false });
@@ -457,40 +455,56 @@ function drawGrid() {
 
   context.clearRect(0, 0, gridCanvas.width, gridCanvas.height);
 
-  if (!result || !showGridInput.checked) {
+  if (!result) {
     return;
   }
 
   const lineWidth = Math.max(1, Math.min(result.width, result.height) / 420);
 
-  context.beginPath();
-  context.strokeStyle = "rgba(230, 241, 255, 0.42)";
-  context.lineWidth = lineWidth;
+  if (showGridInput.checked) {
+    context.beginPath();
+    context.strokeStyle = "rgba(230, 241, 255, 0.42)";
+    context.lineWidth = lineWidth;
 
-  for (let x = result.blockSize; x < result.width; x += result.blockSize) {
-    context.moveTo(x, 0);
-    context.lineTo(x, result.height);
+    for (let x = result.blockSize; x < result.width; x += result.blockSize) {
+      context.moveTo(x, 0);
+      context.lineTo(x, result.height);
+    }
+
+    for (let y = result.blockSize; y < result.height; y += result.blockSize) {
+      context.moveTo(0, y);
+      context.lineTo(result.width, y);
+    }
+
+    context.stroke();
   }
-
-  for (let y = result.blockSize; y < result.height; y += result.blockSize) {
-    context.moveTo(0, y);
-    context.lineTo(result.width, y);
-  }
-
-  context.stroke();
 
   const blockX = state.selectedBlock % result.blocksX;
   const blockY = Math.floor(state.selectedBlock / result.blocksX);
   const x = blockX * result.blockSize;
   const y = blockY * result.blockSize;
+  const width = Math.min(result.blockSize, result.width - x);
+  const height = Math.min(result.blockSize, result.height - y);
+  const outlineWidth = lineWidth * 3;
+  const outlineInset = outlineWidth / 2;
 
-  context.strokeStyle = "#69b5ff";
-  context.lineWidth = lineWidth * 2.5;
+  context.fillStyle = "rgba(41, 182, 255, 0.24)";
+  context.fillRect(x, y, width, height);
+  context.strokeStyle = "rgba(3, 10, 18, 0.92)";
+  context.lineWidth = outlineWidth;
   context.strokeRect(
-    x + context.lineWidth / 2,
-    y + context.lineWidth / 2,
-    Math.min(result.blockSize, result.width - x) - context.lineWidth,
-    Math.min(result.blockSize, result.height - y) - context.lineWidth
+    x + outlineInset,
+    y + outlineInset,
+    Math.max(0, width - outlineWidth),
+    Math.max(0, height - outlineWidth)
+  );
+  context.strokeStyle = "#7ddcff";
+  context.lineWidth = lineWidth * 1.4;
+  context.strokeRect(
+    x + outlineInset,
+    y + outlineInset,
+    Math.max(0, width - outlineWidth),
+    Math.max(0, height - outlineWidth)
   );
 }
 
@@ -562,6 +576,10 @@ function startViewportDrag(event) {
 
   const viewport = event.currentTarget;
 
+  if (viewport === resultViewport && isPointerInsideResultCanvas(event)) {
+    selectBlockFromPointer(event);
+  }
+
   state.viewportDrag = {
     viewport,
     pointerId: event.pointerId,
@@ -623,25 +641,16 @@ function finishViewportDrag(event) {
   state.viewportDrag = null;
   drag.viewport.classList.remove("is-dragging");
 
-  if (drag.active && drag.moved && drag.viewport === resultViewport) {
-    state.suppressResultClick = true;
-    window.setTimeout(() => {
-      state.suppressResultClick = false;
-    }, 0);
-  }
-
   if (event.type !== "lostpointercapture" && drag.viewport.hasPointerCapture(event.pointerId)) {
     drag.viewport.releasePointerCapture(event.pointerId);
   }
 }
 
-function selectBlockUnlessDragging(event) {
-  if (state.suppressResultClick) {
-    state.suppressResultClick = false;
-    return;
-  }
+function isPointerInsideResultCanvas(event) {
+  const bounds = resultCanvas.getBoundingClientRect();
 
-  selectBlockFromPointer(event);
+  return event.clientX >= bounds.left && event.clientX < bounds.right &&
+    event.clientY >= bounds.top && event.clientY < bounds.bottom;
 }
 
 function zoomFromWheel(event) {
