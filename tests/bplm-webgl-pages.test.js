@@ -55,6 +55,12 @@ test("keeps Demo Cube BPAL resources shader-only without decoded RGBA textures",
   assert.doesNotMatch(cubeSource, /loadTexturePixels\(decoded\.pixels/);
 });
 
+test("keeps the programmable BPAL sampler shader-only without decoded RGBA textures", () => {
+  assert.match(samplerSource, /renderer\.discardColorTexture\(\)/);
+  assert.doesNotMatch(samplerSource, /renderer\.loadTexturePixels\(/);
+  assert.match(samplerSource, /RGBA not uploaded/);
+});
+
 function read(fileName) {
   return fs.readFileSync(path.join(root, fileName), "utf8");
 }

@@ -221,10 +221,8 @@ function activateBpalTexture(decoded, metadata) {
   );
   const buildMilliseconds = performance.now() - startedAt;
 
-  renderer.loadTexturePixels(decoded.pixels, decoded.width, decoded.height, {
-    flipY: true,
-    resetMaterialMaps: true,
-  });
+  renderer.resetMaterialMaps();
+  renderer.discardColorTexture();
   renderer.loadBpalShaderTexture(shaderTexture);
   renderer.setBpalShaderTextureEnabled(true);
   applySamplerOptions();
@@ -293,10 +291,12 @@ function updateTextureDetails() {
       `${loadedTexture.mipCount} mip levels · ${loadedTexture.blockSize}×${loadedTexture.blockSize} blocks · ` +
       `${loadedTexture.localColorCount}/${loadedTexture.globalColorCount} colors · ` +
       `GPU atlases ${formatBytes(loadedTexture.gpuBytes)} · ` +
+      `RGBA not uploaded · ` +
       `built in ${t("units.ms", { value: loadedTexture.buildMilliseconds.toFixed(1) })}`,
       `${loadedTexture.mipCount} mip-уровней · блок ${loadedTexture.blockSize}×${loadedTexture.blockSize} · ` +
       `${loadedTexture.localColorCount}/${loadedTexture.globalColorCount} цветов · ` +
       `GPU-атласы ${formatBytes(loadedTexture.gpuBytes)} · ` +
+      `RGBA не загружена · ` +
       `построение ${t("units.ms", { value: loadedTexture.buildMilliseconds.toFixed(1) })}`
     );
 }
