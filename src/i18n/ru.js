@@ -235,6 +235,8 @@
     "viewer.currentZoom": "Текущий масштаб",
     "viewer.zoomIn": "Увеличить",
     "viewer.fit": "Вписать",
+    "viewer.fitTitle": "Вписать изображение в область просмотра",
+    "viewer.actualSizeTitle": "Показать изображение в реальном размере",
     "viewer.pan": "Перемещение изображения",
     "viewer.panLeft": "Прокрутить влево",
     "viewer.panUp": "Прокрутить вверх",

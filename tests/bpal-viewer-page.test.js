@@ -81,6 +81,17 @@ test("loads BPLM dependencies before the viewer page", () => {
   assert.ok(pageIndex > formatIndex);
 });
 
+test("selects fit by default and toggles between fit and actual size", () => {
+  assert.match(viewerHtml, /id="fit-image"[^>]*aria-pressed="true"/);
+  assert.match(viewerHtml, /id="actual-size"[^>]*aria-pressed="false"/);
+  assert.match(viewerSource, /viewMode: "fit"/);
+  assert.match(viewerSource, /actualSizeButton\.addEventListener\("click", showActualSize\)/);
+  assert.match(viewerSource, /fitImageButton\.addEventListener\("click", fitImage\)/);
+  assert.match(viewerSource, /setViewMode\("actual"\)/);
+  assert.match(viewerSource, /setViewMode\("fit"\)/);
+  assert.match(viewerSource, /setViewMode\("custom"\)/);
+});
+
 function test(name, callback) {
   try {
     callback();

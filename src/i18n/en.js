@@ -235,6 +235,8 @@
     "viewer.currentZoom": "Current zoom",
     "viewer.zoomIn": "Zoom in",
     "viewer.fit": "Fit",
+    "viewer.fitTitle": "Fit image to viewport",
+    "viewer.actualSizeTitle": "Show at actual size",
     "viewer.pan": "Pan image",
     "viewer.panLeft": "Pan left",
     "viewer.panUp": "Pan up",

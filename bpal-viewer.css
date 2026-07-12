@@ -41,6 +41,12 @@ button:disabled {
   opacity: 0.38;
 }
 
+#actual-size[aria-pressed="true"],
+#fit-image[aria-pressed="true"] {
+  border-color: #3989e7;
+  background: #276bc0;
+}
+
 select {
   height: 46px;
   min-width: 250px;

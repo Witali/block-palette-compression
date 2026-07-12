@@ -51,6 +51,7 @@ const state = {
   bplmName: "",
   mipIndex: 0,
   loading: false,
+  viewMode: "fit",
   loadId: 0,
   stageOffsetX: STAGE_MARGIN,
   stageOffsetY: STAGE_MARGIN,
@@ -82,7 +83,7 @@ fileInput.addEventListener("change", () => {
 
 zoomOutButton.addEventListener("click", () => setZoom(state.zoom / ZOOM_FACTOR));
 zoomInButton.addEventListener("click", () => setZoom(state.zoom * ZOOM_FACTOR));
-actualSizeButton.addEventListener("click", () => setZoom(1));
+actualSizeButton.addEventListener("click", showActualSize);
 fitImageButton.addEventListener("click", fitImage);
 mipPreviousButton.addEventListener("click", () => showBplmMip(state.mipIndex - 1));
 mipNextButton.addEventListener("click", () => showBplmMip(state.mipIndex + 1));
@@ -183,8 +184,10 @@ window.addEventListener("resize", () => {
     return;
   }
 
-  if (stage.dataset.fitted === "true") {
+  if (state.viewMode === "fit") {
     fitImage();
+  } else if (state.viewMode === "actual") {
+    showActualSize();
   } else {
     setZoom(state.zoom);
   }
@@ -422,7 +425,15 @@ function finishLoading(_name, width, height) {
   emptyState.hidden = true;
   setControlsEnabled(true);
 
-  requestAnimationFrame(fitImage);
+  requestAnimationFrame(() => {
+    if (state.viewMode === "fit") {
+      fitImage();
+    } else if (state.viewMode === "actual") {
+      showActualSize();
+    } else {
+      setZoom(state.zoom, undefined, undefined, true);
+    }
+  });
 }
 
 function fitImage() {
@@ -434,8 +445,23 @@ function fitImage() {
   const availableHeight = Math.max(1, viewport.clientHeight - STAGE_MARGIN * 2);
   const fittedZoom = Math.min(availableWidth / state.width, availableHeight / state.height);
 
+  setViewMode("fit");
   setZoom(fittedZoom, undefined, undefined, true);
-  stage.dataset.fitted = "true";
+}
+
+function showActualSize() {
+  if (!state.loaded) {
+    return;
+  }
+
+  setViewMode("actual");
+  setZoom(1, undefined, undefined, true);
+}
+
+function setViewMode(mode) {
+  state.viewMode = mode;
+  fitImageButton.setAttribute("aria-pressed", String(mode === "fit"));
+  actualSizeButton.setAttribute("aria-pressed", String(mode === "actual"));
 }
 
 function setZoom(value, clientX, clientY, forceCenter, fixedImagePoint) {
@@ -468,7 +494,7 @@ function setZoom(value, clientX, clientY, forceCenter, fixedImagePoint) {
   zoomInButton.disabled = nextZoom >= MAX_ZOOM;
 
   if (!forceCenter) {
-    stage.dataset.fitted = "false";
+    setViewMode("custom");
   }
 
   const updateScrollPosition = () => {
