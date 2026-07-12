@@ -7,28 +7,40 @@ const BlockPaletteFormat = require("../src/palette/block-palette-format.js");
 const BplmFormat = require("../src/palette/bplm-format.js");
 const english = require("../src/i18n/en.js");
 const russian = require("../src/i18n/ru.js");
+const { createBpalManifest } = require("../tools/generate-bpal-manifest.js");
 
 const root = path.resolve(__dirname, "..");
 const viewerHtml = fs.readFileSync(path.join(root, "bpal-viewer.html"), "utf8");
 const viewerSource = fs.readFileSync(path.join(root, "src", "pages", "bpal-viewer-page.js"), "utf8");
+const pagesWorkflow = fs.readFileSync(path.join(root, ".github", "workflows", "pages.yml"), "utf8");
 
-test("lists every bundled BPAL and BPLM image in the viewer", () => {
+test("generates every bundled BPAL and BPLM image for the viewer", () => {
   const assetNames = fs.readdirSync(path.join(root, "assets", "bpal"))
     .filter((name) => /\.(?:bpal|bplm)$/i.test(name))
     .sort();
-  const listedNames = Array.from(
-    viewerHtml.matchAll(/<option value="\.\/assets\/bpal\/([^"]+\.(?:bpal|bplm))"(?: selected)?>/g),
-    (match) => match[1],
-  ).sort();
+  const manifest = createBpalManifest(path.join(root, "assets", "bpal"));
 
-  assert.deepEqual(listedNames, assetNames);
+  assert.deepEqual(manifest.files, assetNames);
+  assert.equal(manifest.default, "stone-texture-wic.bplm");
+  assert.match(viewerHtml, /<select id="example-image" disabled><\/select>/);
+  assert.match(viewerSource, /fetch\(BUNDLED_MANIFEST_URL\)/);
+  assert.match(viewerSource, /exampleSelect\.replaceChildren\(\.\.\.options\)/);
+});
+
+test("generates the BPAL manifest before uploading the Pages artifact", () => {
+  const generateIndex = pagesWorkflow.indexOf("npm run generate:bpal-manifest");
+  const uploadIndex = pagesWorkflow.indexOf("actions/upload-pages-artifact@v4");
+
+  assert.ok(generateIndex >= 0);
+  assert.ok(uploadIndex > generateIndex);
+  assert.match(pagesWorkflow, /actions\/deploy-pages@v4/);
 });
 
 test("selects the WIC BPLM image by default", () => {
-  assert.match(
-    viewerHtml,
-    /<option value="\.\/assets\/bpal\/stone-texture-wic\.bplm" selected>/,
-  );
+  const manifest = createBpalManifest(path.join(root, "assets", "bpal"));
+
+  assert.equal(manifest.default, "stone-texture-wic.bplm");
+  assert.match(viewerSource, /fileName === manifest\.default/);
 });
 
 test("decodes every bundled block-palette viewer image", () => {

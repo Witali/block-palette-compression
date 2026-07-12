@@ -29,6 +29,7 @@ const MIN_ZOOM = 0.05;
 const MAX_ZOOM = 32;
 const ZOOM_FACTOR = 1.25;
 const STAGE_MARGIN = 32;
+const BUNDLED_MANIFEST_URL = "./assets/bpal/manifest.json";
 const state = {
   width: 0,
   height: 0,
@@ -193,7 +194,71 @@ window.addEventListener("resize", () => {
   }
 });
 
-loadBundledBlockPalette(exampleSelect.value, exampleSelect.selectedOptions[0].textContent.trim());
+initializeBundledExamples();
+
+async function initializeBundledExamples() {
+  setLoading(true);
+
+  try {
+    const response = await fetch(BUNDLED_MANIFEST_URL);
+
+    if (!response.ok) {
+      throw new Error(t("dynamic.imageLoadFailed", {
+        status: response.status,
+        statusText: response.statusText,
+      }));
+    }
+
+    const manifest = await response.json();
+    const files = validateBundledManifest(manifest);
+    const options = files.map((fileName) => {
+      const option = document.createElement("option");
+
+      option.value = `./assets/bpal/${encodeURIComponent(fileName)}`;
+      option.textContent = fileName;
+      option.selected = fileName === manifest.default;
+      return option;
+    });
+
+    exampleSelect.replaceChildren(...options);
+
+    if (exampleSelect.selectedIndex < 0) {
+      exampleSelect.selectedIndex = 0;
+    }
+
+    const option = exampleSelect.selectedOptions[0];
+
+    await loadBundledBlockPalette(exampleSelect.value, option.textContent.trim());
+  } catch (error) {
+    console.error("Could not load the bundled BPAL manifest.", error);
+    setStatus(error && error.message ? error.message : String(error), true);
+  } finally {
+    setLoading(false);
+  }
+}
+
+function validateBundledManifest(manifest) {
+  if (!manifest || manifest.version !== 1 || !Array.isArray(manifest.files)) {
+    throw new TypeError("Invalid bundled BPAL manifest");
+  }
+
+  const files = manifest.files.filter((fileName) => (
+    typeof fileName === "string" &&
+    !fileName.includes("/") &&
+    !fileName.includes("\\") &&
+    /\.(?:bpal|bplm)$/i.test(fileName)
+  ));
+
+  if (files.length === 0 || files.length !== manifest.files.length) {
+    throw new TypeError("Invalid bundled BPAL manifest entries");
+  }
+
+  if (typeof manifest.default !== "string" || !files.includes(manifest.default)) {
+    throw new TypeError("Invalid default bundled BPAL image");
+  }
+
+  return files;
+}
 
 async function loadBundledBlockPalette(url, fileName) {
   const loadId = ++state.loadId;

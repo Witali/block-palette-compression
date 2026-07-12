@@ -5,3 +5,4 @@ __pycache__/
 .benchmark-tools/
 .benchmark-corpus/
 benchmark/work/
+assets/bpal/manifest.json

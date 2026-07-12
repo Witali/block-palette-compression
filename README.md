@@ -48,6 +48,11 @@ npm start
 
 Open <http://127.0.0.1:8000/>.
 
+`npm start` regenerates `assets/bpal/manifest.json` from the bundled `.bpal`
+and `.bplm` files before starting the server. The GitHub Pages workflow runs
+the same generator before uploading the site artifact, so the viewer catalog
+does not need to be maintained by hand.
+
 ## Test
 
 ```powershell
