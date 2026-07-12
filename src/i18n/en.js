@@ -215,6 +215,7 @@
 
     "viewer.title": "BPAL Viewer",
     "viewer.description": "View BPAL files and regular images with zooming and free panning.",
+    "viewer.builtInImage": "Built-in image",
     "viewer.upload": "Upload image",
     "viewer.image": "Image",
     "viewer.choose": "Choose a BPAL file or a regular image",

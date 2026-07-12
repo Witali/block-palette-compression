@@ -2,6 +2,7 @@
 
 const t = (key, parameters) => window.I18n.t(key, parameters);
 
+const exampleSelect = document.querySelector("#example-image");
 const uploadButton = document.querySelector("#upload-button");
 const fileInput = document.querySelector("#file-input");
 const viewport = document.querySelector("#image-viewport");
@@ -43,6 +44,7 @@ const state = {
   pinchImageX: 0,
   pinchImageY: 0,
   fileDescription: null,
+  loadId: 0,
 };
 
 window.addEventListener("languagechange", () => {
@@ -52,6 +54,13 @@ window.addEventListener("languagechange", () => {
 });
 
 uploadButton.addEventListener("click", () => fileInput.click());
+exampleSelect.addEventListener("change", () => {
+  const option = exampleSelect.selectedOptions[0];
+
+  if (option) {
+    loadBundledBpal(exampleSelect.value, option.textContent.trim());
+  }
+});
 fileInput.addEventListener("change", () => {
   const [file] = fileInput.files;
 
@@ -162,25 +171,68 @@ window.addEventListener("resize", () => {
   }
 });
 
+loadBundledBpal(exampleSelect.value, exampleSelect.selectedOptions[0].textContent.trim());
+
+async function loadBundledBpal(url, fileName) {
+  const loadId = ++state.loadId;
+
+  setStatus(t("viewer.opening", { name: fileName }));
+  setLoading(true);
+
+  try {
+    const response = await fetch(url);
+
+    if (!response.ok) {
+      throw new Error(t("dynamic.imageLoadFailed", {
+        status: response.status,
+        statusText: response.statusText,
+      }));
+    }
+
+    const bytes = await response.arrayBuffer();
+
+    if (loadId === state.loadId) {
+      loadBpal(bytes, fileName);
+    }
+  } catch (error) {
+    if (loadId === state.loadId) {
+      console.error("Could not open the built-in BPAL image.", error);
+      setStatus(error && error.message ? error.message : String(error), true);
+    }
+  } finally {
+    if (loadId === state.loadId) {
+      setLoading(false);
+    }
+  }
+}
+
 async function loadFile(file) {
+  const loadId = ++state.loadId;
+
   setStatus(t("viewer.opening", { name: file.name }));
-  uploadButton.disabled = true;
+  setLoading(true);
 
   try {
     const bytes = await file.arrayBuffer();
     const isBpal = hasBpalMagic(bytes);
 
-    if (isBpal || file.name.toLowerCase().endsWith(".bpal")) {
-      loadBpal(bytes, file.name);
-    } else {
-      await loadRegularImage(file);
+    if (loadId === state.loadId) {
+      if (isBpal || file.name.toLowerCase().endsWith(".bpal")) {
+        loadBpal(bytes, file.name);
+      } else {
+        await loadRegularImage(file);
+      }
     }
   } catch (error) {
-    console.error("Could not open the selected image.", error);
-    setStatus(error && error.message ? error.message : String(error), true);
+    if (loadId === state.loadId) {
+      console.error("Could not open the selected image.", error);
+      setStatus(error && error.message ? error.message : String(error), true);
+    }
   } finally {
-    uploadButton.disabled = false;
-    fileInput.value = "";
+    if (loadId === state.loadId) {
+      setLoading(false);
+      fileInput.value = "";
+    }
   }
 }
 
@@ -458,6 +510,11 @@ function setControlsEnabled(enabled) {
   for (const button of Object.values(panButtons)) {
     button.disabled = !enabled;
   }
+}
+
+function setLoading(loading) {
+  exampleSelect.disabled = loading;
+  uploadButton.disabled = loading;
 }
 
 function setStatus(message, isError) {
