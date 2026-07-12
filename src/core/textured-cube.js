@@ -189,6 +189,67 @@
       }
     }
 
+    createBpalTextureResource(pixels, width, height, shaderData) {
+      validateBpalShaderTextureData(shaderData);
+
+      const gl = this.gl;
+      const texture = gl.createTexture();
+      const bpalTextures = {
+        pixelIndices: gl.createTexture(),
+        blockPalettes: gl.createTexture(),
+        globalPalette: gl.createTexture(),
+      };
+
+      if (
+        !texture ||
+        !bpalTextures.pixelIndices ||
+        !bpalTextures.blockPalettes ||
+        !bpalTextures.globalPalette
+      ) {
+        if (texture) {
+          gl.deleteTexture(texture);
+        }
+        deleteTextureSet(gl, bpalTextures);
+        throw new Error("Could not create WebGL textures for a BPAL resource");
+      }
+
+      try {
+        uploadPixelTexture(gl, texture, pixels, width, height, 0, { flipY: true });
+        uploadDataTexture(gl, bpalTextures.pixelIndices, shaderData.pixelAtlas, 3);
+        uploadDataTexture(gl, bpalTextures.blockPalettes, shaderData.blockPaletteAtlas, 4);
+        uploadDataTexture(gl, bpalTextures.globalPalette, shaderData.paletteAtlas, 5);
+      } catch (error) {
+        gl.deleteTexture(texture);
+        deleteTextureSet(gl, bpalTextures);
+        throw error;
+      }
+
+      return {
+        texture,
+        bpalTextures,
+        bpalTextureInfo: shaderData,
+      };
+    }
+
+    deleteBpalTextureResource(resource) {
+      if (!resource) {
+        return;
+      }
+
+      if (resource.texture) {
+        this.gl.deleteTexture(resource.texture);
+      }
+      deleteTextureSet(this.gl, resource.bpalTextures);
+    }
+
+    getCurrentBpalTextureResource() {
+      return {
+        texture: this.texture,
+        bpalTextures: this.bpalTextures,
+        bpalTextureInfo: this.bpalTextureInfo,
+      };
+    }
+
     loadBpalShaderTexture(shaderData) {
       validateBpalShaderTextureData(shaderData);
 
@@ -230,9 +291,9 @@
       this.applyBpalTextureUniforms();
     }
 
-    applyBpalTextureUniforms() {
+    applyBpalTextureUniforms(textureInfo) {
       const gl = this.gl;
-      const info = this.bpalTextureInfo;
+      const info = textureInfo === undefined ? this.bpalTextureInfo : textureInfo;
 
       gl.useProgram(this.program);
       gl.uniform1f(this.locations.useBpalTexture, this.bpalShaderTextureEnabled && info ? 1 : 0);
@@ -287,6 +348,27 @@
       }
 
       this.applyBpalSamplerUniforms();
+    }
+
+    bindInstanceTextureResource(resource) {
+      const gl = this.gl;
+      const texture = resource && resource.texture ? resource.texture : this.texture;
+      const bpalTextures = resource && resource.bpalTextures
+        ? resource.bpalTextures
+        : this.bpalTextures;
+      const textureInfo = resource && resource.bpalTextureInfo
+        ? resource.bpalTextureInfo
+        : this.bpalTextureInfo;
+
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.activeTexture(gl.TEXTURE3);
+      gl.bindTexture(gl.TEXTURE_2D, bpalTextures.pixelIndices);
+      gl.activeTexture(gl.TEXTURE4);
+      gl.bindTexture(gl.TEXTURE_2D, bpalTextures.blockPalettes);
+      gl.activeTexture(gl.TEXTURE5);
+      gl.bindTexture(gl.TEXTURE_2D, bpalTextures.globalPalette);
+      this.applyBpalTextureUniforms(textureInfo);
     }
 
     setBpalSamplerOptions(options) {
@@ -455,22 +537,15 @@
       }
 
       this.bindGeometry();
-      gl.activeTexture(gl.TEXTURE0);
-      gl.bindTexture(gl.TEXTURE_2D, this.texture);
       gl.activeTexture(gl.TEXTURE1);
       gl.bindTexture(gl.TEXTURE_2D, this.heightTexture);
       gl.activeTexture(gl.TEXTURE2);
       gl.bindTexture(gl.TEXTURE_2D, this.specularTexture);
-      gl.activeTexture(gl.TEXTURE3);
-      gl.bindTexture(gl.TEXTURE_2D, this.bpalTextures.pixelIndices);
-      gl.activeTexture(gl.TEXTURE4);
-      gl.bindTexture(gl.TEXTURE_2D, this.bpalTextures.blockPalettes);
-      gl.activeTexture(gl.TEXTURE5);
-      gl.bindTexture(gl.TEXTURE_2D, this.bpalTextures.globalPalette);
       gl.uniformMatrix4fv(this.locations.projection, false, this.projection);
       this.applyMaterialUniforms();
 
       for (const instance of instances) {
+        this.bindInstanceTextureResource(instance.textureResource);
         mat4Identity(this.model);
         mat4Translate(this.model, this.model, instance.translation || [0, 0, 0]);
         mat4RotateY(this.model, this.model, drawOptions.angleY || 0);

@@ -32,6 +32,14 @@ test("enables shader BPAL sampling by default on the cube page", () => {
   assert.match(cubeSource, /setBpalShaderTextureEnabled\(bpalShaderTextureInput\.checked\)/);
 });
 
+test("creates one independently switchable texture resource per cube", () => {
+  assert.match(cubeHtml, /<input id="per-cube-textures" type="checkbox" checked disabled>/);
+  assert.match(cubeSource, /Array\.from\(\{ length: count - 1 \}/);
+  assert.match(cubeSource, /setCubeTextureInstances\(\[primaryTextureResource, \.\.\.createdResources\]\)/);
+  assert.match(cubeSource, /setCubeTextureInstances\(Array\.from\(/);
+  assert.match(cubeSource, /cubeMotionState\.perCubeTextures = perCubeTexturesInput\.checked/);
+});
+
 test("decodes the default cube BPLM texture and its stored mip chain", () => {
   const bytes = fs.readFileSync(path.join(root, "assets", "bpal", defaultTextureName));
   const decoded = BplmFormat.decodeBplmFile(bytes);

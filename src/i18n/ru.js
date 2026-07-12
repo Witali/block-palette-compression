@@ -206,6 +206,8 @@
     "cube.count": "Кубы",
     "cube.shaderTitle": "Выполнять двойную индексацию BPAL во фрагментном шейдере",
     "cube.shaderTexture": "BPAL через шейдер",
+    "cube.perCubeTextures": "Для каждого куба своя текстура",
+    "cube.perCubeTexturesTitle": "Назначить каждому кубу отдельный экземпляр текстуры",
     "cube.defaultJpeg": "JPEG по умолчанию",
     "cube.loadingDefaultBpal": "Загрузка BPAL-текстуры по умолчанию…",
     "cube.canvasAria": "Вращающийся WebGL-куб",

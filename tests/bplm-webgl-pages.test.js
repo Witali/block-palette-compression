@@ -42,6 +42,12 @@ test("uses stored BPLM mip levels in the programmable sampler", () => {
   assert.match(samplerSource, /format: decoded\.containerMagic \|\| "BPAL"/);
 });
 
+test("binds each cube's own BPAL texture resource before drawing it", () => {
+  assert.match(rendererSource, /createBpalTextureResource\(pixels, width, height, shaderData\)/);
+  assert.match(rendererSource, /bindInstanceTextureResource\(instance\.textureResource\)/);
+  assert.match(rendererSource, /deleteBpalTextureResource\(resource\)/);
+});
+
 function read(fileName) {
   return fs.readFileSync(path.join(root, fileName), "utf8");
 }
