@@ -75,8 +75,8 @@ start().catch((error) => {
 async function start() {
   renderer = await TexturedCubeRenderer.create(gl, {
     shaderUrls: {
-      vertex: "src/shaders/cube.vert.glsl?v=bpal-sampler",
-      fragment: "src/shaders/cube-bpal-sampler.frag.glsl?v=bpal-sampler",
+      vertex: "src/shaders/cube.vert.glsl?v=bplm-1",
+      fragment: "src/shaders/cube-bpal-sampler.frag.glsl?v=bplm-1",
     },
   });
   window.__bpalSamplerRenderer = renderer;
@@ -155,7 +155,7 @@ async function loadBpal(file) {
     ), false);
     await nextFrame();
 
-    const decoded = window.BpalTextureDecoder.decode(bytes);
+    const decoded = decodeBlockPaletteTexture(bytes);
 
     if (currentLoadId !== loadId) {
       return;
@@ -163,7 +163,6 @@ async function loadBpal(file) {
 
     activateBpalTexture(decoded, {
       name: file.name,
-      version: decoded.version,
       fileBytes: bytes.byteLength,
     });
   } finally {
@@ -191,11 +190,10 @@ async function loadDefaultBpalTexture() {
   }
 
   const bytes = await response.arrayBuffer();
-  const decoded = window.BpalTextureDecoder.decode(bytes);
+  const decoded = decodeBlockPaletteTexture(bytes);
 
   activateBpalTexture(decoded, {
     name: DEFAULT_BPAL_TEXTURE_NAME,
-    version: decoded.version,
     fileBytes: bytes.byteLength,
   });
 }
@@ -221,7 +219,8 @@ function activateBpalTexture(decoded, metadata) {
     name: metadata.name,
     width: decoded.width,
     height: decoded.height,
-    version: metadata.version,
+    format: decoded.containerMagic || "BPAL",
+    version: decoded.containerVersion || decoded.version,
     blockSize: decoded.blockSize,
     localColorCount: decoded.localColorCount,
     globalColorCount: decoded.globalColorCount,
@@ -267,7 +266,7 @@ function updateTextureDetails() {
     ? ` · ${anisotropyInput.value}×`
     : "";
   const versionLabel = Number.isInteger(loadedTexture.version)
-    ? `BPAL v${loadedTexture.version}`
+    ? `${loadedTexture.format} v${loadedTexture.version}`
     : "BPAL demo";
 
   setStatus(
@@ -359,6 +358,12 @@ function initializePointerControls() {
     motion.drag = null;
     canvas.classList.remove("is-dragging");
   });
+}
+
+function decodeBlockPaletteTexture(bytes) {
+  return window.BplmFormat && window.BplmFormat.isBplmFile(bytes)
+    ? window.BplmFormat.decodeBplmFile(bytes)
+    : window.BpalTextureDecoder.decode(bytes);
 }
 
 function zoomCube(event) {

@@ -37,8 +37,8 @@
         </select>
       </label>
       <label class="bpal-upload">
-        <input id="bpal-file" type="file" accept=".bpal,application/octet-stream">
-        <span data-i18n="common.uploadBpal">Upload BPAL</span>
+        <input id="bpal-file" type="file" accept=".bpal,.bplm,application/octet-stream">
+        <span data-i18n="common.uploadBpal">Upload BPAL/BPLM</span>
       </label>
       <label class="material-option" title="Perform both BPAL index lookups in the fragment shader" data-i18n-title="cube.shaderTitle">
         <input id="bpal-shader-texture" type="checkbox" checked disabled>
@@ -52,10 +52,11 @@
     <script src="./src/i18n/i18n.js"></script>
     <script src="./src/decoders/gpu-jpeg.js"></script>
     <script src="./src/palette/block-palette-format.js?v=block-palette-3"></script>
-    <script src="./src/decoders/bpal-texture.js?v=bpal-shader-texture"></script>
+    <script src="./src/decoders/bpal-texture.js?v=bplm-1"></script>
+    <script src="./src/palette/bplm-format.js?v=bplm-1"></script>
     <script src="./src/core/textured-cube.js?v=multi-cube-1"></script>
     <script src="./src/pages/cube-wheel-zoom.js?v=1"></script>
     <script src="./src/pages/cube-grid-layout.js?v=multi-cube-1"></script>
-    <script src="./src/pages/cube-page.js?v=wheel-zoom-1"></script>
+    <script src="./src/pages/cube-page.js?v=bplm-1"></script>
   </body>
 </html>

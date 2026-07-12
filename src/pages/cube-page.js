@@ -236,7 +236,7 @@ async function loadBpalTextureSource(source, fileName) {
       return;
     }
 
-    const decoded = window.BpalTextureDecoder.decode(bytes);
+    const decoded = decodeBlockPaletteTexture(bytes);
     const shaderTextureData = window.BpalTextureDecoder.createShaderTextureData(
       decoded,
       gl.getParameter(gl.MAX_TEXTURE_SIZE)
@@ -258,6 +258,8 @@ async function loadBpalTextureSource(source, fileName) {
       width: decoded.width,
       height: decoded.height,
       version: decoded.version,
+      format: decoded.containerMagic || "BPAL",
+      formatVersion: decoded.containerVersion || decoded.version,
       blockSize: decoded.blockSize,
       localColorCount: decoded.localColorCount,
       globalColorCount: decoded.globalColorCount,
@@ -286,9 +288,15 @@ function updateLoadedBpalStatus() {
 
   setBpalStatus(
     `${loadedBpalTexture.name} · ${loadedBpalTexture.width}×${loadedBpalTexture.height} · ` +
-      `BPAL v${loadedBpalTexture.version} · ${renderMode}`,
+      `${loadedBpalTexture.format} v${loadedBpalTexture.formatVersion} · ${renderMode}`,
     false
   );
+}
+
+function decodeBlockPaletteTexture(bytes) {
+  return window.BplmFormat && window.BplmFormat.isBplmFile(bytes)
+    ? window.BplmFormat.decodeBplmFile(bytes)
+    : window.BpalTextureDecoder.decode(bytes);
 }
 
 function setBpalStatus(message, isError) {

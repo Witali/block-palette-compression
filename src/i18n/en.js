@@ -48,7 +48,7 @@
     "common.material": "Material",
     "common.matte": "Matte",
     "common.glossy": "Glossy",
-    "common.uploadBpal": "Upload BPAL",
+    "common.uploadBpal": "Upload BPAL/BPLM",
     "units.bytes": "{value} B",
     "units.kib": "{value} KiB",
     "units.mib": "{value} MiB",

@@ -276,10 +276,12 @@
             level.pixelOffset,
             level.blockPaletteOffset
           );
-          gl.uniform2f(
+          gl.uniform4f(
             this.locations.bpalMipBlockInfo[index],
             level.blocksX,
-            level.blocksY
+            level.blockSize,
+            level.localColorCount,
+            level.direct ? 1 : 0
           );
         }
       }

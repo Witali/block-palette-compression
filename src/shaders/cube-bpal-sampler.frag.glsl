@@ -48,22 +48,22 @@ uniform vec4 uBpalMipInfo12;
 uniform vec4 uBpalMipInfo13;
 uniform vec4 uBpalMipInfo14;
 uniform vec4 uBpalMipInfo15;
-uniform vec2 uBpalMipBlockInfo0;
-uniform vec2 uBpalMipBlockInfo1;
-uniform vec2 uBpalMipBlockInfo2;
-uniform vec2 uBpalMipBlockInfo3;
-uniform vec2 uBpalMipBlockInfo4;
-uniform vec2 uBpalMipBlockInfo5;
-uniform vec2 uBpalMipBlockInfo6;
-uniform vec2 uBpalMipBlockInfo7;
-uniform vec2 uBpalMipBlockInfo8;
-uniform vec2 uBpalMipBlockInfo9;
-uniform vec2 uBpalMipBlockInfo10;
-uniform vec2 uBpalMipBlockInfo11;
-uniform vec2 uBpalMipBlockInfo12;
-uniform vec2 uBpalMipBlockInfo13;
-uniform vec2 uBpalMipBlockInfo14;
-uniform vec2 uBpalMipBlockInfo15;
+uniform vec4 uBpalMipBlockInfo0;
+uniform vec4 uBpalMipBlockInfo1;
+uniform vec4 uBpalMipBlockInfo2;
+uniform vec4 uBpalMipBlockInfo3;
+uniform vec4 uBpalMipBlockInfo4;
+uniform vec4 uBpalMipBlockInfo5;
+uniform vec4 uBpalMipBlockInfo6;
+uniform vec4 uBpalMipBlockInfo7;
+uniform vec4 uBpalMipBlockInfo8;
+uniform vec4 uBpalMipBlockInfo9;
+uniform vec4 uBpalMipBlockInfo10;
+uniform vec4 uBpalMipBlockInfo11;
+uniform vec4 uBpalMipBlockInfo12;
+uniform vec4 uBpalMipBlockInfo13;
+uniform vec4 uBpalMipBlockInfo14;
+uniform vec4 uBpalMipBlockInfo15;
 
 uniform vec2 uHeightTexelSize;
 uniform float uHeightStrength;
@@ -108,7 +108,7 @@ vec4 mipInfo(float mip) {
   return uBpalMipInfo15;
 }
 
-vec2 mipBlockInfo(float mip) {
+vec4 mipBlockInfo(float mip) {
   if (mip < 0.5) return uBpalMipBlockInfo0;
   if (mip < 1.5) return uBpalMipBlockInfo1;
   if (mip < 2.5) return uBpalMipBlockInfo2;
@@ -138,24 +138,37 @@ vec2 wrapPixel(vec2 pixel, vec2 size) {
   return mod(mod(pixel, size) + size, size);
 }
 
-vec3 fetchBpalColor(vec2 pixelCoord, float mip) {
-  vec4 info = mipInfo(mip);
-  vec2 blockInfo = mipBlockInfo(mip);
-  vec2 size = info.xy;
-  vec2 pixel = wrapPixel(floor(pixelCoord), size);
-  float pixelIndex = info.z + pixel.y * size.x + pixel.x;
-  float localIndex = floor(
-    texture2D(uBpalPixelIndices, atlasTexCoord(pixelIndex, uBpalPixelAtlasSize)).r * 255.0 + 0.5
-  );
-  vec2 block = floor(pixel / uBpalBlockSize);
-  float blockIndex = block.y * blockInfo.x + block.x;
-  float blockPaletteIndex = info.w + blockIndex * uBpalLocalColorCount + localIndex;
+float fetchGlobalIndex(float atlasIndex) {
   vec2 packedGlobalIndex = texture2D(
     uBpalBlockPalettes,
-    atlasTexCoord(blockPaletteIndex, uBpalBlockPaletteAtlasSize)
+    atlasTexCoord(atlasIndex, uBpalBlockPaletteAtlasSize)
   ).rg;
-  float globalIndex = floor(packedGlobalIndex.r * 255.0 + 0.5) +
+
+  return floor(packedGlobalIndex.r * 255.0 + 0.5) +
     floor(packedGlobalIndex.g * 255.0 + 0.5) * 256.0;
+}
+
+vec3 fetchBpalColor(vec2 pixelCoord, float mip) {
+  vec4 info = mipInfo(mip);
+  vec4 blockInfo = mipBlockInfo(mip);
+  vec2 size = info.xy;
+  vec2 pixel = wrapPixel(floor(pixelCoord), size);
+  float linearPixel = pixel.y * size.x + pixel.x;
+  float globalIndex;
+
+  if (blockInfo.w > 0.5) {
+    globalIndex = fetchGlobalIndex(info.w + linearPixel);
+  } else {
+    float pixelIndex = info.z + linearPixel;
+    float localIndex = floor(
+      texture2D(uBpalPixelIndices, atlasTexCoord(pixelIndex, uBpalPixelAtlasSize)).r * 255.0 + 0.5
+    );
+    vec2 block = floor(pixel / blockInfo.y);
+    float blockIndex = block.y * blockInfo.x + block.x;
+    float blockPaletteIndex = info.w + blockIndex * blockInfo.z + localIndex;
+
+    globalIndex = fetchGlobalIndex(blockPaletteIndex);
+  }
   vec3 srgb = texture2D(
     uBpalGlobalPalette,
     atlasTexCoord(globalIndex, uBpalPaletteAtlasSize)
