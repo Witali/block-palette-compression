@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 const { encodeBlockPaletteFile } = require("../src/palette/block-palette-format.js");
 const {
   decode,
+  createMipLevels,
   createShaderTextureData,
   createMipmappedShaderTextureData,
 } = require("../src/decoders/bpal-texture.js");
@@ -130,16 +131,51 @@ test("builds independently indexed BPAL mip levels for shader filtering", () => 
   );
   assert.deepEqual(
     mipmapped.levels.map((level) => level.pixelOffset),
-    [0, 16, 20]
+    [0, 16, 16]
   );
-  assert.ok(mipmapped.pixelAtlas.data.length >= 21);
-  assert.ok(mipmapped.blockPaletteAtlas.data.length >= 12 * 4);
+  assert.ok(mipmapped.pixelAtlas.data.length >= 16);
+  assert.ok(mipmapped.blockPaletteAtlas.data.length >= 13 * 4);
   assert.equal(
     mipmapped.gpuBytes,
     mipmapped.pixelAtlas.data.byteLength +
       mipmapped.blockPaletteAtlas.data.byteLength +
       mipmapped.paletteAtlas.data.byteLength
   );
+});
+
+test("limits mip block colors and uses direct indices when every pixel can have a color", () => {
+  const palette = Array.from({ length: 16 }, (_, index) => ({
+    r: index * 17,
+    g: index * 17,
+    b: index * 17,
+  }));
+  const texture = decode(encodeBlockPaletteFile({
+    width: 8,
+    height: 8,
+    blockSize: 8,
+    localColorCount: 16,
+    globalColorCount: 16,
+    paletteColorBits: 24,
+    paletteMode: "explicit",
+    palette,
+    blockPaletteIndices: Uint16Array.from({ length: 16 }, (_, index) => index),
+    pixelIndices: Uint8Array.from({ length: 64 }, (_, index) => index % 16),
+  }));
+  const levels = createMipLevels(texture);
+
+  assert.deepEqual(
+    levels.map((level) => level.blockSize),
+    [8, 4, 2, 1]
+  );
+  assert.deepEqual(
+    levels.map((level) => level.localColorCount),
+    [16, 16, 4, 1]
+  );
+  for (const level of levels.slice(1)) {
+    assert.ok(level.directGlobalIndices instanceof Uint16Array);
+    assert.equal(level.pixelIndices, undefined);
+    assert.equal(level.blockPaletteIndices, undefined);
+  }
 });
 
 function test(name, callback) {
