@@ -45,6 +45,8 @@ const state = {
   pinchImageY: 0,
   fileDescription: null,
   loadId: 0,
+  stageOffsetX: STAGE_MARGIN,
+  stageOffsetY: STAGE_MARGIN,
 };
 
 window.addEventListener("languagechange", () => {
@@ -166,8 +168,14 @@ viewport.addEventListener("drop", (event) => {
 });
 
 window.addEventListener("resize", () => {
-  if (state.loaded && stage.dataset.fitted === "true") {
+  if (!state.loaded) {
+    return;
+  }
+
+  if (stage.dataset.fitted === "true") {
     fitImage();
+  } else {
+    setZoom(state.zoom);
   }
 });
 
@@ -344,14 +352,19 @@ function setZoom(value, clientX, clientY, forceCenter, fixedImagePoint) {
   const anchorOffsetY = clientY === undefined ? viewport.clientHeight / 2 : clientY - viewportRect.top;
   const imageX = fixedImagePoint
     ? fixedImagePoint.x
-    : (viewport.scrollLeft + anchorOffsetX - STAGE_MARGIN) / state.zoom;
+    : (viewport.scrollLeft + anchorOffsetX - state.stageOffsetX) / state.zoom;
   const imageY = fixedImagePoint
     ? fixedImagePoint.y
-    : (viewport.scrollTop + anchorOffsetY - STAGE_MARGIN) / state.zoom;
+    : (viewport.scrollTop + anchorOffsetY - state.stageOffsetY) / state.zoom;
+  const stageWidth = state.width * nextZoom;
+  const stageHeight = state.height * nextZoom;
 
   state.zoom = nextZoom;
-  stage.style.width = `${state.width * nextZoom}px`;
-  stage.style.height = `${state.height * nextZoom}px`;
+  state.stageOffsetX = Math.max(STAGE_MARGIN, (viewport.clientWidth - stageWidth) / 2);
+  state.stageOffsetY = Math.max(STAGE_MARGIN, (viewport.clientHeight - stageHeight) / 2);
+  stage.style.width = `${stageWidth}px`;
+  stage.style.height = `${stageHeight}px`;
+  stage.style.margin = `${state.stageOffsetY}px ${state.stageOffsetX}px`;
   stage.classList.toggle("is-magnified", nextZoom >= 2);
   zoomLevel.value = `${formatZoom(nextZoom)}%`;
   zoomOutButton.disabled = nextZoom <= MIN_ZOOM;
@@ -368,8 +381,8 @@ function setZoom(value, clientX, clientY, forceCenter, fixedImagePoint) {
       return;
     }
 
-    viewport.scrollLeft = imageX * nextZoom + STAGE_MARGIN - anchorOffsetX;
-    viewport.scrollTop = imageY * nextZoom + STAGE_MARGIN - anchorOffsetY;
+    viewport.scrollLeft = imageX * nextZoom + state.stageOffsetX - anchorOffsetX;
+    viewport.scrollTop = imageY * nextZoom + state.stageOffsetY - anchorOffsetY;
   };
 
   if (fixedImagePoint) {
