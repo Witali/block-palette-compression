@@ -8,6 +8,7 @@ const BlockPaletteFormat = require("../src/palette/block-palette-format.js");
 const root = path.resolve(__dirname, "..");
 const defaultTextureName = "stone-texture-wic-2.38bpp.bpal";
 const defaultTextureUrl = `assets/bpal/${defaultTextureName}`;
+const cubeHtml = fs.readFileSync(path.join(root, "cube.html"), "utf8");
 const cubeSource = fs.readFileSync(path.join(root, "src", "pages", "cube-page.js"), "utf8");
 const samplerSource = fs.readFileSync(path.join(root, "src", "pages", "cube-bpal-sampler-page.js"), "utf8");
 
@@ -16,6 +17,11 @@ test("uses the bundled WIC BPAL texture on both cube pages", () => {
   assert.match(samplerSource, new RegExp(escapeRegExp(defaultTextureUrl)));
   assert.match(cubeSource, /await loadDefaultBpalTexture\(\)/);
   assert.match(samplerSource, /await loadDefaultBpalTexture\(\)/);
+});
+
+test("enables shader BPAL sampling by default on the cube page", () => {
+  assert.match(cubeHtml, /<input id="bpal-shader-texture" type="checkbox" checked disabled>/);
+  assert.match(cubeSource, /setBpalShaderTextureEnabled\(bpalShaderTextureInput\.checked\)/);
 });
 
 test("decodes the default cube BPAL texture", () => {
