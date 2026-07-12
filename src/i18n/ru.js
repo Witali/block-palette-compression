@@ -116,6 +116,7 @@
     "block.optimizeTitle": "Найти баланс качества и размера файла",
     "block.downloadBpal": "Скачать BPAL",
     "block.saveBplm": "Сохранить BPLM",
+    "block.saveBplmTitle": "Сохранить BPAL-текстуру с готовыми mip-уровнями, использующими одну общую палитру",
     "block.metrics": "Метрики сжатия",
     "block.blocks": "Блоков",
     "block.payload": "Полезная нагрузка",

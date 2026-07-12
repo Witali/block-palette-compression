@@ -9,7 +9,8 @@ const html = fs.readFileSync(path.join(root, "block-palette.html"), "utf8");
 const source = fs.readFileSync(path.join(root, "src", "pages", "block-palette-page.js"), "utf8");
 
 test("offers BPLM export after compression", () => {
-  assert.match(html, /<button id="download-bplm-button"[^>]*data-i18n="block\.saveBplm">/);
+  assert.match(html, /<button id="download-bplm-button"[^>]*data-i18n="block\.saveBplm"[^>]*>/);
+  assert.match(html, /data-i18n-title="block\.saveBplmTitle"/);
   assert.match(source, /downloadBplmButton\.disabled = false/);
   assert.match(source, /BplmFormat\.encodeBplmFile\(state\.result\)/);
   assert.match(source, /application\/vnd\.block-palette-mipmap/);

@@ -116,6 +116,7 @@
     "block.optimizeTitle": "Find a balance between quality and file size",
     "block.downloadBpal": "Download BPAL",
     "block.saveBplm": "Save BPLM",
+    "block.saveBplmTitle": "Save the BPAL texture with precomputed mip levels that share one global palette",
     "block.metrics": "Compression metrics",
     "block.blocks": "Blocks",
     "block.payload": "Payload",
