@@ -170,6 +170,7 @@ h1 {
 }
 
 .toolbar-controls,
+.mip-controls,
 .zoom-controls,
 .pan-controls {
   display: flex;
@@ -182,6 +183,7 @@ h1 {
   justify-content: flex-end;
 }
 
+.mip-controls button,
 .zoom-controls button,
 .pan-controls button {
   min-width: 38px;
@@ -195,6 +197,18 @@ h1 {
 
 #zoom-level {
   min-width: 64px;
+  color: #c4d0dc;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.mip-controls {
+  padding-right: 8px;
+  border-right: 1px solid #344150;
+}
+
+#mip-level {
+  min-width: 86px;
   color: #c4d0dc;
   text-align: center;
   font-variant-numeric: tabular-nums;

@@ -10,6 +10,9 @@ const stage = document.querySelector("#image-stage");
 const canvas = document.querySelector("#image-canvas");
 const emptyState = document.querySelector("#empty-state");
 const statusElement = document.querySelector("#status");
+const mipPreviousButton = document.querySelector("#mip-previous");
+const mipNextButton = document.querySelector("#mip-next");
+const mipLevel = document.querySelector("#mip-level");
 const zoomLevel = document.querySelector("#zoom-level");
 const zoomOutButton = document.querySelector("#zoom-out");
 const zoomInButton = document.querySelector("#zoom-in");
@@ -44,6 +47,10 @@ const state = {
   pinchImageX: 0,
   pinchImageY: 0,
   fileDescription: null,
+  bplmImage: null,
+  bplmName: "",
+  mipIndex: 0,
+  loading: false,
   loadId: 0,
   stageOffsetX: STAGE_MARGIN,
   stageOffsetY: STAGE_MARGIN,
@@ -53,6 +60,8 @@ window.addEventListener("languagechange", () => {
   if (state.fileDescription) {
     renderFileStatus();
   }
+
+  updateMipControls();
 });
 
 uploadButton.addEventListener("click", () => fileInput.click());
@@ -60,7 +69,7 @@ exampleSelect.addEventListener("change", () => {
   const option = exampleSelect.selectedOptions[0];
 
   if (option) {
-    loadBundledBpal(exampleSelect.value, option.textContent.trim());
+    loadBundledBlockPalette(exampleSelect.value, option.textContent.trim());
   }
 });
 fileInput.addEventListener("change", () => {
@@ -75,6 +84,8 @@ zoomOutButton.addEventListener("click", () => setZoom(state.zoom / ZOOM_FACTOR))
 zoomInButton.addEventListener("click", () => setZoom(state.zoom * ZOOM_FACTOR));
 actualSizeButton.addEventListener("click", () => setZoom(1));
 fitImageButton.addEventListener("click", fitImage);
+mipPreviousButton.addEventListener("click", () => showBplmMip(state.mipIndex - 1));
+mipNextButton.addEventListener("click", () => showBplmMip(state.mipIndex + 1));
 
 panButtons.left.addEventListener("click", () => panBy(-getPanStep("x"), 0));
 panButtons.right.addEventListener("click", () => panBy(getPanStep("x"), 0));
@@ -179,9 +190,9 @@ window.addEventListener("resize", () => {
   }
 });
 
-loadBundledBpal(exampleSelect.value, exampleSelect.selectedOptions[0].textContent.trim());
+loadBundledBlockPalette(exampleSelect.value, exampleSelect.selectedOptions[0].textContent.trim());
 
-async function loadBundledBpal(url, fileName) {
+async function loadBundledBlockPalette(url, fileName) {
   const loadId = ++state.loadId;
 
   setStatus(t("viewer.opening", { name: fileName }));
@@ -200,7 +211,7 @@ async function loadBundledBpal(url, fileName) {
     const bytes = await response.arrayBuffer();
 
     if (loadId === state.loadId) {
-      loadBpal(bytes, fileName);
+      loadBlockPalette(bytes, fileName);
     }
   } catch (error) {
     if (loadId === state.loadId) {
@@ -222,11 +233,15 @@ async function loadFile(file) {
 
   try {
     const bytes = await file.arrayBuffer();
-    const isBpal = hasBpalMagic(bytes);
+    const lowerName = file.name.toLowerCase();
+    const isBlockPalette = hasBpalMagic(bytes) ||
+      window.BplmFormat.isBplmFile(bytes) ||
+      lowerName.endsWith(".bpal") ||
+      lowerName.endsWith(".bplm");
 
     if (loadId === state.loadId) {
-      if (isBpal || file.name.toLowerCase().endsWith(".bpal")) {
-        loadBpal(bytes, file.name);
+      if (isBlockPalette) {
+        loadBlockPalette(bytes, file.name);
       } else {
         await loadRegularImage(file);
       }
@@ -244,10 +259,19 @@ async function loadFile(file) {
   }
 }
 
+function loadBlockPalette(bytes, fileName) {
+  if (window.BplmFormat.isBplmFile(bytes) || fileName.toLowerCase().endsWith(".bplm")) {
+    loadBplm(bytes, fileName);
+  } else {
+    loadBpal(bytes, fileName);
+  }
+}
+
 function loadBpal(bytes, fileName) {
   const decoded = window.BlockPaletteFormat.decodeBlockPaletteFile(bytes);
   const pixels = new Uint8ClampedArray(decoded.pixels);
 
+  clearMipState();
   drawPixels(pixels, decoded.width, decoded.height);
   state.fileDescription = {
     type: "bpal",
@@ -263,9 +287,46 @@ function loadBpal(bytes, fileName) {
   renderFileStatus();
 }
 
+function loadBplm(bytes, fileName) {
+  state.bplmImage = window.BplmFormat.decodeBplmFile(bytes);
+  state.bplmName = fileName;
+  state.mipIndex = 0;
+  showBplmMip(0);
+}
+
+function showBplmMip(mipIndex) {
+  const image = state.bplmImage;
+
+  if (!image || mipIndex < 0 || mipIndex >= image.mipLevels.length) {
+    return;
+  }
+
+  const level = image.mipLevels[mipIndex];
+  const pixels = window.BplmFormat.reconstructBplmMipPixels(image, mipIndex);
+
+  state.mipIndex = mipIndex;
+  drawPixels(pixels, level.width, level.height);
+  state.fileDescription = {
+    type: "bplm",
+    name: state.bplmName,
+    width: level.width,
+    height: level.height,
+    version: image.containerVersion,
+    mip: mipIndex,
+    maxMip: image.mipLevels.length - 1,
+    colors: image.globalColorCount,
+    localColors: level.localColorCount,
+    bitsPerPixel: image.bplmStorage.totalBytes * 8 / (image.width * image.height),
+    blockSize: level.blockSize,
+  };
+  updateMipControls();
+  renderFileStatus();
+}
+
 async function loadRegularImage(file) {
   const image = await decodeBrowserImage(file);
 
+  clearMipState();
   canvas.width = image.width;
   canvas.height = image.height;
   canvas.getContext("2d").drawImage(image, 0, 0);
@@ -291,7 +352,7 @@ function renderFileStatus() {
     return;
   }
 
-  const parameters = description.type === "bpal"
+  const parameters = description.type === "bpal" || description.type === "bplm"
     ? {
         ...description,
         bitsPerPixel: window.I18n.formatNumber(description.bitsPerPixel, {
@@ -301,7 +362,31 @@ function renderFileStatus() {
       }
     : description;
 
-  setStatus(t(description.type === "bpal" ? "viewer.bpalStatus" : "viewer.imageStatus", parameters));
+  const statusKey = description.type === "bpal"
+    ? "viewer.bpalStatus"
+    : description.type === "bplm"
+      ? "viewer.bplmStatus"
+      : "viewer.imageStatus";
+
+  setStatus(t(statusKey, parameters));
+}
+
+function clearMipState() {
+  state.bplmImage = null;
+  state.bplmName = "";
+  state.mipIndex = 0;
+  updateMipControls();
+}
+
+function updateMipControls() {
+  const image = state.bplmImage;
+  const maxMip = image ? image.mipLevels.length - 1 : 0;
+
+  mipLevel.value = image
+    ? t("viewer.mipValue", { level: state.mipIndex, max: maxMip })
+    : "Mip —";
+  mipPreviousButton.disabled = state.loading || !image || state.mipIndex <= 0;
+  mipNextButton.disabled = state.loading || !image || state.mipIndex >= maxMip;
 }
 
 async function decodeBrowserImage(file) {
@@ -538,8 +623,10 @@ function setControlsEnabled(enabled) {
 }
 
 function setLoading(loading) {
+  state.loading = loading;
   exampleSelect.disabled = loading;
   uploadButton.disabled = loading;
+  updateMipControls();
 }
 
 function setStatus(message, isError) {

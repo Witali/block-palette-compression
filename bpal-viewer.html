@@ -27,11 +27,12 @@
               <option value="./assets/bpal/IMG_20260531_225527.bpal">IMG_20260531_225527.bpal</option>
               <option value="./assets/bpal/stone-texture-wic-2.08bpp.bpal">stone-texture-wic-2.08bpp.bpal</option>
               <option value="./assets/bpal/stone-texture-wic-2.38bpp.bpal">stone-texture-wic-2.38bpp.bpal</option>
+              <option value="./assets/bpal/stone-texture-wic.bplm">stone-texture-wic.bplm</option>
             </select>
           </label>
 
           <button id="upload-button" class="primary-button" type="button" data-i18n="viewer.upload">Upload image</button>
-          <input id="file-input" type="file" accept=".bpal,image/*" hidden>
+          <input id="file-input" type="file" accept=".bpal,.bplm,image/*" hidden>
         </div>
       </header>
 
@@ -43,6 +44,12 @@
           </div>
 
           <div class="toolbar-controls" aria-label="Image controls" data-i18n-aria-label="viewer.controls">
+            <div class="mip-controls" aria-label="Mip level" data-i18n-aria-label="viewer.mipLevel">
+              <button id="mip-previous" type="button" title="Previous mip level" data-i18n-title="viewer.previousMip" disabled>−</button>
+              <output id="mip-level" aria-label="Current mip level" data-i18n-aria-label="viewer.currentMip">Mip —</output>
+              <button id="mip-next" type="button" title="Next mip level" data-i18n-title="viewer.nextMip" disabled>+</button>
+            </div>
+
             <div class="zoom-controls" aria-label="Zoom" data-i18n-aria-label="viewer.zoom">
               <button id="zoom-out" type="button" title="Zoom out" data-i18n-title="viewer.zoomOut" disabled>−</button>
               <output id="zoom-level" aria-label="Current zoom" data-i18n-aria-label="viewer.currentZoom">100%</output>
@@ -69,7 +76,7 @@
         >
           <div id="empty-state" class="empty-state">
             <strong data-i18n="viewer.drop">Drop a file here</strong>
-            <span data-i18n="viewer.formats">Supports BPAL and image formats available in your browser</span>
+            <span data-i18n="viewer.formats">Supports BPAL, BPLM, and image formats available in your browser</span>
           </div>
           <div id="image-stage" class="image-stage" hidden>
             <canvas id="image-canvas"></canvas>
@@ -80,10 +87,12 @@
       </section>
     </main>
 
-    <script src="./src/i18n/en.js?v=bpal-viewer-3"></script>
-    <script src="./src/i18n/ru.js?v=bpal-viewer-3"></script>
+    <script src="./src/i18n/en.js?v=bpal-viewer-4"></script>
+    <script src="./src/i18n/ru.js?v=bpal-viewer-4"></script>
     <script src="./src/i18n/i18n.js"></script>
     <script src="./src/palette/block-palette-format.js?v=bpal-viewer-1"></script>
-    <script src="./src/pages/bpal-viewer-page.js?v=bpal-viewer-5"></script>
+    <script src="./src/decoders/bpal-texture.js?v=bplm-viewer-1"></script>
+    <script src="./src/palette/bplm-format.js?v=bplm-viewer-1"></script>
+    <script src="./src/pages/bpal-viewer-page.js?v=bplm-viewer-1"></script>
   </body>
 </html>
