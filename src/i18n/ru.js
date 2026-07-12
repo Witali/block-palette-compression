@@ -235,7 +235,7 @@
     "viewer.formats": "Поддерживаются BPAL и форматы изображений, доступные браузеру",
     "viewer.hint": "Два пальца или Ctrl + колесо — масштаб · перетаскивание — перемещение · стрелки — прокрутка",
     "viewer.opening": "Открываю {name}…",
-    "viewer.bpalStatus": "{name} · {width} × {height} · BPAL v{version} · цветов в палитре: {colors} · цветов в блоке: {localColors} · {bitsPerPixel} бит/пиксель · блок {blockSize} × {blockSize}",
+    "viewer.bpalStatus": "{name} · {width} × {height} · BPAL v{version} · блок {blockSize} × {blockSize} · цветов в блоке: {localColors} · цветов в палитре: {colors} · {bitsPerPixel} бит/пиксель",
     "viewer.imageStatus": "{name} · {width} × {height} · обычное изображение",
 
     "decoding.title": "Декодирование изображений",

@@ -43,15 +43,19 @@ test("decodes every bundled viewer image", () => {
   }
 });
 
-test("shows block colors and total file bits per pixel", () => {
+test("shows BPAL parameters in compression-settings order", () => {
   const viewerSource = fs.readFileSync(path.join(root, "src", "pages", "bpal-viewer-page.js"), "utf8");
 
   assert.match(viewerSource, /localColors: decoded\.localColorCount/);
   assert.match(viewerSource, /decoded\.storage\.totalBytes \* 8 \/ \(decoded\.width \* decoded\.height\)/);
 
   for (const catalog of [english, russian]) {
-    assert.match(catalog["viewer.bpalStatus"], /\{localColors\}/);
-    assert.match(catalog["viewer.bpalStatus"], /\{bitsPerPixel\}/);
+    const status = catalog["viewer.bpalStatus"];
+    const positions = ["{blockSize}", "{localColors}", "{colors}", "{bitsPerPixel}"]
+      .map((parameter) => status.indexOf(parameter));
+
+    assert.ok(positions.every((position) => position >= 0));
+    assert.deepEqual(positions, [...positions].sort((left, right) => left - right));
   }
 });
 
