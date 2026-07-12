@@ -27,9 +27,11 @@ test("loads the manifest-selected BPAL texture on both cube pages", () => {
   }
 });
 
-test("enables shader BPAL sampling by default on the cube page", () => {
-  assert.match(cubeHtml, /<input id="bpal-shader-texture" type="checkbox" checked disabled>/);
-  assert.match(cubeSource, /setBpalShaderTextureEnabled\(bpalShaderTextureInput\.checked\)/);
+test("uses shader-only BPAL sampling on the cube page", () => {
+  assert.doesNotMatch(cubeHtml, /id="bpal-shader-texture"/);
+  assert.match(cubeSource, /setBpalShaderTextureEnabled\(true\)/);
+  assert.match(cubeSource, /discardColorTexture\(\)/);
+  assert.doesNotMatch(cubeSource, /loadTexturePixels\(decoded\.pixels/);
 });
 
 test("creates one independently switchable texture resource per cube", () => {

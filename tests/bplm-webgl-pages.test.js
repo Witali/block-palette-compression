@@ -43,9 +43,16 @@ test("uses stored BPLM mip levels in the programmable sampler", () => {
 });
 
 test("binds each cube's own BPAL texture resource before drawing it", () => {
-  assert.match(rendererSource, /createBpalTextureResource\(pixels, width, height, shaderData\)/);
+  assert.match(rendererSource, /createBpalTextureResource\(shaderData\)/);
   assert.match(rendererSource, /bindInstanceTextureResource\(instance\.textureResource\)/);
   assert.match(rendererSource, /deleteBpalTextureResource\(resource\)/);
+});
+
+test("keeps Demo Cube BPAL resources shader-only without decoded RGBA textures", () => {
+  assert.match(rendererSource, /discardColorTexture\(\)/);
+  assert.match(rendererSource, /this\.texture = this\.fallbackTexture/);
+  assert.match(cubeSource, /createBpalTextureResource\(data\.shaderTextureData\)/);
+  assert.doesNotMatch(cubeSource, /loadTexturePixels\(decoded\.pixels/);
 });
 
 function read(fileName) {

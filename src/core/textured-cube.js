@@ -85,7 +85,12 @@
       );
       this.model = mat4Create();
       this.projection = mat4Create();
-      this.texture = createSolidTexture(gl, this.options.placeholderColor || [120, 120, 120, 255], 0);
+      this.fallbackTexture = createSolidTexture(
+        gl,
+        this.options.placeholderColor || [120, 120, 120, 255],
+        0
+      );
+      this.texture = this.fallbackTexture;
       this.heightTexture = createSolidTexture(gl, [128, 128, 128, 255], 1);
       this.specularTexture = createSolidTexture(gl, [255, 255, 255, 255], 2);
       this.bpalTextures = {
@@ -189,11 +194,10 @@
       }
     }
 
-    createBpalTextureResource(pixels, width, height, shaderData) {
+    createBpalTextureResource(shaderData) {
       validateBpalShaderTextureData(shaderData);
 
       const gl = this.gl;
-      const texture = gl.createTexture();
       const bpalTextures = {
         pixelIndices: gl.createTexture(),
         blockPalettes: gl.createTexture(),
@@ -201,31 +205,25 @@
       };
 
       if (
-        !texture ||
         !bpalTextures.pixelIndices ||
         !bpalTextures.blockPalettes ||
         !bpalTextures.globalPalette
       ) {
-        if (texture) {
-          gl.deleteTexture(texture);
-        }
         deleteTextureSet(gl, bpalTextures);
         throw new Error("Could not create WebGL textures for a BPAL resource");
       }
 
       try {
-        uploadPixelTexture(gl, texture, pixels, width, height, 0, { flipY: true });
         uploadDataTexture(gl, bpalTextures.pixelIndices, shaderData.pixelAtlas, 3);
         uploadDataTexture(gl, bpalTextures.blockPalettes, shaderData.blockPaletteAtlas, 4);
         uploadDataTexture(gl, bpalTextures.globalPalette, shaderData.paletteAtlas, 5);
       } catch (error) {
-        gl.deleteTexture(texture);
         deleteTextureSet(gl, bpalTextures);
         throw error;
       }
 
       return {
-        texture,
+        texture: null,
         bpalTextures,
         bpalTextureInfo: shaderData,
       };
@@ -236,10 +234,11 @@
         return;
       }
 
-      if (resource.texture) {
+      if (resource.texture && resource.texture !== this.fallbackTexture) {
         this.gl.deleteTexture(resource.texture);
       }
       deleteTextureSet(this.gl, resource.bpalTextures);
+      resource.texture = null;
     }
 
     getCurrentBpalTextureResource() {
@@ -248,6 +247,13 @@
         bpalTextures: this.bpalTextures,
         bpalTextureInfo: this.bpalTextureInfo,
       };
+    }
+
+    discardColorTexture() {
+      if (this.texture && this.texture !== this.fallbackTexture) {
+        this.gl.deleteTexture(this.texture);
+      }
+      this.texture = this.fallbackTexture;
     }
 
     loadBpalShaderTexture(shaderData) {
@@ -352,7 +358,9 @@
 
     bindInstanceTextureResource(resource) {
       const gl = this.gl;
-      const texture = resource && resource.texture ? resource.texture : this.texture;
+      const texture = resource
+        ? resource.texture || this.fallbackTexture
+        : this.texture;
       const bpalTextures = resource && resource.bpalTextures
         ? resource.bpalTextures
         : this.bpalTextures;
@@ -452,11 +460,11 @@
     }
 
     replaceTexture(texture) {
-      if (this.texture) {
+      if (this.texture && this.texture !== this.fallbackTexture) {
         this.gl.deleteTexture(this.texture);
       }
 
-      this.texture = texture;
+      this.texture = texture || this.fallbackTexture;
     }
 
     setMaterial(material) {

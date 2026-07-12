@@ -17,7 +17,6 @@ const heightStrengthValue = document.getElementById("height-strength-value");
 const cubeCountInput = document.getElementById("cube-count");
 const bpalExampleSelect = document.getElementById("bpal-example");
 const bpalFileInput = document.getElementById("bpal-file");
-const bpalShaderTextureInput = document.getElementById("bpal-shader-texture");
 const perCubeTexturesInput = document.getElementById("per-cube-textures");
 const bpalStatus = document.getElementById("bpal-status");
 const gl = canvas.getContext("webgl", { antialias: true });
@@ -223,20 +222,6 @@ function initializeBpalTextureControls() {
     }
   });
 
-  if (bpalShaderTextureInput) {
-    bpalShaderTextureInput.addEventListener("change", () => {
-      const enabled = bpalShaderTextureInput.checked && Boolean(loadedBpalTexture);
-
-      cubeRenderer.setBpalShaderTextureEnabled(enabled);
-
-      if (loadedBpalTexture) {
-        loadedBpalTexture.shaderTextureEnabled = enabled;
-        window.__cubeBpalTexture.shaderTextureEnabled = enabled;
-        updateLoadedBpalStatus();
-      }
-    });
-  }
-
   if (perCubeTexturesInput) {
     perCubeTexturesInput.addEventListener("change", () => {
       cubeMotionState.perCubeTextures = perCubeTexturesInput.checked;
@@ -301,13 +286,13 @@ async function loadBpalTextureSource(source, fileName, sourceUrl) {
     const textureData = createBpalTextureData(bytes);
     const { decoded, shaderTextureData } = textureData;
 
-    cubeRenderer.loadTexturePixels(decoded.pixels, decoded.width, decoded.height, {
-      flipY: true,
-      resetMaterialMaps: true,
-    });
+    cubeRenderer.resetMaterialMaps();
+    cubeRenderer.discardColorTexture();
     cubeRenderer.loadBpalShaderTexture(shaderTextureData);
     primaryTextureResource = cubeRenderer.getCurrentBpalTextureResource();
     primaryTextureData = textureData;
+
+    cubeRenderer.setBpalShaderTextureEnabled(true);
 
     if (sourceUrl) {
       cubeTextureDataCache.set(sourceUrl, textureData);
@@ -315,11 +300,6 @@ async function loadBpalTextureSource(source, fileName, sourceUrl) {
 
     resetCubeTextureInstances();
     requestCubeTextureRebuild();
-
-    if (bpalShaderTextureInput) {
-      bpalShaderTextureInput.disabled = false;
-      cubeRenderer.setBpalShaderTextureEnabled(bpalShaderTextureInput.checked);
-    }
 
     loadedBpalTexture = {
       name: fileName,
@@ -332,7 +312,7 @@ async function loadBpalTextureSource(source, fileName, sourceUrl) {
       localColorCount: decoded.localColorCount,
       globalColorCount: decoded.globalColorCount,
       paletteMode: decoded.paletteMode,
-      shaderTextureEnabled: Boolean(bpalShaderTextureInput && bpalShaderTextureInput.checked),
+      shaderTextureEnabled: true,
     };
     window.__cubeBpalTexture = loadedBpalTexture;
 
@@ -356,7 +336,10 @@ function updateLoadedBpalStatus() {
   }
 
   const renderMode = loadedBpalTexture.shaderTextureEnabled
-    ? localized("double indexing in shader", "двойная индексация в шейдере")
+    ? localized(
+      "shader-only double indexing, RGBA not uploaded",
+      "только двойная индексация в шейдере, RGBA не загружена"
+    )
     : localized("decoded RGBA texture", "готовая RGBA-текстура");
   const textureMode = cubeMotionState.perCubeTextures
     ? localized(
@@ -449,12 +432,7 @@ async function rebuildCubeTextureInstances() {
 
   try {
     textureData.forEach((data) => {
-      createdResources.push(cubeRenderer.createBpalTextureResource(
-        data.decoded.pixels,
-        data.decoded.width,
-        data.decoded.height,
-        data.shaderTextureData
-      ));
+      createdResources.push(cubeRenderer.createBpalTextureResource(data.shaderTextureData));
     });
   } catch (error) {
     createdResources.forEach((resource) => cubeRenderer.deleteBpalTextureResource(resource));

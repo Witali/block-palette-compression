@@ -204,8 +204,6 @@
     "cube.controls": "Material controls",
     "cube.relief": "Relief",
     "cube.count": "Cubes",
-    "cube.shaderTitle": "Perform both BPAL index lookups in the fragment shader",
-    "cube.shaderTexture": "BPAL in shader",
     "cube.perCubeTextures": "Texture per cube",
     "cube.perCubeTexturesTitle": "Assign a separate texture instance to every cube",
     "cube.defaultJpeg": "Default JPEG",
