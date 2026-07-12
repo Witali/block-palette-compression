@@ -20,7 +20,7 @@ const bpalExampleSelect = document.getElementById("bpal-example");
 const bpalFileInput = document.getElementById("bpal-file");
 const perCubeTexturesInput = document.getElementById("per-cube-textures");
 const bpalStatus = document.getElementById("bpal-status");
-const requestedCompactRenderer = new URLSearchParams(window.location.search).get("renderer") === "webgl2";
+const requestedCompactRenderer = new URLSearchParams(window.location.search).get("renderer") !== "webgl1";
 let compactRendererEnabled = requestedCompactRenderer;
 let gl = canvas.getContext(compactRendererEnabled ? "webgl2" : "webgl", { antialias: true });
 
@@ -219,9 +219,9 @@ function initializeRendererModeControl() {
     const url = new URL(window.location.href);
 
     if (webgl2CompactInput.checked) {
-      url.searchParams.set("renderer", "webgl2");
-    } else {
       url.searchParams.delete("renderer");
+    } else {
+      url.searchParams.set("renderer", "webgl1");
     }
 
     window.location.replace(url.href);

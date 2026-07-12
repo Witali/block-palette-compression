@@ -35,9 +35,10 @@ test("uses shader-only BPAL sampling on the cube page", () => {
 });
 
 test("switches Demo Cube between WebGL1 and compact WebGL2 rendering", () => {
-  assert.match(cubeHtml, /<input id="webgl2-compact" type="checkbox">/);
+  assert.match(cubeHtml, /<input id="webgl2-compact" type="checkbox" checked>/);
   assert.match(cubeHtml, /src="\.\/src\/core\/textured-cube-webgl2\.js\?v=compact-bpal-1"/);
-  assert.match(cubeSource, /get\("renderer"\) === "webgl2"/);
+  assert.match(cubeSource, /get\("renderer"\) !== "webgl1"/);
+  assert.match(cubeSource, /url\.searchParams\.set\("renderer", "webgl1"\)/);
   assert.match(cubeSource, /CompactTexturedCubeRenderer\.create\(gl\)/);
   assert.match(cubeSource, /createCompactShaderTextureData\(/);
 });
