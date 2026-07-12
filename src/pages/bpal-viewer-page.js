@@ -256,6 +256,8 @@ function loadBpal(bytes, fileName) {
     height: decoded.height,
     version: decoded.version,
     colors: decoded.globalColorCount,
+    localColors: decoded.localColorCount,
+    bitsPerPixel: decoded.storage.totalBytes * 8 / (decoded.width * decoded.height),
     blockSize: decoded.blockSize,
   };
   renderFileStatus();
@@ -289,7 +291,17 @@ function renderFileStatus() {
     return;
   }
 
-  setStatus(t(description.type === "bpal" ? "viewer.bpalStatus" : "viewer.imageStatus", description));
+  const parameters = description.type === "bpal"
+    ? {
+        ...description,
+        bitsPerPixel: window.I18n.formatNumber(description.bitsPerPixel, {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        }),
+      }
+    : description;
+
+  setStatus(t(description.type === "bpal" ? "viewer.bpalStatus" : "viewer.imageStatus", parameters));
 }
 
 async function decodeBrowserImage(file) {

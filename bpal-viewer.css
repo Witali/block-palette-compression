@@ -159,12 +159,10 @@ h1 {
 
 #status {
   display: block;
-  overflow: hidden;
-  max-width: 680px;
+  max-width: 760px;
   color: #91a1b3;
   font-size: 13px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.35;
 }
 
 #status.is-error {

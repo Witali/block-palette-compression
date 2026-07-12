@@ -235,7 +235,7 @@
     "viewer.formats": "Supports BPAL and image formats available in your browser",
     "viewer.hint": "Two fingers or Ctrl + mouse wheel — zoom · drag — pan · arrow keys — scroll",
     "viewer.opening": "Opening {name}…",
-    "viewer.bpalStatus": "{name} · {width} × {height} · BPAL v{version} · {colors} colors · {blockSize} × {blockSize} block",
+    "viewer.bpalStatus": "{name} · {width} × {height} · BPAL v{version} · palette colors: {colors} · block colors: {localColors} · {bitsPerPixel} bits/pixel · {blockSize} × {blockSize} block",
     "viewer.imageStatus": "{name} · {width} × {height} · regular image",
 
     "decoding.title": "Image Decoding",
