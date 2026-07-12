@@ -53,13 +53,16 @@ test("shows the language selector only on the home page", () => {
   assert.deepEqual(pagesWithSwitcher, ["index.html"]);
 });
 
-test("shows the GitHub README link in the home description", () => {
+test("links the description prompt to the GitHub README", () => {
   const root = path.resolve(__dirname, "..");
   const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
   const header = html.match(/<header class="home-header">([\s\S]*?)<\/header>/)[1];
   const navigation = html.match(/<nav class="demo-links"[\s\S]*?<\/nav>/)[0];
 
-  assert.match(header, /href="https:\/\/github\.com\/Witali\/block-palette-compression#readme"/);
+  assert.match(
+    header,
+    /<span data-i18n="home\.readDescriptionPrefix">Read the<\/span>\s*<a href="https:\/\/github\.com\/Witali\/block-palette-compression\/blob\/main\/README\.md" data-i18n="home\.readDescriptionLink">description<\/a>\./,
+  );
   assert.doesNotMatch(navigation, /github\.com\/Witali\/block-palette-compression/);
 });
 

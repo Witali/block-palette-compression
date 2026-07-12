@@ -63,6 +63,8 @@
 
     "home.title": "Блочно-палитровое сжатие",
     "home.description": "Сжатие BPAL, просмотр изображений и демонстрации шейдерных текстур.",
+    "home.readDescriptionPrefix": "Читайте",
+    "home.readDescriptionLink": "описание",
     "home.nav": "Демонстрационные страницы",
     "home.cube.title": "Куб",
     "home.cube.description": "Вращающийся WebGL-куб с декодированной каменной или BPAL-текстурой.",
@@ -76,7 +78,6 @@
     "home.block.description": "Сжатие блоков локальными индексами цветов, ссылающимися на общую палитру изображения.",
     "home.viewer.title": "Просмотр BPAL",
     "home.viewer.description": "Открытие BPAL и обычных изображений с масштабированием и перемещением.",
-    "home.readme": "README на GitHub",
     "home.retro.title": "Ретро-конвертер",
     "home.retro.description": "Экспорт экранов ZX Spectrum .scr и планарных данных PC VGA Mode X.",
     "home.benchmarks.title": "Тесты производительности",

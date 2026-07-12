@@ -63,6 +63,8 @@
 
     "home.title": "Block Palette Compression",
     "home.description": "BPAL compression, viewing, and shader texture demos.",
+    "home.readDescriptionPrefix": "Read the",
+    "home.readDescriptionLink": "description",
     "home.nav": "Demo pages",
     "home.cube.title": "Cube",
     "home.cube.description": "Rotating WebGL cube with the decoded stone texture or a BPAL texture.",
@@ -76,7 +78,6 @@
     "home.block.description": "Compress blocks with local color indices that reference one shared image palette.",
     "home.viewer.title": "BPAL Viewer",
     "home.viewer.description": "Open BPAL files or regular images and inspect them with zoom and pan controls.",
-    "home.readme": "README on GitHub",
     "home.retro.title": "Retro image converter",
     "home.retro.description": "Export ZX Spectrum .scr screens and planar PC VGA Mode X image data.",
     "home.benchmarks.title": "Benchmarks",
