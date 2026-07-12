@@ -1,0 +1,21 @@
+{
+  "dataset": {
+    "name": "CLIC 2020 Professional Validation",
+    "homepage": "https://archive.compression.cc/2021/tasks/index.html",
+    "download": "https://storage.googleapis.com/clic_datasets/clic2020_professional_valid.zip",
+    "sha256": "e56568e20ead6bd215b313fed260d1c98b9ba863540039f00892ab67b1e39baf",
+    "license": "https://data.vision.ee.ethz.ch/cvl/clic/LICENSE_professional_2020.txt"
+  },
+  "selection": {
+    "root": ".benchmark-corpus/clic2020-professional-valid",
+    "glob": "**/*.png",
+    "strategy": "sha256-path",
+    "count": 8,
+    "minimumSize": [1024, 1024],
+    "class": "photo",
+    "transfer": "srgb",
+    "preprocess": {
+      "centerCrop": [1024, 1024]
+    }
+  }
+}

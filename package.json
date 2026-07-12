@@ -5,6 +5,8 @@
   "description": "Experimental BPAL block-palette image codec and WebGL texture demos",
   "scripts": {
     "start": "node tools/serve.js",
-    "test": "node tests/run-tests.js"
+    "test": "node tests/run-tests.js",
+    "benchmark:textures": "python tools/texture_codec_benchmark.py",
+    "benchmark:textures:test": "python -m unittest benchmark.test_metrics"
   }
 }

@@ -1,0 +1,28 @@
+{
+  "images": [
+    {
+      "id": "stone-small",
+      "path": "assets/stone-texture-small.jpg",
+      "class": "albedo",
+      "transfer": "srgb"
+    },
+    {
+      "id": "stone-wic",
+      "path": "assets/stone-texture-wic.jpg",
+      "class": "albedo",
+      "transfer": "srgb"
+    },
+    {
+      "id": "stone-height",
+      "path": "assets/stone-texture-wic-height.png",
+      "class": "height",
+      "transfer": "linear"
+    },
+    {
+      "id": "stone-specular",
+      "path": "assets/stone-texture-wic-specular.png",
+      "class": "specular",
+      "transfer": "linear"
+    }
+  ]
+}

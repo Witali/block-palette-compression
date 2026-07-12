@@ -1,0 +1,1 @@
+"""Texture codec benchmark package."""

@@ -35,7 +35,8 @@ Detailed documentation:
 - [codec and implementation](./BLOCK_PALETTE_README.md)
   ([Russian](./BLOCK_PALETTE_README_ru.md));
 - [BPAL v3 file format](./BLOCK_PALETTE_FORMAT.md)
-  ([Russian](./BLOCK_PALETTE_FORMAT_ru.md)).
+  ([Russian](./BLOCK_PALETTE_FORMAT_ru.md));
+- [reproducible BPAL/BC/ASTC texture codec benchmark](./benchmark/README.md).
 
 ## Run
 
