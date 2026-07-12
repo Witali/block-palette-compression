@@ -11,7 +11,7 @@
 })(typeof self !== "undefined" ? self : globalThis, function () {
   "use strict";
 
-  const MIN_SCALE = 0.35;
+  const MIN_SCALE = 0.175;
   const MAX_SCALE = 3;
   const DEFAULT_SCALE = 1;
   const WHEEL_SENSITIVITY = 0.0015;

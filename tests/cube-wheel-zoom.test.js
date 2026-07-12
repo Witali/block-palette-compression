@@ -16,6 +16,7 @@ test("zooms cube scenes in and out with the mouse wheel", () => {
 });
 
 test("limits cube wheel zoom to the supported range", () => {
+  assert.equal(CubeWheelZoom.MIN_SCALE, 0.175);
   assert.equal(CubeWheelZoom.getNextScale(1, -100000, 0), CubeWheelZoom.MAX_SCALE);
   assert.equal(CubeWheelZoom.getNextScale(1, 100000, 0), CubeWheelZoom.MIN_SCALE);
 });
@@ -40,8 +41,8 @@ test("loads wheel zoom controls on both cube pages", () => {
     "utf8"
   );
 
-  assert.match(cubeHtml, /src="\.\/src\/pages\/cube-wheel-zoom\.js\?v=1"/);
-  assert.match(samplerHtml, /src="\.\/src\/pages\/cube-wheel-zoom\.js\?v=1"/);
+  assert.match(cubeHtml, /src="\.\/src\/pages\/cube-wheel-zoom\.js\?v=2"/);
+  assert.match(samplerHtml, /src="\.\/src\/pages\/cube-wheel-zoom\.js\?v=2"/);
   assert.match(cubeSource, /addEventListener\("wheel", zoomCubes, \{ passive: false \}\)/);
   assert.match(samplerSource, /addEventListener\("wheel", zoomCube, \{ passive: false \}\)/);
 });
