@@ -24,10 +24,10 @@ test("lists every bundled BPAL and BPLM image in the viewer", () => {
   assert.deepEqual(listedNames, assetNames);
 });
 
-test("selects the Alaska BPAL image by default", () => {
+test("selects the WIC BPLM image by default", () => {
   assert.match(
     viewerHtml,
-    /<option value="\.\/assets\/bpal\/landscape-alaska\.bpal" selected>/,
+    /<option value="\.\/assets\/bpal\/stone-texture-wic\.bplm" selected>/,
   );
 });
 
