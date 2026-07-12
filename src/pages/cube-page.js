@@ -2,7 +2,7 @@
  * Purpose: WebGL demo entry point that renders the rotating textured cube.
  * Processing blocks:
  * - Create the shared textured cube renderer.
- * - Load the default BPAL stone texture through the shared texture path.
+ * - Load the default BPLM stone texture through the shared texture path.
  * - Run the animation loop, pointer controls, and FPS counter.
  */
 "use strict";
@@ -44,8 +44,8 @@ const AUTO_ROTATE_X_SPEED = 0.0007;
 const AUTO_ROTATE_Y_SPEED = 0.001;
 const POINTER_ROTATE_SPEED = 0.01;
 const CLICK_DRAG_THRESHOLD = 4;
-const DEFAULT_BPAL_TEXTURE_URL = "assets/bpal/stone-texture-wic-2.38bpp.bpal";
-const DEFAULT_BPAL_TEXTURE_NAME = "stone-texture-wic-2.38bpp.bpal";
+const DEFAULT_BPAL_TEXTURE_URL = "assets/bpal/stone-texture-wic.bplm";
+const DEFAULT_BPAL_TEXTURE_NAME = "stone-texture-wic.bplm";
 let cubeRenderer = null;
 let bpalLoadId = 0;
 let loadedBpalTexture = null;

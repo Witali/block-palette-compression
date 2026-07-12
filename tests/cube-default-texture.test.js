@@ -3,16 +3,16 @@
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
-const BlockPaletteFormat = require("../src/palette/block-palette-format.js");
+const BplmFormat = require("../src/palette/bplm-format.js");
 
 const root = path.resolve(__dirname, "..");
-const defaultTextureName = "stone-texture-wic-2.38bpp.bpal";
+const defaultTextureName = "stone-texture-wic.bplm";
 const defaultTextureUrl = `assets/bpal/${defaultTextureName}`;
 const cubeHtml = fs.readFileSync(path.join(root, "cube.html"), "utf8");
 const cubeSource = fs.readFileSync(path.join(root, "src", "pages", "cube-page.js"), "utf8");
 const samplerSource = fs.readFileSync(path.join(root, "src", "pages", "cube-bpal-sampler-page.js"), "utf8");
 
-test("uses the bundled WIC BPAL texture on both cube pages", () => {
+test("uses the bundled WIC BPLM texture on both cube pages", () => {
   assert.match(cubeSource, new RegExp(escapeRegExp(defaultTextureUrl)));
   assert.match(samplerSource, new RegExp(escapeRegExp(defaultTextureUrl)));
   assert.match(cubeSource, /await loadDefaultBpalTexture\(\)/);
@@ -24,15 +24,18 @@ test("enables shader BPAL sampling by default on the cube page", () => {
   assert.match(cubeSource, /setBpalShaderTextureEnabled\(bpalShaderTextureInput\.checked\)/);
 });
 
-test("decodes the default cube BPAL texture", () => {
+test("decodes the default cube BPLM texture and its stored mip chain", () => {
   const bytes = fs.readFileSync(path.join(root, "assets", "bpal", defaultTextureName));
-  const decoded = BlockPaletteFormat.decodeBlockPaletteFile(bytes);
+  const decoded = BplmFormat.decodeBplmFile(bytes);
 
   assert.equal(decoded.width, 1100);
   assert.equal(decoded.height, 734);
-  assert.equal(decoded.blockSize, 8);
+  assert.equal(decoded.blockSize, 16);
   assert.equal(decoded.localColorCount, 4);
-  assert.equal(decoded.globalColorCount, 64);
+  assert.equal(decoded.globalColorCount, 256);
+  assert.equal(decoded.mipCount, 11);
+  assert.deepEqual(decoded.mipLevels.slice(0, 5).map((level) => level.blockSize), [16, 8, 4, 2, 1]);
+  assert.equal(decoded.mipLevels[3].direct, true);
 });
 
 test("does not recompress a JPEG for the default BPAL sampler texture", () => {
