@@ -27,6 +27,15 @@ test("loads the BPLM dependencies before the compression page", () => {
   assert.ok(pageIndex > formatIndex);
 });
 
+test("pans both compression previews by dragging", () => {
+  assert.match(source, /for \(const viewport of \[sourceViewport, resultViewport\]\)/);
+  assert.match(source, /viewport\.addEventListener\("pointerdown", startViewportDrag\)/);
+  assert.match(source, /drag\.viewport\.scrollLeft = drag\.scrollLeft - deltaX/);
+  assert.match(source, /drag\.viewport\.scrollTop = drag\.scrollTop - deltaY/);
+  assert.match(source, /synchronizeScroll\(/);
+  assert.match(source, /selectBlockUnlessDragging/);
+});
+
 function test(name, callback) {
   try {
     callback();

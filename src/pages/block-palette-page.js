@@ -67,11 +67,14 @@ const state = {
   displayBaseScale: 1,
   zoom: 1,
   synchronizingScroll: false,
+  viewportDrag: null,
+  suppressResultClick: false,
   optimizationApplied: false,
 };
 
 const MIN_ZOOM = 0.125;
 const MAX_ZOOM = 16;
+const DRAG_THRESHOLD = 3;
 
 controls.addEventListener("submit", (event) => {
   event.preventDefault();
@@ -131,11 +134,18 @@ downloadFileButton.addEventListener("click", downloadBlockPaletteFile);
 downloadBplmButton.addEventListener("click", downloadBlockPaletteMipmapFile);
 downloadButton.addEventListener("click", downloadResult);
 showGridInput.addEventListener("change", drawGrid);
-resultCanvas.addEventListener("click", selectBlockFromPointer);
+resultCanvas.addEventListener("click", selectBlockUnlessDragging);
 sourceViewport.addEventListener("scroll", () => synchronizeScroll(sourceViewport, resultViewport), { passive: true });
 resultViewport.addEventListener("scroll", () => synchronizeScroll(resultViewport, sourceViewport), { passive: true });
 sourceViewport.addEventListener("wheel", zoomFromWheel, { passive: false });
 resultViewport.addEventListener("wheel", zoomFromWheel, { passive: false });
+for (const viewport of [sourceViewport, resultViewport]) {
+  viewport.addEventListener("pointerdown", startViewportDrag);
+  viewport.addEventListener("pointermove", moveViewportDrag);
+  viewport.addEventListener("pointerup", finishViewportDrag);
+  viewport.addEventListener("pointercancel", finishViewportDrag);
+  viewport.addEventListener("lostpointercapture", finishViewportDrag);
+}
 window.addEventListener("beforeunload", () => {
   stopWorker();
   stopOptimizer();
@@ -542,6 +552,83 @@ function synchronizeScroll(source, target) {
   window.requestAnimationFrame(() => {
     state.synchronizingScroll = false;
   });
+}
+
+function startViewportDrag(event) {
+  if (event.button !== 0 || !state.imageWidth || !state.imageHeight) {
+    return;
+  }
+
+  const viewport = event.currentTarget;
+
+  state.viewportDrag = {
+    viewport,
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    startY: event.clientY,
+    scrollLeft: viewport.scrollLeft,
+    scrollTop: viewport.scrollTop,
+    moved: false,
+  };
+  try {
+    viewport.setPointerCapture(event.pointerId);
+  } catch (_error) {
+    // Synthetic pointer events used by tests may not have a capturable pointer.
+  }
+  viewport.classList.add("is-dragging");
+  event.preventDefault();
+}
+
+function moveViewportDrag(event) {
+  const drag = state.viewportDrag;
+
+  if (!drag || drag.viewport !== event.currentTarget || drag.pointerId !== event.pointerId) {
+    return;
+  }
+
+  const deltaX = event.clientX - drag.startX;
+  const deltaY = event.clientY - drag.startY;
+
+  drag.moved = drag.moved || Math.hypot(deltaX, deltaY) >= DRAG_THRESHOLD;
+  drag.viewport.scrollLeft = drag.scrollLeft - deltaX;
+  drag.viewport.scrollTop = drag.scrollTop - deltaY;
+  state.synchronizingScroll = false;
+  synchronizeScroll(
+    drag.viewport,
+    drag.viewport === sourceViewport ? resultViewport : sourceViewport
+  );
+  event.preventDefault();
+}
+
+function finishViewportDrag(event) {
+  const drag = state.viewportDrag;
+
+  if (!drag || drag.viewport !== event.currentTarget || drag.pointerId !== event.pointerId) {
+    return;
+  }
+
+  state.viewportDrag = null;
+  drag.viewport.classList.remove("is-dragging");
+
+  if (drag.moved && drag.viewport === resultViewport) {
+    state.suppressResultClick = true;
+    window.setTimeout(() => {
+      state.suppressResultClick = false;
+    }, 0);
+  }
+
+  if (event.type !== "lostpointercapture" && drag.viewport.hasPointerCapture(event.pointerId)) {
+    drag.viewport.releasePointerCapture(event.pointerId);
+  }
+}
+
+function selectBlockUnlessDragging(event) {
+  if (state.suppressResultClick) {
+    state.suppressResultClick = false;
+    return;
+  }
+
+  selectBlockFromPointer(event);
 }
 
 function zoomFromWheel(event) {
