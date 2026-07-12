@@ -6,6 +6,7 @@ const path = require("node:path");
 const CubeGridLayout = require("../src/pages/cube-grid-layout.js");
 
 const root = path.resolve(__dirname, "..");
+const cubeSource = fs.readFileSync(path.join(root, "src", "pages", "cube-page.js"), "utf8");
 
 test("offers the requested cube counts", () => {
   const html = fs.readFileSync(path.join(root, "cube.html"), "utf8");
@@ -57,6 +58,11 @@ test("scales the complete cube grid around its center", () => {
 
 test("rejects cube counts outside the selector", () => {
   assert.throws(() => CubeGridLayout.getDimensions(2), /Unsupported cube count/);
+});
+
+test("places the multi-cube camera twice as far from the scene", () => {
+  assert.match(cubeSource, /const CAMERA_EYE = \[0, 0, 12\]/);
+  assert.match(cubeSource, /TexturedCubeRenderer\.create\(gl, \{ eye: CAMERA_EYE \}\)/);
 });
 
 function test(name, callback) {

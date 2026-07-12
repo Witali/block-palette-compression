@@ -44,6 +44,7 @@ const AUTO_ROTATE_X_SPEED = 0.0007;
 const AUTO_ROTATE_Y_SPEED = 0.001;
 const POINTER_ROTATE_SPEED = 0.01;
 const CLICK_DRAG_THRESHOLD = 4;
+const CAMERA_EYE = [0, 0, 12];
 const DEFAULT_BPAL_TEXTURE_URL = "assets/bpal/stone-texture-wic.bplm";
 const DEFAULT_BPAL_TEXTURE_NAME = "stone-texture-wic.bplm";
 let cubeRenderer = null;
@@ -67,7 +68,7 @@ start().catch((error) => {
 });
 
 async function start() {
-  cubeRenderer = await TexturedCubeRenderer.create(gl);
+  cubeRenderer = await TexturedCubeRenderer.create(gl, { eye: CAMERA_EYE });
   window.__texturedCubeRenderer = cubeRenderer;
   window.__cubeMotionState = cubeMotionState;
   window.__cubeGridState = cubeGridState;
