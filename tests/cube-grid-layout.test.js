@@ -46,6 +46,15 @@ test("reduces cube scale as the grid grows", () => {
   assert.ok(hundred[0].scale < one[0].scale);
 });
 
+test("scales the complete cube grid around its center", () => {
+  const base = CubeGridLayout.createInstances(3, 16 / 9);
+  const zoomed = CubeGridLayout.createInstances(3, 16 / 9, 2);
+
+  assert.equal(zoomed[0].translation[0], base[0].translation[0] * 2);
+  assert.equal(zoomed[0].translation[1] - 0.25, (base[0].translation[1] - 0.25) * 2);
+  assert.equal(zoomed[0].scale, base[0].scale * 2);
+});
+
 test("rejects cube counts outside the selector", () => {
   assert.throws(() => CubeGridLayout.getDimensions(2), /Unsupported cube count/);
 });

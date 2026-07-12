@@ -31,11 +31,13 @@ const cubeMotionState = {
   drag: null,
   suppressNextClick: false,
   cubeCount: 1,
+  zoom: CubeWheelZoom.DEFAULT_SCALE,
 };
 const cubeGridState = {
   count: 0,
   width: 0,
   height: 0,
+  zoom: 0,
   instances: [],
 };
 const AUTO_ROTATE_X_SPEED = 0.0007;
@@ -100,14 +102,17 @@ function getCubeInstances(width, height) {
   if (
     cubeGridState.count !== cubeMotionState.cubeCount ||
     cubeGridState.width !== width ||
-    cubeGridState.height !== height
+    cubeGridState.height !== height ||
+    cubeGridState.zoom !== cubeMotionState.zoom
   ) {
     cubeGridState.count = cubeMotionState.cubeCount;
     cubeGridState.width = width;
     cubeGridState.height = height;
+    cubeGridState.zoom = cubeMotionState.zoom;
     cubeGridState.instances = window.CubeGridLayout.createInstances(
       cubeMotionState.cubeCount,
-      width / Math.max(1, height)
+      width / Math.max(1, height),
+      cubeMotionState.zoom
     );
   }
 
@@ -305,10 +310,20 @@ function initializeCubePointerControls() {
   canvas.addEventListener("pointermove", updateCubeDrag);
   canvas.addEventListener("pointerup", finishCubeDrag);
   canvas.addEventListener("pointercancel", finishCubeDrag);
+  canvas.addEventListener("wheel", zoomCubes, { passive: false });
   canvas.addEventListener("lostpointercapture", () => {
     cubeMotionState.drag = null;
     canvas.classList.remove("is-dragging");
   });
+}
+
+function zoomCubes(event) {
+  event.preventDefault();
+  cubeMotionState.zoom = CubeWheelZoom.getNextScale(
+    cubeMotionState.zoom,
+    event.deltaY,
+    event.deltaMode
+  );
 }
 
 function startCubeDrag(event) {

@@ -32,9 +32,15 @@
     return { columns, rows: count / columns };
   }
 
-  function createInstances(count, aspectRatio) {
+  function createInstances(count, aspectRatio, sceneScale) {
     if (!Number.isFinite(aspectRatio) || aspectRatio <= 0) {
       throw new RangeError("Cube grid aspect ratio must be positive");
+    }
+
+    const zoom = sceneScale === undefined ? 1 : sceneScale;
+
+    if (!Number.isFinite(zoom) || zoom <= 0) {
+      throw new RangeError("Cube grid scale must be positive");
     }
 
     const { columns, rows } = getDimensions(count);
@@ -51,8 +57,8 @@
       const y = WORLD_CENTER_Y + WORLD_HEIGHT / 2 - (row + 0.5) * cellHeight;
 
       instances.push({
-        translation: [x, y, 0],
-        scale,
+        translation: [x * zoom, WORLD_CENTER_Y + (y - WORLD_CENTER_Y) * zoom, 0],
+        scale: scale * zoom,
       });
     }
 

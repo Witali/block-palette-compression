@@ -28,7 +28,9 @@ const motion = {
   lastFrameTime: 0,
   drag: null,
   suppressNextClick: false,
+  zoom: CubeWheelZoom.DEFAULT_SCALE,
 };
+const cubeInstances = [{ translation: [0, 0, 0], scale: motion.zoom }];
 const fps = {
   frames: 0,
   lastUpdate: 0,
@@ -103,6 +105,7 @@ function render(time) {
   renderer.draw({
     angleX: motion.angleX,
     angleY: motion.angleY,
+    instances: cubeInstances,
     resizeToDisplaySize: true,
   });
   requestAnimationFrame(render);
@@ -351,10 +354,17 @@ function initializePointerControls() {
   canvas.addEventListener("pointermove", moveDrag);
   canvas.addEventListener("pointerup", finishDrag);
   canvas.addEventListener("pointercancel", finishDrag);
+  canvas.addEventListener("wheel", zoomCube, { passive: false });
   canvas.addEventListener("lostpointercapture", () => {
     motion.drag = null;
     canvas.classList.remove("is-dragging");
   });
+}
+
+function zoomCube(event) {
+  event.preventDefault();
+  motion.zoom = CubeWheelZoom.getNextScale(motion.zoom, event.deltaY, event.deltaMode);
+  cubeInstances[0].scale = motion.zoom;
 }
 
 function startDrag(event) {
