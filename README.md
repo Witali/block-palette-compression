@@ -4,6 +4,8 @@ An experimental browser codec for BPAL block-palette images. A BPAL image uses
 one shared color palette and a small table of shared-palette indices in every
 block. Pixels store only indices into their block's local table.
 
+[Open the live demo on GitHub Pages.](https://witali.github.io/block-palette-compression/)
+
 ## How BPAL works
 
 The image is split into fixed-size blocks. A pixel stores a compact local slot,
