@@ -200,6 +200,7 @@
     "cube.title": "WebGL Rotating Cube",
     "cube.controls": "Material controls",
     "cube.relief": "Relief",
+    "cube.count": "Cubes",
     "cube.shaderTitle": "Perform both BPAL index lookups in the fragment shader",
     "cube.shaderTexture": "BPAL in shader",
     "cube.defaultJpeg": "Default JPEG",

@@ -420,14 +420,18 @@
     draw(options) {
       const drawOptions = options || {};
       const gl = this.gl;
-      const width = drawOptions.width || gl.drawingBufferWidth;
-      const height = drawOptions.height || gl.drawingBufferHeight;
       const drawPasses = drawOptions.drawPasses || 1;
       const clearColor = drawOptions.clearColor || [0.07, 0.08, 0.1, 1.0];
 
       if (drawOptions.resizeToDisplaySize) {
         this.resizeToDisplaySize(drawOptions.devicePixelRatio);
       }
+
+      const width = drawOptions.width || gl.drawingBufferWidth;
+      const height = drawOptions.height || gl.drawingBufferHeight;
+      const instances = Array.isArray(drawOptions.instances) && drawOptions.instances.length > 0
+        ? drawOptions.instances
+        : [{ translation: [0, 0, 0], scale: 1 }];
 
       mat4Perspective(
         this.projection,
@@ -436,10 +440,6 @@
         drawOptions.near || 0.1,
         drawOptions.far || 100
       );
-      mat4Identity(this.model);
-      mat4RotateY(this.model, this.model, drawOptions.angleY || 0);
-      mat4RotateX(this.model, this.model, drawOptions.angleX || 0);
-
       gl.useProgram(this.program);
       gl.enable(gl.DEPTH_TEST);
       gl.enable(gl.CULL_FACE);
@@ -466,12 +466,20 @@
       gl.activeTexture(gl.TEXTURE5);
       gl.bindTexture(gl.TEXTURE_2D, this.bpalTextures.globalPalette);
       gl.uniformMatrix4fv(this.locations.projection, false, this.projection);
-      gl.uniformMatrix4fv(this.locations.model, false, this.model);
-      gl.uniformMatrix3fv(this.locations.normalMatrix, false, mat3FromMat4(this.model));
       this.applyMaterialUniforms();
 
-      for (let pass = 0; pass < drawPasses; pass += 1) {
-        gl.drawElements(gl.TRIANGLES, this.indexCount, gl.UNSIGNED_SHORT, 0);
+      for (const instance of instances) {
+        mat4Identity(this.model);
+        mat4Translate(this.model, this.model, instance.translation || [0, 0, 0]);
+        mat4RotateY(this.model, this.model, drawOptions.angleY || 0);
+        mat4RotateX(this.model, this.model, drawOptions.angleX || 0);
+        mat4Scale(this.model, this.model, Number.isFinite(instance.scale) ? instance.scale : 1);
+        gl.uniformMatrix4fv(this.locations.model, false, this.model);
+        gl.uniformMatrix3fv(this.locations.normalMatrix, false, mat3FromMat4(this.model));
+
+        for (let pass = 0; pass < drawPasses; pass += 1) {
+          gl.drawElements(gl.TRIANGLES, this.indexCount, gl.UNSIGNED_SHORT, 0);
+        }
       }
     }
 
@@ -1154,6 +1162,49 @@
     out[9] = a01 * s + a21 * c;
     out[10] = a02 * s + a22 * c;
     out[11] = a03 * s + a23 * c;
+
+    return out;
+  }
+
+  function mat4Translate(out, matrix, translation) {
+    const x = translation[0];
+    const y = translation[1];
+    const z = translation[2];
+
+    if (matrix !== out) {
+      for (let index = 0; index < 12; index += 1) {
+        out[index] = matrix[index];
+      }
+    }
+
+    out[12] = matrix[0] * x + matrix[4] * y + matrix[8] * z + matrix[12];
+    out[13] = matrix[1] * x + matrix[5] * y + matrix[9] * z + matrix[13];
+    out[14] = matrix[2] * x + matrix[6] * y + matrix[10] * z + matrix[14];
+    out[15] = matrix[3] * x + matrix[7] * y + matrix[11] * z + matrix[15];
+
+    return out;
+  }
+
+  function mat4Scale(out, matrix, scale) {
+    out[0] = matrix[0] * scale;
+    out[1] = matrix[1] * scale;
+    out[2] = matrix[2] * scale;
+    out[3] = matrix[3] * scale;
+    out[4] = matrix[4] * scale;
+    out[5] = matrix[5] * scale;
+    out[6] = matrix[6] * scale;
+    out[7] = matrix[7] * scale;
+    out[8] = matrix[8] * scale;
+    out[9] = matrix[9] * scale;
+    out[10] = matrix[10] * scale;
+    out[11] = matrix[11] * scale;
+
+    if (matrix !== out) {
+      out[12] = matrix[12];
+      out[13] = matrix[13];
+      out[14] = matrix[14];
+      out[15] = matrix[15];
+    }
 
     return out;
   }

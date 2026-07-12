@@ -14,6 +14,7 @@ const fpsCounter = document.getElementById("fps-counter");
 const materialControls = document.getElementById("material-controls");
 const heightStrengthInput = document.getElementById("height-strength");
 const heightStrengthValue = document.getElementById("height-strength-value");
+const cubeCountInput = document.getElementById("cube-count");
 const bpalFileInput = document.getElementById("bpal-file");
 const bpalShaderTextureInput = document.getElementById("bpal-shader-texture");
 const bpalStatus = document.getElementById("bpal-status");
@@ -29,6 +30,13 @@ const cubeMotionState = {
   lastFrameTime: 0,
   drag: null,
   suppressNextClick: false,
+  cubeCount: 1,
+};
+const cubeGridState = {
+  count: 0,
+  width: 0,
+  height: 0,
+  instances: [],
 };
 const AUTO_ROTATE_X_SPEED = 0.0007;
 const AUTO_ROTATE_Y_SPEED = 0.001;
@@ -60,6 +68,7 @@ async function start() {
   cubeRenderer = await TexturedCubeRenderer.create(gl);
   window.__texturedCubeRenderer = cubeRenderer;
   window.__cubeMotionState = cubeMotionState;
+  window.__cubeGridState = cubeGridState;
   initializeMaterialControls();
   initializeCubePointerControls();
   initializeBpalTextureControls();
@@ -78,12 +87,31 @@ async function start() {
 function render(time) {
   updateCubeAngles(time);
   updateFpsCounter(time);
+  cubeRenderer.resizeToDisplaySize();
   cubeRenderer.draw({
     angleY: cubeMotionState.angleY,
     angleX: cubeMotionState.angleX,
-    resizeToDisplaySize: true,
+    instances: getCubeInstances(gl.drawingBufferWidth, gl.drawingBufferHeight),
   });
   requestAnimationFrame(render);
+}
+
+function getCubeInstances(width, height) {
+  if (
+    cubeGridState.count !== cubeMotionState.cubeCount ||
+    cubeGridState.width !== width ||
+    cubeGridState.height !== height
+  ) {
+    cubeGridState.count = cubeMotionState.cubeCount;
+    cubeGridState.width = width;
+    cubeGridState.height = height;
+    cubeGridState.instances = window.CubeGridLayout.createInstances(
+      cubeMotionState.cubeCount,
+      width / Math.max(1, height)
+    );
+  }
+
+  return cubeGridState.instances;
 }
 
 function updateCubeAngles(time) {
@@ -134,6 +162,10 @@ function initializeMaterialControls() {
     cubeRenderer.setHeightStrength(Number(heightStrengthInput.value));
     updateHeightStrengthLabel();
   });
+  cubeCountInput.addEventListener("change", () => {
+    cubeMotionState.cubeCount = Number(cubeCountInput.value);
+  });
+  cubeMotionState.cubeCount = Number(cubeCountInput.value);
   applySelectedMaterial();
 }
 

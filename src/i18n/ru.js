@@ -200,6 +200,7 @@
     "cube.title": "Вращающийся куб WebGL",
     "cube.controls": "Настройки материала",
     "cube.relief": "Рельеф",
+    "cube.count": "Кубы",
     "cube.shaderTitle": "Выполнять двойную индексацию BPAL во фрагментном шейдере",
     "cube.shaderTexture": "BPAL через шейдер",
     "cube.defaultJpeg": "JPEG по умолчанию",

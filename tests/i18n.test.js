@@ -24,6 +24,18 @@ test("keeps English and Russian translation catalogs in sync", () => {
   assert.deepEqual(Object.keys(russian).sort(), Object.keys(english).sort());
 });
 
+test("does not define duplicate translation keys", () => {
+  const root = path.resolve(__dirname, "..");
+
+  for (const fileName of ["src/i18n/en.js", "src/i18n/ru.js"]) {
+    const source = fs.readFileSync(path.join(root, fileName), "utf8");
+    const keys = Array.from(source.matchAll(/^\s+"([^"]+)":/gm), (match) => match[1]);
+    const duplicates = keys.filter((key, index) => keys.indexOf(key) !== index);
+
+    assert.deepEqual(duplicates, [], fileName);
+  }
+});
+
 test("defines every translation key referenced by user pages", () => {
   const root = path.resolve(__dirname, "..");
   const missing = [];

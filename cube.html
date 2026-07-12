@@ -26,6 +26,16 @@
         <span><span data-i18n="cube.relief">Relief</span> <output id="height-strength-value" for="height-strength">0.60</output></span>
         <input id="height-strength" type="range" min="0" max="1" step="0.05" value="0.60">
       </label>
+      <label class="cube-count-control">
+        <span data-i18n="cube.count">Cubes</span>
+        <select id="cube-count">
+          <option value="1" selected>1</option>
+          <option value="3">3</option>
+          <option value="10">10</option>
+          <option value="30">30</option>
+          <option value="100">100</option>
+        </select>
+      </label>
       <label class="bpal-upload">
         <input id="bpal-file" type="file" accept=".bpal,application/octet-stream">
         <span data-i18n="common.uploadBpal">Upload BPAL</span>
@@ -43,7 +53,8 @@
     <script src="./src/decoders/gpu-jpeg.js"></script>
     <script src="./src/palette/block-palette-format.js?v=block-palette-3"></script>
     <script src="./src/decoders/bpal-texture.js?v=bpal-shader-texture"></script>
-    <script src="./src/core/textured-cube.js?v=bpal-shader-texture"></script>
-    <script src="./src/pages/cube-page.js?v=default-cube-bpal-1"></script>
+    <script src="./src/core/textured-cube.js?v=multi-cube-1"></script>
+    <script src="./src/pages/cube-grid-layout.js?v=multi-cube-1"></script>
+    <script src="./src/pages/cube-page.js?v=multi-cube-1"></script>
   </body>
 </html>
