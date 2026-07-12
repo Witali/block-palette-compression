@@ -114,7 +114,6 @@ CPU и WebGL2 воспроизводят одинаковые значения:
 | Изображение | RMSE |
 | --- | ---: |
 | `stone-texture-small.jpg` | 5.86 |
-| `stone-texture-tiny.jpg` | 3.05 |
 | `landscape-alaska.jpg` | 4.07 |
 | `clipart-apple.jpg` | 4.08 |
 
