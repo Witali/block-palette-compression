@@ -12,7 +12,7 @@
     <a class="back-link" href="./index.html" data-i18n="common.homeShort">Home</a>
     <div id="fps-counter" aria-live="polite">0 FPS</div>
     <output id="sampler-stats" class="sampler-stats" aria-live="polite">
-      <span data-i18n="sampler.initialStats">Upload BPAL to build mip levels</span>
+      <span data-i18n="sampler.loadingDefaultBpal">Loading default BPAL texture…</span>
     </output>
 
     <form id="sampler-controls" class="material-controls sampler-controls" aria-label="BPAL sampler controls" data-i18n-aria-label="sampler.controls">
@@ -58,21 +58,19 @@
       </fieldset>
 
       <output id="bpal-status" class="bpal-status" role="status" aria-live="polite">
-        <span data-i18n="sampler.defaultStatus">Regular JPEG texture · select a BPAL file</span>
+        <span data-i18n="sampler.loadingDefaultBpal">Loading default BPAL texture…</span>
       </output>
     </form>
 
     <canvas id="gl-canvas" aria-label="Cube with a programmable BPAL sampler" data-i18n-aria-label="sampler.canvasAria"></canvas>
 
-    <script src="./src/i18n/en.js"></script>
-    <script src="./src/i18n/ru.js"></script>
+    <script src="./src/i18n/en.js?v=default-cube-bpal-1"></script>
+    <script src="./src/i18n/ru.js?v=default-cube-bpal-1"></script>
     <script src="./src/i18n/i18n.js"></script>
     <script src="./src/decoders/gpu-jpeg.js"></script>
-    <script src="./src/palette/palette-quantizer.js"></script>
-    <script src="./src/palette/block-palette-codec.js"></script>
     <script src="./src/palette/block-palette-format.js?v=block-palette-3"></script>
     <script src="./src/decoders/bpal-texture.js?v=mipmapped-bpal-sampler"></script>
     <script src="./src/core/textured-cube.js?v=mipmapped-bpal-sampler"></script>
-    <script src="./src/pages/cube-bpal-sampler-page.js?v=i18n-1"></script>
+    <script src="./src/pages/cube-bpal-sampler-page.js?v=default-cube-bpal-1"></script>
   </body>
 </html>

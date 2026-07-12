@@ -2,6 +2,7 @@
 
 require("./i18n.test.js");
 require("./bpal-viewer-page.test.js");
+require("./cube-default-texture.test.js");
 require("./palette-quantizer.test.js");
 require("./block-palette-codec.test.js");
 require("./block-palette-format.test.js");

@@ -203,9 +203,11 @@
     "cube.shaderTitle": "Выполнять двойную индексацию BPAL во фрагментном шейдере",
     "cube.shaderTexture": "BPAL через шейдер",
     "cube.defaultJpeg": "JPEG по умолчанию",
+    "cube.loadingDefaultBpal": "Загрузка BPAL-текстуры по умолчанию…",
     "cube.canvasAria": "Вращающийся WebGL-куб",
 
     "sampler.title": "Шейдерный семплер BPAL-текстур",
+    "sampler.loadingDefaultBpal": "Загрузка BPAL-текстуры по умолчанию…",
     "sampler.initialStats": "Загрузите BPAL для построения mip-уровней",
     "sampler.controls": "Настройки BPAL-семплера",
     "sampler.filtering": "Фильтрация",

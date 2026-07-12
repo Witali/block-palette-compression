@@ -203,10 +203,12 @@
     "cube.shaderTitle": "Perform both BPAL index lookups in the fragment shader",
     "cube.shaderTexture": "BPAL in shader",
     "cube.defaultJpeg": "Default JPEG",
+    "cube.loadingDefaultBpal": "Loading default BPAL texture…",
     "cube.canvasAria": "Rotating WebGL cube",
 
     "sampler.title": "BPAL Shader Texture Sampler",
     "sampler.initialStats": "Upload BPAL to build mip levels",
+    "sampler.loadingDefaultBpal": "Loading default BPAL texture…",
     "sampler.controls": "BPAL sampler controls",
     "sampler.filtering": "Filtering",
     "sampler.anisotropy": "Anisotropy",

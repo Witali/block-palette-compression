@@ -2,7 +2,7 @@
  * Purpose: WebGL demo entry point that renders the rotating textured cube.
  * Processing blocks:
  * - Create the shared textured cube renderer.
- * - Load the stone texture through the shared texture path.
+ * - Load the default BPAL stone texture through the shared texture path.
  * - Run the animation loop, pointer controls, and FPS counter.
  */
 "use strict";
@@ -34,6 +34,8 @@ const AUTO_ROTATE_X_SPEED = 0.0007;
 const AUTO_ROTATE_Y_SPEED = 0.001;
 const POINTER_ROTATE_SPEED = 0.01;
 const CLICK_DRAG_THRESHOLD = 4;
+const DEFAULT_BPAL_TEXTURE_URL = "assets/bpal/stone-texture-wic-2.38bpp.bpal";
+const DEFAULT_BPAL_TEXTURE_NAME = "stone-texture-wic-2.38bpp.bpal";
 let cubeRenderer = null;
 let bpalLoadId = 0;
 let loadedBpalTexture = null;
@@ -60,8 +62,16 @@ async function start() {
   window.__cubeMotionState = cubeMotionState;
   initializeMaterialControls();
   initializeCubePointerControls();
-  await cubeRenderer.loadTexture("assets/stone-texture-wic.jpg");
   initializeBpalTextureControls();
+
+  try {
+    await loadDefaultBpalTexture();
+  } catch (error) {
+    console.warn("Default BPAL cube texture could not be loaded.", error);
+    await cubeRenderer.loadTexture("assets/stone-texture-wic.jpg");
+    setBpalStatus(localized("Default JPEG fallback", "Резервная JPEG-текстура"), false);
+  }
+
   requestAnimationFrame(render);
 }
 
@@ -159,6 +169,20 @@ function initializeBpalTextureControls() {
 }
 
 async function loadBpalTextureFile(file) {
+  return loadBpalTextureSource(file, file.name);
+}
+
+async function loadDefaultBpalTexture() {
+  const response = await fetch(DEFAULT_BPAL_TEXTURE_URL);
+
+  if (!response.ok) {
+    throw new Error(`Could not load ${DEFAULT_BPAL_TEXTURE_NAME}: ${response.status} ${response.statusText}`);
+  }
+
+  await loadBpalTextureSource(response, DEFAULT_BPAL_TEXTURE_NAME);
+}
+
+async function loadBpalTextureSource(source, fileName) {
   if (!window.BpalTextureDecoder) {
     throw new Error("BPAL texture decoder is unavailable");
   }
@@ -166,10 +190,10 @@ async function loadBpalTextureFile(file) {
   const loadId = ++bpalLoadId;
 
   bpalFileInput.disabled = true;
-  setBpalStatus(localized(`Reading ${file.name}…`, `Чтение ${file.name}…`), false);
+  setBpalStatus(localized(`Reading ${fileName}…`, `Чтение ${fileName}…`), false);
 
   try {
-    const bytes = await file.arrayBuffer();
+    const bytes = await source.arrayBuffer();
 
     if (loadId !== bpalLoadId) {
       return;
@@ -193,7 +217,7 @@ async function loadBpalTextureFile(file) {
     }
 
     loadedBpalTexture = {
-      name: file.name,
+      name: fileName,
       width: decoded.width,
       height: decoded.height,
       version: decoded.version,

@@ -37,6 +37,8 @@ const AUTO_ROTATE_X_SPEED = 0.0007;
 const AUTO_ROTATE_Y_SPEED = 0.001;
 const POINTER_ROTATE_SPEED = 0.01;
 const CLICK_DRAG_THRESHOLD = 4;
+const DEFAULT_BPAL_TEXTURE_URL = "assets/bpal/stone-texture-wic-2.38bpp.bpal";
+const DEFAULT_BPAL_TEXTURE_NAME = "stone-texture-wic-2.38bpp.bpal";
 let renderer = null;
 let loadId = 0;
 let loadedTexture = null;
@@ -82,15 +84,17 @@ async function start() {
   initializePointerControls();
   applySamplerOptions();
   applyMaterial();
-  await renderer.loadTexture("assets/stone-texture-small.jpg", { materialMaps: false });
-  requestAnimationFrame(render);
 
   try {
-    await loadDefaultBpalDemo();
+    await loadDefaultBpalTexture();
   } catch (error) {
-    console.warn("Default BPAL sampler texture could not be built.", error);
+    console.warn("Default BPAL sampler texture could not be loaded.", error);
+    await renderer.loadTexture("assets/stone-texture-wic.jpg", { materialMaps: false });
     setStatus(t("sampler.defaultStatus"), false);
+    samplerStats.textContent = t("sampler.initialStats");
   }
+
+  requestAnimationFrame(render);
 }
 
 function render(time) {
@@ -167,40 +171,29 @@ async function loadBpal(file) {
   }
 }
 
-async function loadDefaultBpalDemo() {
-  if (!window.BlockPaletteCodec) {
-    return;
+async function loadDefaultBpalTexture() {
+  if (!window.BpalTextureDecoder) {
+    throw new Error("BPAL decoder is unavailable");
   }
 
   setStatus(localized(
-    "Preparing the built-in BPAL texture…",
-    "Подготовка встроенной BPAL-текстуры…"
+    "Loading the built-in BPAL texture…",
+    "Загрузка встроенной BPAL-текстуры…"
   ), false);
 
-  const source = await loadImagePixels("assets/stone-texture-small.jpg");
-  const decoded = window.BlockPaletteCodec.compressImage(
-    source.pixels,
-    source.width,
-    source.height,
-    {
-      blockSize: 8,
-      localColorCount: 8,
-      globalColorCount: 256,
-      paletteColorBits: 24,
-      paletteMode: "explicit",
-      colorSpace: "oklab",
-      dithering: "none",
-      diversity: 0,
-    }
-  );
+  const response = await fetch(DEFAULT_BPAL_TEXTURE_URL);
+
+  if (!response.ok) {
+    throw new Error(`Could not load ${DEFAULT_BPAL_TEXTURE_NAME}: ${response.status} ${response.statusText}`);
+  }
+
+  const bytes = await response.arrayBuffer();
+  const decoded = window.BpalTextureDecoder.decode(bytes);
 
   activateBpalTexture(decoded, {
-    name: localized(
-      "stone-texture-small · built-in BPAL",
-      "stone-texture-small · встроенный BPAL"
-    ),
-    version: "demo",
-    fileBytes: null,
+    name: DEFAULT_BPAL_TEXTURE_NAME,
+    version: decoded.version,
+    fileBytes: bytes.byteLength,
   });
 }
 
@@ -236,35 +229,6 @@ function activateBpalTexture(decoded, metadata) {
   };
   window.__bpalSamplerState.loadedTexture = loadedTexture;
   updateTextureDetails();
-}
-
-function loadImagePixels(url) {
-  return new Promise((resolve, reject) => {
-    const image = new Image();
-
-    image.addEventListener("load", () => {
-      const width = image.naturalWidth || image.width;
-      const height = image.naturalHeight || image.height;
-      const imageCanvas = document.createElement("canvas");
-
-      imageCanvas.width = width;
-      imageCanvas.height = height;
-
-      const context = imageCanvas.getContext("2d", { willReadFrequently: true });
-
-      if (!context) {
-        reject(new Error("Could not create a canvas for the default BPAL texture"));
-        return;
-      }
-
-      context.drawImage(image, 0, 0, width, height);
-      resolve({ width, height, pixels: context.getImageData(0, 0, width, height).data });
-    }, { once: true });
-    image.addEventListener("error", () => {
-      reject(new Error(`Failed to load ${url}`));
-    }, { once: true });
-    image.src = url;
-  });
 }
 
 function applySamplerOptions() {
