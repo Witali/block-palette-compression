@@ -10,8 +10,8 @@ The codec is intended for exploring the tradeoff between size, quality, and
 decoding cost. The result can be saved in the compact custom BPAL format or
 exported as a regular PNG for comparison.
 
-By default, the page uses 8×8 blocks, eight colors per block, and a shared
-256-color palette. This is a quality-oriented profile.
+By default, the page uses 8×8 blocks, eight colors per block, and 64 shared
+palettes with 64 colors each. This is a quality-oriented profile.
 
 ## Codec concept
 
@@ -126,9 +126,9 @@ channel. The CPU and WebGL2 implementations produce identical values:
 
 | Image | RMSE |
 | --- | ---: |
-| `stone-texture-small.jpg` | 5.86 |
-| `landscape-alaska.jpg` | 4.07 |
-| `clipart-apple.jpg` | 4.08 |
+| `stone-texture-small.jpg` | 5.58 |
+| `landscape-alaska.jpg` | 3.19 |
+| `clipart-apple.jpg` | 3.55 |
 
 ## Dithering
 

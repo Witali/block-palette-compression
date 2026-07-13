@@ -43,6 +43,17 @@ test("offers power-of-two shared palette counts and applies them to compression"
   assert.match(source, /result\.storage\.blockPaletteSelectorBits \+ result\.storage\.blockPaletteBits/);
 });
 
+test("defaults to 64 shared palettes with 64 colors each", () => {
+  assert.match(
+    html,
+    /<select id="global-color-count" name="globalColorCount">[\s\S]*?<option value="64" selected data-i18n="block\.global64">/
+  );
+  assert.match(
+    html,
+    /<select id="palette-count" name="paletteCount">[\s\S]*?<option value="64" selected data-i18n="block\.paletteCount64">/
+  );
+});
+
 test("offers zero to four refinement passes and defaults to one", () => {
   assert.match(html, /<select id="refinement-passes" name="refinementPasses">/);
 
