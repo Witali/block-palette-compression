@@ -107,7 +107,7 @@
     "block.blockSize": "Размер блока",
     "block.localColors": "Цветов в блоке",
     "block.globalPalette": "Общая палитра",
-    "block.paletteCount": "Общие палитры",
+    "block.paletteCount": "Количество палитр",
     "block.paletteCount1": "1 палитра · 0 бит/блок",
     "block.paletteCount2": "2 палитры · 1 бит/блок",
     "block.paletteCount4": "4 палитры · 2 бита/блок",

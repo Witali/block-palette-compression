@@ -107,7 +107,7 @@
     "block.blockSize": "Block size",
     "block.localColors": "Colors per block",
     "block.globalPalette": "Shared palette",
-    "block.paletteCount": "Shared palettes",
+    "block.paletteCount": "Number of palettes",
     "block.paletteCount1": "1 palette · 0 bits/block",
     "block.paletteCount2": "2 palettes · 1 bit/block",
     "block.paletteCount4": "4 palettes · 2 bits/block",
