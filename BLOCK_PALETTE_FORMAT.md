@@ -1,23 +1,23 @@
-# BPAL v4
+# BPAL v5
 
 [Russian version](./BLOCK_PALETTE_FORMAT_ru.md)
 
 `BPAL` is a compact block-palette image format. All multibit values are written
-from the most significant bit to the least significant bit. Version 4 supports
-1, 2, 4, or 8 explicit shared palettes. Every image block selects one shared
+from the most significant bit to the least significant bit. Version 5 supports
+1, 2, 4, 8, 16, 32, or 64 explicit shared palettes. Every image block selects one shared
 palette and stores a small table of indices local to that palette.
 
-The decoder remains compatible with BPAL v1-v3 files and their legacy vector
-palette model. The v4 encoder always writes explicit palettes.
+The decoder remains compatible with BPAL v1-v4 files and their legacy vector
+palette model. The v5 image compressor writes explicit palettes.
 
-## v4 header
+## v5 header
 
 The first 4 bytes are the ASCII magic value `BPAL`. They are followed by an
 80-bit header field:
 
 | Bit offset | Size | Value |
 | ---: | ---: | --- |
-| 0 | 4 | Format version; `4` for v4 |
+| 0 | 4 | Format version; `5` for v5 |
 | 4 | 24 | Width minus 1 |
 | 28 | 24 | Height minus 1 |
 | 52 | 3 | `log2(block size) - 1` |
@@ -27,10 +27,10 @@ The first 4 bytes are the ASCII magic value `BPAL`. They are followed by an
 | 62 | 1 | Palette model: `0` for explicit, `1` for the legacy vector model |
 | 63 | 9 | Zero in new files; vector count minus 1 in the legacy model |
 | 72 | 1 | Zero in new files; legacy model space: `0` for RGB, `1` for OKLab |
-| 73 | 2 | `log2(shared palette count)`: `0`, `1`, `2`, or `3` |
-| 75 | 5 | Reserved; zero in v4 |
+| 73 | 3 | `log2(shared palette count)`: from `0` through `6` |
+| 76 | 4 | Reserved; zero in v5 |
 
-The complete v4 service header is 14 bytes: 4 magic bytes and 10 bytes of bit
+The complete v5 service header is 14 bytes: 4 magic bytes and 10 bytes of bit
 fields.
 
 ## Payload
@@ -70,7 +70,9 @@ alpha channel is not stored; the decoded image is treated as fully opaque.
 
 BPAL v1-v3 files implicitly contain one shared palette, so their selector width
 is zero. The v1 header after the magic value is 64 bits long. The v2 and v3
-headers are 80 bits long; v3 adds the vector color-space bit at offset 72.
+headers are 80 bits long; v3 adds the vector color-space bit at offset 72. BPAL
+v4 stores a 2-bit palette-count exponent at offsets 73-74 and supports up to
+eight shared palettes.
 
 Legacy vector-palette colors are reconstructed by linear interpolation in the
 RGB or OKLab space recorded in the header. The vector model is only valid with

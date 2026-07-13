@@ -16,7 +16,7 @@ By default, the page uses 8×8 blocks, eight colors per block, and a shared
 ## Codec concept
 
 The image is divided into blocks of 4×4, 8×8, 16×16, 32×32, or 64×64 pixels.
-One, two, four, or eight shared palettes are built for the image. Every block
+One to 64 power-of-two shared palettes are built for the image. Every block
 selects one of them and stores only a small number of palette-local indices.
 Every pixel then references a color in its block's local palette.
 
@@ -33,7 +33,7 @@ Supported settings:
 | --- | --- |
 | Block size | 4, 8, 16, 32, or 64 pixels |
 | Colors per block | 2, 4, 8, or 16 |
-| Shared palette count | 1, 2, 4, or 8 |
+| Shared palette count | 1, 2, 4, 8, 16, 32, or 64 |
 | Shared palette colors | 8, 16, 32, 64, 128, 256, 1024, or 4096 |
 | Color format | RGB565, 16 bits; RGB888, 24 bits |
 | Search color space | OKLab or RGB |
@@ -62,7 +62,7 @@ block palettes = ceil(W / S) × ceil(H / S) × L × log2(G) bits
 pixels = W × H × log2(L) bits
 ```
 
-The 14-byte BPAL v4 header is added to this sum. The sections are written as a
+The 14-byte BPAL v5 header is added to this sum. The sections are written as a
 single bitstream without byte alignment; only the final byte of the file is
 padded with zeros.
 
@@ -200,7 +200,7 @@ quality and performance evaluation.
 
 ## BPAL format
 
-BPAL v4 begins with the `BPAL` magic value and a version number. Header bit
+BPAL v5 begins with the `BPAL` magic value and a version number. Header bit
 fields contain the image dimensions, block parameters, index widths, shared
 palette count, and color format. New files store the shared palettes and one
 selector per block explicitly. For compatibility, the decoder continues to
@@ -234,7 +234,7 @@ npm test
 ```
 
 The tests cover bit-layout calculations, block and palette sizes, RGB565,
-dithering, per-block Floyd–Steinberg isolation, BPAL v1-v4 compatibility,
+dithering, per-block Floyd–Steinberg isolation, BPAL v1-v5 compatibility,
 the optimizer, and WebGL2-to-CPU fallback.
 
 ## Main files

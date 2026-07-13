@@ -11,8 +11,8 @@ indices in every block. Pixels store only indices into their block's table.
 The image is split into fixed-size blocks. A pixel stores a compact local slot,
 the block table maps that slot to an index in a shared image palette, and the
 block's palette selector chooses which shared palette provides the final RGB
-color. BPAL v4 supports 1, 2, 4, or 8 shared palettes, using 0 to 3 selector
-bits per block.
+color. BPAL v5 supports 1, 2, 4, 8, 16, 32, or 64 shared palettes, using 0 to
+6 selector bits per block.
 
 ![BPAL indexing from image blocks to the final RGB color](./docs/images/bpal-double-indexing.svg)
 
@@ -36,7 +36,7 @@ Detailed documentation:
 
 - [codec and implementation](./BLOCK_PALETTE_README.md)
   ([Russian](./BLOCK_PALETTE_README_ru.md));
-- [BPAL v4 file format](./BLOCK_PALETTE_FORMAT.md)
+- [BPAL v5 file format](./BLOCK_PALETTE_FORMAT.md)
   ([Russian](./BLOCK_PALETTE_FORMAT_ru.md));
 - [reproducible BPAL/BC/ASTC texture codec benchmark](./benchmark/README.md).
 
