@@ -11,6 +11,8 @@ Profiles included by default:
 - BPAL at approximately 2.1, 2.4, 4, and 6 bits per pixel;
 - BPAL v5 at approximately 3.2 bits per pixel with 64 shared palettes, 32
   colors per shared palette, and 8 local colors per 16x16 block;
+- a matching single-palette BPAL v5 control with the same block size, local
+  color count, shared-palette size, and color format;
 - BC1 and BC7 through Microsoft DirectXTex `texconv`;
 - ASTC 8x8, 6x6, and 4x4 through Arm `astcenc`.
 
