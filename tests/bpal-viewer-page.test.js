@@ -79,11 +79,12 @@ test("decodes every bundled block-palette viewer image", () => {
 
 test("shows BPAL parameters in compression-settings order", () => {
   assert.match(viewerSource, /localColors: decoded\.localColorCount/);
+  assert.match(viewerSource, /palettes: decoded\.paletteCount/);
   assert.match(viewerSource, /decoded\.storage\.totalBytes \* 8 \/ \(decoded\.width \* decoded\.height\)/);
 
   for (const catalog of [english, russian]) {
     const status = catalog["viewer.bpalStatus"];
-    const positions = ["{blockSize}", "{localColors}", "{colors}", "{bitsPerPixel}"]
+    const positions = ["{blockSize}", "{localColors}", "{palettes}", "{colors}", "{bitsPerPixel}"]
       .map((parameter) => status.indexOf(parameter));
 
     assert.ok(positions.every((position) => position >= 0));

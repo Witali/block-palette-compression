@@ -209,6 +209,22 @@
     const options = settings || {};
     let accelerator = null;
 
+    if (Number(options.paletteCount || 1) > 1) {
+      const reason = "WebGL2 compression acceleration currently supports one shared palette";
+
+      if (options.webglFallback === false) {
+        throw new RangeError(reason);
+      }
+
+      const result = blockPaletteCodec.compressImage(sourcePixels, width, height, options);
+
+      result.algorithm = "cpu-fallback";
+      result.acceleratedStages = [];
+      result.fallbackReason = reason;
+
+      return result;
+    }
+
     try {
       accelerator = createWebGLAccelerator(width, height);
       const result = blockPaletteCodec.compressImage(sourcePixels, width, height, {

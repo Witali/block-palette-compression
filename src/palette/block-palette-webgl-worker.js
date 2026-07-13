@@ -1,7 +1,7 @@
 "use strict";
 
 importScripts("./palette-quantizer.js?v=src-layout-4");
-importScripts("./block-palette-codec.js?v=block-palette-19");
+importScripts("./block-palette-codec.js?v=block-palette-20");
 importScripts("./block-palette-webgl-codec.js?v=block-palette-3");
 
 self.addEventListener("message", (event) => {
@@ -19,6 +19,7 @@ self.addEventListener("message", (event) => {
     result.durationMs = performance.now() - startedAt;
     self.postMessage(result, [
       result.pixels.buffer,
+      result.blockPaletteSelectors.buffer,
       result.blockPaletteIndices.buffer,
       result.pixelIndices.buffer,
     ]);

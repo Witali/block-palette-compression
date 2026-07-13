@@ -29,6 +29,31 @@ test("falls back to the CPU codec when WebGL2 is unavailable", () => {
   assert.equal(result.pixels.length, source.length);
 });
 
+test("uses a truthful CPU fallback for multi-palette compression", () => {
+  const source = new Uint8ClampedArray(4 * 2 * 4);
+
+  for (let pixel = 0; pixel < 8; pixel += 1) {
+    const offset = pixel * 4;
+
+    source[offset] = pixel < 4 ? 255 : 0;
+    source[offset + 2] = pixel < 4 ? 0 : 255;
+    source[offset + 3] = 255;
+  }
+
+  const result = compressImageWebGL(source, 4, 2, {
+    blockSize: 2,
+    localColorCount: 2,
+    globalColorCount: 2,
+    paletteCount: 2,
+    colorSpace: "rgb",
+  });
+
+  assert.equal(result.algorithm, "cpu-fallback");
+  assert.equal(result.paletteCount, 2);
+  assert.deepEqual(result.acceleratedStages, []);
+  assert.match(result.fallbackReason, /one shared palette/);
+});
+
 function test(name, callback) {
   try {
     callback();

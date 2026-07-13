@@ -27,6 +27,19 @@ test("loads the BPLM dependencies before the compression page", () => {
   assert.ok(pageIndex > formatIndex);
 });
 
+test("offers power-of-two shared palette counts and applies them to compression", () => {
+  assert.match(html, /<select id="palette-count" name="paletteCount">/);
+
+  for (const count of [1, 2, 4, 8]) {
+    assert.match(html, new RegExp(`<option value="${count}"`));
+  }
+
+  assert.match(source, /paletteCount: Number\(paletteCountSelect\.value\)/);
+  assert.match(source, /result\.blockPaletteSelectors\[state\.selectedBlock\]/);
+  assert.match(source, /paletteBase \+ globalIndex/);
+  assert.match(source, /result\.storage\.blockPaletteSelectorBits \+ result\.storage\.blockPaletteBits/);
+});
+
 test("pans both compression previews by dragging", () => {
   assert.match(source, /for \(const viewport of \[sourceViewport, resultViewport\]\)/);
   assert.match(source, /viewport\.addEventListener\("pointerdown", startViewportDrag\)/);

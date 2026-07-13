@@ -294,7 +294,10 @@ canvas {
 .swatch-data strong { font: 700 13px/1.3 ui-monospace, Consolas, monospace; text-transform: uppercase; }
 .swatch-data span { color: #8e9aa8; font-size: 11px; }
 
-.global-palette { display: grid; grid-template-columns: repeat(auto-fill, minmax(68px, 1fr)); gap: 7px; }
+.global-palette { display: grid; gap: 16px; }
+.shared-palette-group { display: grid; gap: 7px; min-width: 0; }
+.shared-palette-group h3 { margin: 0; color: #a8c4e2; font-size: 12px; }
+.global-palette-colors { display: grid; grid-template-columns: repeat(auto-fill, minmax(68px, 1fr)); gap: 7px; }
 .global-swatch {
   display: grid;
   grid-template-rows: 42px auto;

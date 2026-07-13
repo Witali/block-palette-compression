@@ -7,6 +7,7 @@ const imageSelect = document.getElementById("image-url");
 const blockSizeSelect = document.getElementById("block-size");
 const localColorCountSelect = document.getElementById("local-color-count");
 const globalColorCountSelect = document.getElementById("global-color-count");
+const paletteCountSelect = document.getElementById("palette-count");
 const paletteColorBitsSelect = document.getElementById("palette-color-bits");
 const colorSpaceSelect = document.getElementById("color-space");
 const clusteringMethodSelect = document.getElementById("clustering-method");
@@ -92,6 +93,7 @@ for (const select of [
   blockSizeSelect,
   localColorCountSelect,
   globalColorCountSelect,
+  paletteCountSelect,
   paletteColorBitsSelect,
   colorSpaceSelect,
   clusteringMethodSelect,
@@ -216,14 +218,15 @@ function processImage() {
   const sourceCopy = new Uint8ClampedArray(state.sourceImageData.data);
   const processingId = ++state.processingId;
   const workerUrl = settings.algorithm === "webgl"
-    ? "./src/palette/block-palette-webgl-worker.js?v=block-palette-12"
-    : "./src/palette/block-palette-worker.js?v=block-palette-18";
+    ? "./src/palette/block-palette-webgl-worker.js?v=block-palette-13"
+    : "./src/palette/block-palette-worker.js?v=block-palette-19";
   const worker = new Worker(workerUrl);
 
   state.worker = worker;
   setStatus(
     t("block.processing", {
       algorithm: getAlgorithmLabel(settings.algorithm),
+      palettes: settings.paletteCount,
       globalColors: formatInteger(settings.globalColorCount),
       storage: getPaletteStorageLabel(settings),
       format: getPaletteFormatLabel(settings.paletteColorBits),
@@ -294,13 +297,17 @@ function renderResult(result) {
   });
   storageGlobal.textContent = formatBitSize(result.storage.globalPaletteBits);
   storageGlobalFormula.textContent = t("block.paletteFormula", {
+    palettes: result.paletteCount,
     colors: formatInteger(result.globalColorCount),
     bytes: result.paletteColorBits / 8,
     format: getPaletteFormatLabel(result.paletteColorBits),
   });
-  storageBlocks.textContent = formatBitSize(result.storage.blockPaletteBits);
+  storageBlocks.textContent = formatBitSize(
+    result.storage.blockPaletteSelectorBits + result.storage.blockPaletteBits
+  );
   storageBlocksFormula.textContent = t("block.indexFormula", {
     items: formatInteger(result.blockCount),
+    paletteBits: result.paletteIndexBits,
     colors: result.localColorCount,
     bits: result.globalIndexBits,
   });
@@ -317,12 +324,13 @@ function renderResult(result) {
       bits: formatInteger(fileLayout.paddingBits),
     });
   paletteSummary.textContent = t("block.paletteSummary", {
+    palettes: result.paletteCount,
     active: formatInteger(result.activeGlobalColorCount),
     used: formatInteger(result.resultColorCount),
     format: getPaletteFormatLabel(result.paletteColorBits),
   });
 
-  globalPaletteElement.replaceChildren(...result.palette.map(createGlobalSwatch));
+  renderGlobalPalettes(result);
   renderSelectedBlock();
   drawGrid();
   downloadFileButton.disabled = false;
@@ -338,6 +346,8 @@ function renderResult(result) {
     blockCount: result.blockCount,
     localColorCount: result.localColorCount,
     globalColorCount: result.globalColorCount,
+    paletteCount: result.paletteCount,
+    paletteIndexBits: result.paletteIndexBits,
     paletteColorBits: result.paletteColorBits,
     paletteMode: result.paletteMode,
     algorithm: result.algorithm,
@@ -358,6 +368,7 @@ function renderResult(result) {
 function renderDoneStatus(result, fileLayout) {
   setStatus(t("block.done", {
     blocks: formatInteger(result.blockCount),
+    palettes: result.paletteCount,
     bits: result.localIndexBits,
     size: formatBytes(fileLayout.totalBytes),
     storage: getPaletteStorageLabel(result),
@@ -369,20 +380,45 @@ function renderDoneStatus(result, fileLayout) {
   }));
 }
 
-function createGlobalSwatch(color, index) {
+function renderGlobalPalettes(result) {
+  const groups = [];
+
+  for (let paletteIndex = 0; paletteIndex < result.paletteCount; paletteIndex += 1) {
+    const group = document.createElement("section");
+    const title = document.createElement("h3");
+    const colors = document.createElement("div");
+    const paletteBase = paletteIndex * result.globalColorCount;
+
+    group.className = "shared-palette-group";
+    title.textContent = t("block.paletteLabel", { palette: paletteIndex + 1 });
+    colors.className = "global-palette-colors";
+    colors.replaceChildren(...result.palette
+      .slice(paletteBase, paletteBase + result.globalColorCount)
+      .map((color, paletteColorIndex) =>
+        createGlobalSwatch(color, paletteIndex, paletteColorIndex)
+      ));
+    group.append(title, colors);
+    groups.push(group);
+  }
+
+  globalPaletteElement.replaceChildren(...groups);
+}
+
+function createGlobalSwatch(color, paletteIndex, paletteColorIndex) {
   const item = document.createElement("div");
   const sample = document.createElement("span");
   const label = document.createElement("small");
 
   item.className = `global-swatch${color.count === 0 ? " is-unused" : ""}`;
   item.title = t("block.indexTitle", {
-    index,
+    palette: paletteIndex + 1,
+    index: paletteColorIndex,
     hex: color.hex,
     pixels: t("units.pixels", { value: formatInteger(color.count) }),
   });
   sample.className = "swatch-color";
   sample.style.backgroundColor = color.hex;
-  sample.textContent = formatPaletteIndex(index, state.result.globalIndexBits);
+  sample.textContent = formatPaletteIndex(paletteColorIndex, state.result.globalIndexBits);
   label.textContent = color.hex;
   item.append(sample, label);
 
@@ -399,11 +435,13 @@ function renderSelectedBlock() {
   const blockX = state.selectedBlock % result.blocksX;
   const blockY = Math.floor(state.selectedBlock / result.blocksX);
   const offset = state.selectedBlock * result.localColorCount;
+  const paletteIndex = result.blockPaletteSelectors[state.selectedBlock];
+  const paletteBase = paletteIndex * result.globalColorCount;
   const entries = [];
 
   for (let localIndex = 0; localIndex < result.localColorCount; localIndex += 1) {
     const globalIndex = result.blockPaletteIndices[offset + localIndex];
-    const color = result.palette[globalIndex];
+    const color = result.palette[paletteBase + globalIndex];
     const item = document.createElement("div");
     const sample = document.createElement("span");
     const data = document.createElement("span");
@@ -416,7 +454,11 @@ function renderSelectedBlock() {
     sample.textContent = String(localIndex);
     data.className = "swatch-data";
     hex.textContent = color.hex;
-    mapping.textContent = t("block.mapping", { local: localIndex, global: globalIndex });
+    mapping.textContent = t("block.mapping", {
+      local: localIndex,
+      palette: paletteIndex + 1,
+      global: globalIndex,
+    });
     data.append(hex, mapping);
     item.append(sample, data);
     entries.push(item);
@@ -429,6 +471,7 @@ function renderSelectedBlock() {
     x2: Math.min(result.width, (blockX + 1) * result.blockSize) - 1,
     y1: blockY * result.blockSize,
     y2: Math.min(result.height, (blockY + 1) * result.blockSize) - 1,
+    palette: paletteIndex + 1,
   });
   blockPaletteElement.replaceChildren(...entries);
 }
@@ -513,6 +556,7 @@ function getSettings() {
     blockSize: Number(blockSizeSelect.value),
     localColorCount: Number(localColorCountSelect.value),
     globalColorCount: Number(globalColorCountSelect.value),
+    paletteCount: Number(paletteCountSelect.value),
     paletteColorBits: Number(paletteColorBitsSelect.value),
     paletteMode: "explicit",
     colorSpace: colorSpaceSelect.value,
@@ -701,7 +745,7 @@ function downloadResult() {
 
     downloadBlob(
       blob,
-      `${state.sourceName}-blocks-${settings.blockSize}-local-${settings.localColorCount}-global-${settings.globalColorCount}-${settings.paletteColorBits}bit${ditherSuffix}.png`
+      `${state.sourceName}-blocks-${settings.blockSize}-local-${settings.localColorCount}-global-${settings.globalColorCount}-palettes-${settings.paletteCount}-${settings.paletteColorBits}bit${ditherSuffix}.png`
     );
   }, "image/png");
 }
@@ -718,7 +762,7 @@ function downloadBlockPaletteFile() {
 
     downloadBlob(
       blob,
-      `${state.sourceName}-blocks-${settings.blockSize}-local-${settings.localColorCount}-global-${settings.globalColorCount}-${settings.paletteColorBits}bit.bpal`
+      `${state.sourceName}-blocks-${settings.blockSize}-local-${settings.localColorCount}-global-${settings.globalColorCount}-palettes-${settings.paletteCount}-${settings.paletteColorBits}bit.bpal`
     );
   } catch (error) {
     showError(error);
@@ -737,7 +781,7 @@ function downloadBlockPaletteMipmapFile() {
 
     downloadBlob(
       blob,
-      `${state.sourceName}-blocks-${settings.blockSize}-local-${settings.localColorCount}-global-${settings.globalColorCount}-${settings.paletteColorBits}bit.bplm`
+      `${state.sourceName}-blocks-${settings.blockSize}-local-${settings.localColorCount}-global-${settings.globalColorCount}-palettes-${settings.paletteCount}-${settings.paletteColorBits}bit.bplm`
     );
   } catch (error) {
     showError(error);
@@ -766,7 +810,7 @@ function optimizeSettings() {
   setStatus(t("block.optimizePreparing"), "busy");
 
   const preview = createOptimizationPreview();
-  const worker = new Worker("./src/palette/block-palette-optimizer-worker.js?v=block-palette-11");
+  const worker = new Worker("./src/palette/block-palette-optimizer-worker.js?v=block-palette-12");
 
   state.optimizerWorker = worker;
 
@@ -835,6 +879,7 @@ function optimizeSettings() {
       clusteringMethod: clusteringMethodSelect.value,
       dithering: ditheringSelect.value,
       diversity: getDiversity(),
+      paletteCount: Number(paletteCountSelect.value),
       paletteMode: "explicit",
     },
   }, [preview.data.buffer]);
@@ -935,6 +980,7 @@ function setBusy(busy) {
   blockSizeSelect.disabled = busy;
   localColorCountSelect.disabled = busy;
   globalColorCountSelect.disabled = busy;
+  paletteCountSelect.disabled = busy;
   paletteColorBitsSelect.disabled = busy;
   colorSpaceSelect.disabled = busy;
   clusteringMethodSelect.disabled = busy;
