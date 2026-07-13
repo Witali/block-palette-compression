@@ -1,6 +1,6 @@
 # Texture codec benchmark results
 
-Generated: `2026-07-13T14:12:39.446862+00:00`.
+Generated: `2026-07-13T14:22:32.553730+00:00`.
 
 All profiles use the same normalized RGBA8 source pixels. Only RGB is scored; 
 the run contains mip level 0 only. PSNR is measured in the stored byte domain. 
@@ -26,6 +26,7 @@ SSIM uses BT.709 luminance and an 11x11 Gaussian window with sigma 1.5.
 | ASTC 8x8 medium | 2.0000 | 2.0001 | 33.943 | 0.956661 | 1157.3 | 1087.1 |
 | BPAL 16x16 / 4 / 32 | 2.0789 | 2.0790 | 29.892 | 0.910741 | 5023.1 | 567.2 |
 | BPAL 8x8 / 4 / 64 | 2.3765 | 2.3766 | 32.189 | 0.944657 | 7964.3 | 548.0 |
+| BPAL v5 16x16 / 8 local / 1 palette x 32 colors | 3.1570 | 3.1571 | 32.085 | 0.939113 | 7128.6 | 669.8 |
 | BPAL v5 16x16 / 8 local / 64 palettes x 32 colors | 3.2266 | 3.2267 | 34.872 | 0.973393 | 21086.6 | 635.1 |
 | ASTC 6x6 medium | 3.5695 | 3.5696 | 37.566 | 0.983309 | 914.7 | 1167.7 |
 | BC1 uniform RGB | 4.0000 | 4.0010 | 35.640 | 0.976002 | 438.7 | 889.9 |
@@ -38,6 +39,7 @@ SSIM uses BT.709 luminance and an 11x11 Gaussian window with sigma 1.5.
 ## Key comparisons
 
 - **ASTC 8x8 medium vs BPAL 16x16 / 4 / 32:** +4.051 dB PSNR, +0.045921 SSIM, -0.0789 payload bpp.
+- **BPAL v5 16x16 / 8 local / 64 palettes x 32 colors vs BPAL v5 16x16 / 8 local / 1 palette x 32 colors:** +2.788 dB PSNR, +0.034280 SSIM, +0.0696 payload bpp.
 - **ASTC 6x6 medium vs BPAL v5 16x16 / 8 local / 64 palettes x 32 colors:** +2.693 dB PSNR, +0.009916 SSIM, +0.3429 payload bpp.
 - **BC1 uniform RGB vs BPAL v5 16x16 / 8 local / 64 palettes x 32 colors:** +0.767 dB PSNR, +0.002610 SSIM, +0.7734 payload bpp.
 - **BPAL 8x8 / 8 / 256 vs BC1 uniform RGB:** +1.379 dB PSNR, +0.005076 SSIM, +0.0059 payload bpp.
@@ -56,6 +58,7 @@ Aggregate SSIM is weighted by source pixel count.
 | clic-01-alexander-shustov-73 | BPAL 8x8 / 4 / 64 | 2.3765 | 27.186 | 0.910908 |
 | clic-01-alexander-shustov-73 | ASTC 8x8 medium | 2.0000 | 29.750 | 0.947199 |
 | clic-01-alexander-shustov-73 | ASTC 6x6 medium | 3.5695 | 33.395 | 0.980037 |
+| clic-01-alexander-shustov-73 | BPAL v5 16x16 / 8 local / 1 palette x 32 colors | 3.1570 | 26.903 | 0.901372 |
 | clic-01-alexander-shustov-73 | BPAL v5 16x16 / 8 local / 64 palettes x 32 colors | 3.2266 | 29.604 | 0.954045 |
 | clic-01-alexander-shustov-73 | BPAL 8x8 / 8 / 256 | 4.0059 | 32.001 | 0.968950 |
 | clic-01-alexander-shustov-73 | BC1 uniform RGB | 4.0000 | 31.302 | 0.969347 |
@@ -67,6 +70,7 @@ Aggregate SSIM is weighted by source pixel count.
 | clic-02-casey-fyfe-999 | BPAL 8x8 / 4 / 64 | 2.3765 | 38.360 | 0.959381 |
 | clic-02-casey-fyfe-999 | ASTC 8x8 medium | 2.0000 | 37.782 | 0.933082 |
 | clic-02-casey-fyfe-999 | ASTC 6x6 medium | 3.5695 | 41.026 | 0.977866 |
+| clic-02-casey-fyfe-999 | BPAL v5 16x16 / 8 local / 1 palette x 32 colors | 3.1570 | 38.338 | 0.962830 |
 | clic-02-casey-fyfe-999 | BPAL v5 16x16 / 8 local / 64 palettes x 32 colors | 3.2266 | 41.116 | 0.981994 |
 | clic-02-casey-fyfe-999 | BPAL 8x8 / 8 / 256 | 4.0059 | 42.313 | 0.986396 |
 | clic-02-casey-fyfe-999 | BC1 uniform RGB | 4.0000 | 39.366 | 0.971524 |
@@ -78,6 +82,7 @@ Aggregate SSIM is weighted by source pixel count.
 | clic-03-juskteez-vu-1041 | BPAL 8x8 / 4 / 64 | 2.3765 | 32.266 | 0.944652 |
 | clic-03-juskteez-vu-1041 | ASTC 8x8 medium | 2.0000 | 30.626 | 0.899667 |
 | clic-03-juskteez-vu-1041 | ASTC 6x6 medium | 3.5695 | 34.850 | 0.966418 |
+| clic-03-juskteez-vu-1041 | BPAL v5 16x16 / 8 local / 1 palette x 32 colors | 3.1570 | 32.999 | 0.963560 |
 | clic-03-juskteez-vu-1041 | BPAL v5 16x16 / 8 local / 64 palettes x 32 colors | 3.2266 | 36.009 | 0.978649 |
 | clic-03-juskteez-vu-1041 | BPAL 8x8 / 8 / 256 | 4.0059 | 37.586 | 0.985003 |
 | clic-03-juskteez-vu-1041 | BC1 uniform RGB | 4.0000 | 34.358 | 0.965443 |
@@ -89,6 +94,7 @@ Aggregate SSIM is weighted by source pixel count.
 | clic-04-davide-ragusa-716 | BPAL 8x8 / 4 / 64 | 2.3765 | 35.675 | 0.963702 |
 | clic-04-davide-ragusa-716 | ASTC 8x8 medium | 2.0000 | 39.559 | 0.979089 |
 | clic-04-davide-ragusa-716 | ASTC 6x6 medium | 3.5695 | 42.319 | 0.989466 |
+| clic-04-davide-ragusa-716 | BPAL v5 16x16 / 8 local / 1 palette x 32 colors | 3.1570 | 34.751 | 0.959481 |
 | clic-04-davide-ragusa-716 | BPAL v5 16x16 / 8 local / 64 palettes x 32 colors | 3.2266 | 39.978 | 0.985890 |
 | clic-04-davide-ragusa-716 | BPAL 8x8 / 8 / 256 | 4.0059 | 40.696 | 0.985688 |
 | clic-04-davide-ragusa-716 | BC1 uniform RGB | 4.0000 | 39.299 | 0.982951 |
@@ -100,6 +106,7 @@ Aggregate SSIM is weighted by source pixel count.
 | clic-05-clem-onojeghuo-33741 | BPAL 8x8 / 4 / 64 | 2.3765 | 34.421 | 0.951867 |
 | clic-05-clem-onojeghuo-33741 | ASTC 8x8 medium | 2.0000 | 35.316 | 0.967353 |
 | clic-05-clem-onojeghuo-33741 | ASTC 6x6 medium | 3.5695 | 38.460 | 0.985050 |
+| clic-05-clem-onojeghuo-33741 | BPAL v5 16x16 / 8 local / 1 palette x 32 colors | 3.1570 | 34.943 | 0.940826 |
 | clic-05-clem-onojeghuo-33741 | BPAL v5 16x16 / 8 local / 64 palettes x 32 colors | 3.2266 | 37.207 | 0.976128 |
 | clic-05-clem-onojeghuo-33741 | BPAL 8x8 / 8 / 256 | 4.0059 | 39.171 | 0.983550 |
 | clic-05-clem-onojeghuo-33741 | BC1 uniform RGB | 4.0000 | 36.463 | 0.976365 |
@@ -111,6 +118,7 @@ Aggregate SSIM is weighted by source pixel count.
 | clic-06-jeremy-cai-1174 | BPAL 8x8 / 4 / 64 | 2.3765 | 31.153 | 0.930372 |
 | clic-06-jeremy-cai-1174 | ASTC 8x8 medium | 2.0000 | 36.593 | 0.981362 |
 | clic-06-jeremy-cai-1174 | ASTC 6x6 medium | 3.5695 | 39.843 | 0.991397 |
+| clic-06-jeremy-cai-1174 | BPAL v5 16x16 / 8 local / 1 palette x 32 colors | 3.1570 | 31.044 | 0.924383 |
 | clic-06-jeremy-cai-1174 | BPAL v5 16x16 / 8 local / 64 palettes x 32 colors | 3.2266 | 32.901 | 0.957040 |
 | clic-06-jeremy-cai-1174 | BPAL 8x8 / 8 / 256 | 4.0059 | 35.872 | 0.974761 |
 | clic-06-jeremy-cai-1174 | BC1 uniform RGB | 4.0000 | 36.245 | 0.980209 |
@@ -122,6 +130,7 @@ Aggregate SSIM is weighted by source pixel count.
 | clic-07-michael-durana-82941 | BPAL 8x8 / 4 / 64 | 2.3765 | 33.287 | 0.952113 |
 | clic-07-michael-durana-82941 | ASTC 8x8 medium | 2.0000 | 34.264 | 0.970389 |
 | clic-07-michael-durana-82941 | ASTC 6x6 medium | 3.5695 | 37.772 | 0.987240 |
+| clic-07-michael-durana-82941 | BPAL v5 16x16 / 8 local / 1 palette x 32 colors | 3.1570 | 33.441 | 0.932919 |
 | clic-07-michael-durana-82941 | BPAL v5 16x16 / 8 local / 64 palettes x 32 colors | 3.2266 | 36.605 | 0.981779 |
 | clic-07-michael-durana-82941 | BPAL 8x8 / 8 / 256 | 4.0059 | 37.819 | 0.982081 |
 | clic-07-michael-durana-82941 | BC1 uniform RGB | 4.0000 | 36.005 | 0.980713 |
@@ -133,6 +142,7 @@ Aggregate SSIM is weighted by source pixel count.
 | clic-08-zugr-108 | BPAL 8x8 / 4 / 64 | 2.3765 | 35.034 | 0.944257 |
 | clic-08-zugr-108 | ASTC 8x8 medium | 2.0000 | 38.637 | 0.975151 |
 | clic-08-zugr-108 | ASTC 6x6 medium | 3.5695 | 41.841 | 0.988997 |
+| clic-08-zugr-108 | BPAL v5 16x16 / 8 local / 1 palette x 32 colors | 3.1570 | 34.345 | 0.927531 |
 | clic-08-zugr-108 | BPAL v5 16x16 / 8 local / 64 palettes x 32 colors | 3.2266 | 37.967 | 0.971615 |
 | clic-08-zugr-108 | BPAL 8x8 / 8 / 256 | 4.0059 | 40.211 | 0.982198 |
 | clic-08-zugr-108 | BC1 uniform RGB | 4.0000 | 38.915 | 0.981469 |
