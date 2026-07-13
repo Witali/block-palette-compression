@@ -149,27 +149,24 @@ test("reports real multi-stage compression progress", () => {
   assert.equal(progress.at(-1).progress, 1);
 });
 
-test("supports two, four, and eight content palettes", () => {
-  const colors = [
-    [255, 0, 0, 255],
-    [0, 255, 0, 255],
-    [0, 0, 255, 255],
-    [255, 255, 0, 255],
-    [255, 0, 255, 255],
-    [0, 255, 255, 255],
-    [255, 255, 255, 255],
-    [0, 0, 0, 255],
-  ];
+test("supports up to 64 content palettes", () => {
   const values = [];
 
-  for (let row = 0; row < 2; row += 1) {
-    for (const color of colors) {
-      values.push(color, color);
+  for (let y = 0; y < 16; y += 1) {
+    for (let x = 0; x < 16; x += 1) {
+      const block = Math.floor(y / 2) * 8 + Math.floor(x / 2);
+
+      values.push([
+        block * 53 & 255,
+        block * 97 & 255,
+        block * 193 & 255,
+        255,
+      ]);
     }
   }
 
-  for (const paletteCount of [2, 4, 8]) {
-    const result = compressImage(pixels(values), 16, 2, {
+  for (const paletteCount of [2, 4, 8, 16, 32, 64]) {
+    const result = compressImage(pixels(values), 16, 16, {
       blockSize: 2,
       localColorCount: 2,
       globalColorCount: 2,
@@ -526,7 +523,7 @@ test("rejects non-power-of-two format settings", () => {
       globalColorCount: 4,
       paletteCount: 3,
     }),
-    /paletteCount must be 1, 2, 4, or 8/
+    /paletteCount must be a power of two from 1 to 64/
   );
   assert.throws(
     () => compressImage(source, 2, 2, {

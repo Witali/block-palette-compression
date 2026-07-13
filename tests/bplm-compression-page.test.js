@@ -32,7 +32,7 @@ test("loads the BPLM dependencies before the compression page", () => {
 test("offers power-of-two shared palette counts and applies them to compression", () => {
   assert.match(html, /<select id="palette-count" name="paletteCount">/);
 
-  for (const count of [1, 2, 4, 8]) {
+  for (const count of [1, 2, 4, 8, 16, 32, 64]) {
     assert.match(html, new RegExp(`<option value="${count}"`));
   }
 

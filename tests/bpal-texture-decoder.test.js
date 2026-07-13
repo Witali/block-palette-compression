@@ -180,6 +180,37 @@ test("keeps multi-palette selectors compact and separate from color indices", ()
   );
 });
 
+test("packs six-bit selectors for 64-palette WebGL2 textures", () => {
+  const paletteCount = 64;
+  const blockCount = 64;
+  const texture = decode(encodeBlockPaletteFile({
+    width: 16,
+    height: 16,
+    blockSize: 2,
+    localColorCount: 2,
+    globalColorCount: 2,
+    paletteCount,
+    paletteColorBits: 24,
+    paletteMode: "explicit",
+    palette: Array.from({ length: paletteCount * 2 }, (_, index) => ({
+      r: index & 255,
+      g: index * 3 & 255,
+      b: index * 7 & 255,
+    })),
+    blockPaletteSelectors: Uint8Array.from({ length: blockCount }, (_, index) => index),
+    blockPaletteIndices: Uint16Array.from({ length: blockCount * 2 }, (_, index) => index % 2),
+    pixelIndices: Uint8Array.from({ length: 16 * 16 }, (_, index) => index % 2),
+  }));
+  const compact = createCompactShaderTextureData(texture, 64);
+
+  assert.equal(compact.paletteCount, 64);
+  assert.equal(compact.paletteIndexBits, 6);
+  assert.equal(
+    readPackedValue(compact.paletteSelectorAtlas.data, 63, compact.paletteIndexBits),
+    63
+  );
+});
+
 test("rejects BPAL shader atlases larger than the WebGL texture limit", () => {
   assert.throws(
     () => createShaderTextureData({
