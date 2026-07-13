@@ -176,16 +176,16 @@ test("round-trips four global palettes and per-block palette selectors", () => {
   assert.deepEqual(Array.from(decodedV4.blockPaletteSelectors), [0, 1, 2, 3]);
 });
 
-test("round-trips 64 global palettes with six-bit block selectors", () => {
-  const paletteCount = 64;
-  const blockCount = 64;
+test("round-trips 128 global palettes with seven-bit block selectors", () => {
+  const paletteCount = 128;
+  const blockCount = 128;
   const palette = Array.from({ length: paletteCount * 2 }, (_, index) => ({
     r: index & 255,
     g: index * 3 & 255,
     b: index * 7 & 255,
   }));
   const image = {
-    width: 16,
+    width: 32,
     height: 16,
     blockSize: 2,
     localColorCount: 2,
@@ -195,19 +195,19 @@ test("round-trips 64 global palettes with six-bit block selectors", () => {
     palette,
     blockPaletteSelectors: Uint8Array.from({ length: blockCount }, (_, index) => index),
     blockPaletteIndices: Uint16Array.from({ length: blockCount * 2 }, (_, index) => index % 2),
-    pixelIndices: Uint8Array.from({ length: 16 * 16 }, (_, index) => index % 2),
+    pixelIndices: Uint8Array.from({ length: 32 * 16 }, (_, index) => index % 2),
   };
   const layout = getBlockPaletteFileLayout(image);
   const decoded = decodeBlockPaletteFile(encodeBlockPaletteFile(image));
 
   assert.equal(decoded.version, VERSION);
-  assert.equal(decoded.paletteCount, 64);
-  assert.equal(decoded.paletteIndexBits, 6);
+  assert.equal(decoded.paletteCount, 128);
+  assert.equal(decoded.paletteIndexBits, 7);
   assert.deepEqual(
     Array.from(decoded.blockPaletteSelectors),
     Array.from(image.blockPaletteSelectors)
   );
-  assert.equal(layout.blockPaletteSelectorBits, blockCount * 6);
+  assert.equal(layout.blockPaletteSelectorBits, blockCount * 7);
 });
 
 test("continues to decode legacy BPAL v1 files", () => {

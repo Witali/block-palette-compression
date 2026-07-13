@@ -1863,8 +1863,8 @@
       throw new RangeError("globalColorCount must be a power of two from 2 to 4096");
     }
 
-    if (!isPowerOfTwo(paletteCount) || paletteCount < 1 || paletteCount > 64) {
-      throw new RangeError("paletteCount must be a power of two from 1 to 64");
+    if (!isPowerOfTwo(paletteCount) || paletteCount < 1 || paletteCount > 128) {
+      throw new RangeError("paletteCount must be a power of two from 1 to 128");
     }
 
     if (paletteColorBits !== 16 && paletteColorBits !== 24) {

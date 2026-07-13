@@ -582,8 +582,8 @@
       throw new RangeError("BPAL globalColorCount must be a power of two from 2 to 4096");
     }
 
-    if (!isPowerOfTwo(image.paletteCount) || image.paletteCount < 1 || image.paletteCount > 64) {
-      throw new RangeError("BPAL paletteCount must be a power of two from 1 to 64");
+    if (!isPowerOfTwo(image.paletteCount) || image.paletteCount < 1 || image.paletteCount > 128) {
+      throw new RangeError("BPAL paletteCount must be a power of two from 1 to 128");
     }
 
     if (image.localColorCount > image.globalColorCount) {
