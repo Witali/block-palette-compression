@@ -22,6 +22,29 @@ only the final byte may need zero padding.
 
 ![Tightly packed BPAL header and payload](./docs/images/bpal-bitstream-layout.svg)
 
+## Multi-palette BPAL v5
+
+The multi-palette encoder groups blocks by content before quantizing their
+colors. Each block is described by the mean and standard deviation of its
+colors in RGB or OKLab, deterministic clustering assigns the block to one of
+the requested palettes, and every cluster receives its own explicitly stored
+shared palette. A block then stores a `log2(palette count)`-bit selector in
+addition to its local color table, while pixels keep the same compact local
+indices as in the single-palette format.
+
+BPAL v5 extends this model to 1, 2, 4, 8, 16, 32, or 64 shared palettes. The
+encoder UI exposes the palette count, reports clustering and palette-building
+progress, and shows all reconstructed palettes. BPAL/BPLM serialization, the
+viewer, mip generation, the WebGL cube demos, and the compact WebGL2 shader
+path all preserve the per-block palette selectors. Decoders remain compatible
+with BPAL v1-v4.
+
+The bundled [32-palette landscape BPLM sample](./assets/bpal/landscape-alaska-bpal-v5.bplm)
+uses BPAL v5 with 32 colors per shared palette, 8 local colors per 16x16 block,
+and 11 stored mip levels. See the [multi-palette compressor screenshot](./docs/images/block-palette-html-2026-07-13-13_29_15.png)
+for the encoded image, storage breakdown, selected block, and reconstructed
+shared palettes.
+
 The project contains:
 
 - [`block-palette.html`](https://witali.github.io/block-palette-compression/block-palette.html) — CPU/WebGL2 encoder, preview,
