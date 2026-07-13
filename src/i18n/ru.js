@@ -199,6 +199,7 @@
     "block.progressStageAssignments": "Назначение пикселям общих цветов",
     "block.progressStageBlockPalettes": "Подбор локальных палитр блоков",
     "block.progressStageEncoding": "Кодирование индексов пикселей",
+    "block.progressStageRefining": "Уточнение палитр и назначений пикселей",
     "block.progressStageFinalizing": "Расчёт метрик",
     "block.progressStageComplete": "Сжатие завершено",
     "block.progressStageSearching": "Подбор настроек сжатия",

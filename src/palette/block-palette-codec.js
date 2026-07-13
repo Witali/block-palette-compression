@@ -15,6 +15,8 @@
   "use strict";
 
   const MAX_PALETTE_SAMPLE_PIXELS = 32768;
+  const DEFAULT_REFINEMENT_PASSES = 4;
+  const MAX_REFINEMENT_PASSES = 16;
   const DITHERING_MODES = new Set(["none", "pattern-2x2", "pattern", "floyd-steinberg"]);
   const BAYER_2X2 = [
     0, 2,
@@ -40,6 +42,9 @@
     const clusteringMethod = options.clusteringMethod || "k-means";
     const dithering = options.dithering || "none";
     const diversity = options.diversity === undefined ? 0 : Number(options.diversity);
+    const refinementPasses = options.refinementPasses === undefined
+      ? DEFAULT_REFINEMENT_PASSES
+      : Number(options.refinementPasses);
     const accelerator = options.accelerator || null;
     const onProgress = typeof options.onProgress === "function"
       ? options.onProgress
@@ -58,7 +63,8 @@
       colorSpace,
       clusteringMethod,
       dithering,
-      diversity
+      diversity,
+      refinementPasses
     );
 
     const blocksX = Math.ceil(width / blockSize);
@@ -367,7 +373,46 @@
       }
     }
 
-    reportProgress(onProgress, "finalizing", 0.97, {
+    const initialMeanSquaredError = meanSquaredError(sourcePixels, outputPixels);
+    const refinement = refineImageEncoding({
+      sourcePixels,
+      outputPixels,
+      pixelIndices,
+      resultUsage,
+      width,
+      height,
+      blockSize,
+      blocksX,
+      blocksY,
+      blockCount,
+      localColorCount,
+      globalColorCount,
+      paletteColorBits,
+      paletteCount,
+      activePaletteCounts,
+      blockPaletteSelectors,
+      blockPaletteIndices,
+      palette,
+      colorSpace,
+      dithering,
+      sourcePointByColor,
+      refinementPasses,
+      initialMeanSquaredError,
+      onProgress,
+    });
+
+    outputPixels = refinement.outputPixels;
+    pixelIndices = refinement.pixelIndices;
+    blockPaletteIndices.set(refinement.blockPaletteIndices);
+    resultUsage.set(refinement.resultUsage);
+
+    if (refinement.palette !== palette) {
+      for (let index = 0; index < palette.length; index += 1) {
+        palette[index] = refinement.palette[index];
+      }
+    }
+
+    reportProgress(onProgress, "finalizing", 0.995, {
       completed: 0,
       total: 1,
     });
@@ -437,6 +482,11 @@
       dithering,
       diversity,
       iterations,
+      refinementPasses,
+      refinementIterations: refinement.iterations,
+      refinementAcceptedPasses: refinement.acceptedPasses,
+      refinementErrors: refinement.errors,
+      initialMeanSquaredError,
       storage: {
         globalPaletteBits,
         blockPaletteSelectorBits,
@@ -1449,6 +1499,405 @@
     return selected;
   }
 
+  function refineImageEncoding(options) {
+    const {
+      sourcePixels,
+      outputPixels,
+      pixelIndices,
+      resultUsage,
+      width,
+      height,
+      blockSize,
+      blocksX,
+      blocksY,
+      blockCount,
+      localColorCount,
+      globalColorCount,
+      paletteColorBits,
+      paletteCount,
+      activePaletteCounts,
+      blockPaletteSelectors,
+      blockPaletteIndices,
+      palette,
+      colorSpace,
+      dithering,
+      sourcePointByColor,
+      refinementPasses,
+      initialMeanSquaredError,
+      onProgress,
+    } = options;
+    let currentOutputPixels = outputPixels;
+    let currentPixelIndices = pixelIndices;
+    let currentResultUsage = resultUsage;
+    let currentBlockPaletteIndices = blockPaletteIndices;
+    let currentPalette = palette;
+    let currentError = initialMeanSquaredError;
+    let acceptedPasses = 0;
+    let iterations = 0;
+    const errors = [currentError];
+
+    if (refinementPasses === 0) {
+      return {
+        outputPixels: currentOutputPixels,
+        pixelIndices: currentPixelIndices,
+        resultUsage: currentResultUsage,
+        blockPaletteIndices: currentBlockPaletteIndices,
+        palette: currentPalette,
+        meanSquaredError: currentError,
+        iterations,
+        acceptedPasses,
+        errors,
+      };
+    }
+
+    reportProgress(onProgress, "refining", 0.96, {
+      iteration: 0,
+      totalIterations: refinementPasses,
+      meanSquaredError: currentError,
+    });
+
+    for (let pass = 0; pass < refinementPasses; pass += 1) {
+      const candidatePalette = currentPalette.map(copyPaletteColor);
+
+      updatePaletteCentroids(
+        candidatePalette,
+        sourcePixels,
+        currentPixelIndices,
+        currentBlockPaletteIndices,
+        blockPaletteSelectors,
+        width,
+        height,
+        blockSize,
+        blocksX,
+        localColorCount,
+        globalColorCount,
+        paletteColorBits
+      );
+
+      const rebuilt = rebuildBlockPaletteIndices({
+        sourcePixels,
+        width,
+        height,
+        blockSize,
+        blocksX,
+        blocksY,
+        blockCount,
+        localColorCount,
+        globalColorCount,
+        paletteCount,
+        activePaletteCounts,
+        blockPaletteSelectors,
+        palette: candidatePalette,
+        colorSpace,
+        sourcePointByColor,
+      });
+      const candidateEncoding = encodeImageWithBlockPalettes({
+        sourcePixels,
+        width,
+        height,
+        blockSize,
+        blocksX,
+        blocksY,
+        localColorCount,
+        globalColorCount,
+        blockPaletteSelectors,
+        blockPaletteIndices: rebuilt.blockPaletteIndices,
+        palette: candidatePalette,
+        palettePoints: rebuilt.palettePoints,
+        colorSpace,
+        dithering,
+        sourcePointByColor,
+      });
+      const candidateError = meanSquaredError(sourcePixels, candidateEncoding.outputPixels);
+      const improved = candidateError < currentError;
+
+      iterations = pass + 1;
+
+      if (improved) {
+        currentOutputPixels = candidateEncoding.outputPixels;
+        currentPixelIndices = candidateEncoding.pixelIndices;
+        currentResultUsage = candidateEncoding.resultUsage;
+        currentBlockPaletteIndices = rebuilt.blockPaletteIndices;
+        currentPalette = candidatePalette;
+        currentError = candidateError;
+        acceptedPasses += 1;
+      }
+
+      errors.push(currentError);
+      reportProgress(
+        onProgress,
+        "refining",
+        0.96 + 0.03 * ((pass + 1) / refinementPasses),
+        {
+          iteration: pass + 1,
+          totalIterations: refinementPasses,
+          meanSquaredError: currentError,
+          candidateMeanSquaredError: candidateError,
+          improved,
+        }
+      );
+
+      if (!improved) {
+        break;
+      }
+    }
+
+    return {
+      outputPixels: currentOutputPixels,
+      pixelIndices: currentPixelIndices,
+      resultUsage: currentResultUsage,
+      blockPaletteIndices: currentBlockPaletteIndices,
+      palette: currentPalette,
+      meanSquaredError: currentError,
+      iterations,
+      acceptedPasses,
+      errors,
+    };
+  }
+
+  function updatePaletteCentroids(
+    palette,
+    sourcePixels,
+    pixelIndices,
+    blockPaletteIndices,
+    blockPaletteSelectors,
+    width,
+    height,
+    blockSize,
+    blocksX,
+    localColorCount,
+    globalColorCount,
+    paletteColorBits
+  ) {
+    const redSums = new Float64Array(palette.length);
+    const greenSums = new Float64Array(palette.length);
+    const blueSums = new Float64Array(palette.length);
+    const counts = new Uint32Array(palette.length);
+
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const pixel = y * width + x;
+        const offset = pixel * 4;
+
+        if (sourcePixels[offset + 3] === 0) {
+          continue;
+        }
+
+        const blockIndex = Math.floor(y / blockSize) * blocksX + Math.floor(x / blockSize);
+        const localIndex = pixelIndices[pixel];
+        const paletteIndex = blockPaletteSelectors[blockIndex];
+        const globalIndex = paletteIndex * globalColorCount +
+          blockPaletteIndices[blockIndex * localColorCount + localIndex];
+
+        redSums[globalIndex] += sourcePixels[offset];
+        greenSums[globalIndex] += sourcePixels[offset + 1];
+        blueSums[globalIndex] += sourcePixels[offset + 2];
+        counts[globalIndex] += 1;
+      }
+    }
+
+    for (let index = 0; index < palette.length; index += 1) {
+      if (counts[index] === 0) {
+        continue;
+      }
+
+      const red = clampByte(Math.round(redSums[index] / counts[index]));
+      const green = clampByte(Math.round(greenSums[index] / counts[index]));
+      const blue = clampByte(Math.round(blueSums[index] / counts[index]));
+
+      palette[index] = applyPaletteColorDepth({
+        r: red,
+        g: green,
+        b: blue,
+        hex: rgbToHex(red, green, blue),
+        count: counts[index],
+      }, paletteColorBits);
+    }
+  }
+
+  function rebuildBlockPaletteIndices(options) {
+    const {
+      sourcePixels,
+      width,
+      height,
+      blockSize,
+      blocksX,
+      blocksY,
+      blockCount,
+      localColorCount,
+      globalColorCount,
+      paletteCount,
+      activePaletteCounts,
+      blockPaletteSelectors,
+      palette,
+      colorSpace,
+      sourcePointByColor,
+    } = options;
+    const palettePoints = palette.map((color) =>
+      colorPoint(color.r, color.g, color.b, colorSpace)
+    );
+    const activePalettePoints = [];
+    const paletteDistances = [];
+    const paletteNeighborCaches = [];
+
+    for (let paletteIndex = 0; paletteIndex < paletteCount; paletteIndex += 1) {
+      const paletteBase = paletteIndex * globalColorCount;
+      const points = palettePoints.slice(
+        paletteBase,
+        paletteBase + activePaletteCounts[paletteIndex]
+      );
+
+      activePalettePoints.push(points);
+      paletteDistances.push(createPaletteDistanceMatrix(points));
+      paletteNeighborCaches.push(new Map());
+    }
+
+    const globalAssignments = new Uint16Array(width * height);
+    const assignmentCache = new Map();
+
+    for (let pixel = 0; pixel < width * height; pixel += 1) {
+      const offset = pixel * 4;
+
+      if (sourcePixels[offset + 3] === 0) {
+        continue;
+      }
+
+      const x = pixel % width;
+      const y = Math.floor(pixel / width);
+      const blockIndex = Math.floor(y / blockSize) * blocksX + Math.floor(x / blockSize);
+      const paletteIndex = blockPaletteSelectors[blockIndex];
+      const key = colorKey(sourcePixels[offset], sourcePixels[offset + 1], sourcePixels[offset + 2]);
+      const assignmentKey = paletteIndex * 0x1000000 + key;
+      let globalIndex = assignmentCache.get(assignmentKey);
+
+      if (globalIndex === undefined) {
+        let point = sourcePointByColor.get(key);
+
+        if (!point) {
+          point = colorPoint(
+            sourcePixels[offset],
+            sourcePixels[offset + 1],
+            sourcePixels[offset + 2],
+            colorSpace
+          );
+          sourcePointByColor.set(key, point);
+        }
+
+        globalIndex = nearestPointIndex(point, activePalettePoints[paletteIndex]);
+        assignmentCache.set(assignmentKey, globalIndex);
+      }
+
+      globalAssignments[pixel] = globalIndex;
+    }
+
+    const nextBlockPaletteIndices = new Uint16Array(blockCount * localColorCount);
+
+    for (let blockY = 0; blockY < blocksY; blockY += 1) {
+      for (let blockX = 0; blockX < blocksX; blockX += 1) {
+        const blockIndex = blockY * blocksX + blockX;
+        const paletteIndex = blockPaletteSelectors[blockIndex];
+        const points = activePalettePoints[paletteIndex];
+        const selected = selectBlockPalette(
+          globalAssignments,
+          sourcePixels,
+          width,
+          height,
+          blockX,
+          blockY,
+          blockSize,
+          localColorCount,
+          points.length,
+          paletteDistances[paletteIndex],
+          points,
+          colorSpace,
+          paletteNeighborCaches[paletteIndex]
+        );
+
+        for (let localIndex = 0; localIndex < localColorCount; localIndex += 1) {
+          nextBlockPaletteIndices[blockIndex * localColorCount + localIndex] = selected[localIndex];
+        }
+      }
+    }
+
+    return { blockPaletteIndices: nextBlockPaletteIndices, palettePoints };
+  }
+
+  function encodeImageWithBlockPalettes(options) {
+    const {
+      sourcePixels,
+      width,
+      height,
+      blockSize,
+      blocksX,
+      blocksY,
+      localColorCount,
+      globalColorCount,
+      blockPaletteSelectors,
+      blockPaletteIndices,
+      palette,
+      palettePoints,
+      colorSpace,
+      dithering,
+      sourcePointByColor,
+    } = options;
+    const outputPixels = new Uint8ClampedArray(sourcePixels.length);
+    const pixelIndices = new Uint8Array(width * height);
+    const resultUsage = new Uint32Array(palette.length);
+
+    if (dithering === "floyd-steinberg") {
+      applyBlockFloydSteinbergDithering(
+        sourcePixels,
+        outputPixels,
+        pixelIndices,
+        resultUsage,
+        width,
+        height,
+        blockSize,
+        blocksX,
+        localColorCount,
+        globalColorCount,
+        blockPaletteSelectors,
+        blockPaletteIndices,
+        palette,
+        palettePoints,
+        colorSpace,
+        null
+      );
+    } else {
+      for (let blockY = 0; blockY < blocksY; blockY += 1) {
+        for (let blockX = 0; blockX < blocksX; blockX += 1) {
+          const blockIndex = blockY * blocksX + blockX;
+          const paletteOffset = blockIndex * localColorCount;
+          const selected = Array.from(
+            blockPaletteIndices.slice(paletteOffset, paletteOffset + localColorCount)
+          );
+          const paletteBase = blockPaletteSelectors[blockIndex] * globalColorCount;
+
+          encodeBlock(
+            sourcePixels,
+            outputPixels,
+            pixelIndices,
+            resultUsage,
+            width,
+            height,
+            blockX,
+            blockY,
+            blockSize,
+            selected,
+            paletteBase,
+            palette,
+            palettePoints,
+            colorSpace,
+            sourcePointByColor,
+            dithering
+          );
+        }
+      }
+    }
+
+    return { outputPixels, pixelIndices, resultUsage };
+  }
+
   function createPaletteDistanceMatrix(palettePoints) {
     const colorCount = palettePoints.length;
     const distances = new Float64Array(colorCount * colorCount);
@@ -1841,7 +2290,8 @@
     colorSpace,
     clusteringMethod,
     dithering,
-    diversity
+    diversity,
+    refinementPasses
   ) {
     if (!(pixels instanceof Uint8Array || pixels instanceof Uint8ClampedArray)) {
       throw new TypeError("sourcePixels must be a Uint8Array or Uint8ClampedArray");
@@ -1881,6 +2331,14 @@
 
     if (!Number.isFinite(diversity) || diversity < 0 || diversity > 1) {
       throw new RangeError("diversity must be between 0 and 1");
+    }
+
+    if (
+      !Number.isInteger(refinementPasses) ||
+      refinementPasses < 0 ||
+      refinementPasses > MAX_REFINEMENT_PASSES
+    ) {
+      throw new RangeError(`refinementPasses must be an integer from 0 to ${MAX_REFINEMENT_PASSES}`);
     }
 
     if (!isPowerOfTwo(localColorCount) || localColorCount < 2 || localColorCount > globalColorCount) {

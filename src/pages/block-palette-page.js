@@ -94,6 +94,7 @@ const PROGRESS_STAGES = [
   "assigning-pixels",
   "building-block-palettes",
   "encoding-pixels",
+  "refining",
   "finalizing",
 ];
 const PROGRESS_STAGE_KEYS = {
@@ -104,6 +105,7 @@ const PROGRESS_STAGE_KEYS = {
   "assigning-pixels": "block.progressStageAssignments",
   "building-block-palettes": "block.progressStageBlockPalettes",
   "encoding-pixels": "block.progressStageEncoding",
+  "refining": "block.progressStageRefining",
   "finalizing": "block.progressStageFinalizing",
   "complete": "block.progressStageComplete",
   "searching-settings": "block.progressStageSearching",

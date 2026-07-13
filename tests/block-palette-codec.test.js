@@ -17,6 +17,7 @@ test("uses quality-oriented explicit-palette defaults", () => {
   assert.equal(result.paletteMode, "explicit");
   assert.equal(result.globalColorCount, 256);
   assert.equal(result.clusteringMethod, "k-means");
+  assert.equal(result.refinementPasses, 4);
 });
 
 test("builds the common palette with K-medians when requested", () => {
@@ -128,6 +129,7 @@ test("reports real multi-stage compression progress", () => {
     "assigning-pixels",
     "building-block-palettes",
     "encoding-pixels",
+    "refining",
     "finalizing",
     "complete",
   ]) {
@@ -418,6 +420,7 @@ test("does not diffuse Floyd-Steinberg error across block palette boundaries", (
       globalColorCount: 4,
       colorSpace: "rgb",
       dithering: "floyd-steinberg",
+      refinementPasses: 0,
     });
   };
   const resultA = compress(leftA);
@@ -469,6 +472,52 @@ test("fills every block palette slot with distinct source-adjacent colors", () =
 
     assert.equal(new Set(flatBlockPalette).size, 4, dithering);
     assert.deepEqual(new Set(flatBlockPalette), new Set(closestToSource), dithering);
+  }
+});
+
+test("iteratively refines palette colors without increasing RGB error", () => {
+  const width = 16;
+  const height = 16;
+  const source = new Uint8ClampedArray(width * height * 4);
+  let random = 7;
+
+  for (let pixel = 0; pixel < width * height; pixel += 1) {
+    random = (random * 1664525 + 1013904223) >>> 0;
+
+    const x = pixel % width;
+    const y = Math.floor(pixel / width);
+    const offset = pixel * 4;
+
+    source[offset] = (x * 17 + (random & 63)) & 255;
+    source[offset + 1] = (y * 19 + ((random >>> 8) & 63)) & 255;
+    source[offset + 2] = ((x + y) * 11 + ((random >>> 16) & 63)) & 255;
+    source[offset + 3] = 255;
+  }
+
+  const settings = {
+    blockSize: 4,
+    localColorCount: 2,
+    globalColorCount: 8,
+    paletteCount: 4,
+    colorSpace: "rgb",
+  };
+  const baseline = compressImage(source, width, height, {
+    ...settings,
+    refinementPasses: 0,
+  });
+  const refined = compressImage(source, width, height, {
+    ...settings,
+    refinementPasses: 4,
+  });
+
+  assert.equal(refined.refinementPasses, 4);
+  assert.ok(refined.refinementIterations > 0 && refined.refinementIterations <= 4);
+  assert.ok(refined.refinementAcceptedPasses > 0);
+  assert.ok(refined.meanSquaredError < baseline.meanSquaredError);
+  assert.equal(refined.storage.payloadBits, baseline.storage.payloadBits);
+
+  for (let index = 1; index < refined.refinementErrors.length; index += 1) {
+    assert.ok(refined.refinementErrors[index] <= refined.refinementErrors[index - 1]);
   }
 });
 
@@ -569,6 +618,15 @@ test("rejects non-power-of-two format settings", () => {
       clusteringMethod: "k-medoids",
     }),
     /Unsupported clustering method/
+  );
+  assert.throws(
+    () => compressImage(source, 2, 2, {
+      blockSize: 2,
+      localColorCount: 2,
+      globalColorCount: 4,
+      refinementPasses: 17,
+    }),
+    /refinementPasses must be an integer from 0 to 16/
   );
 });
 

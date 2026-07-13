@@ -199,6 +199,7 @@
     "block.progressStageAssignments": "Assigning pixels to shared colors",
     "block.progressStageBlockPalettes": "Selecting block-local palettes",
     "block.progressStageEncoding": "Encoding pixel indices",
+    "block.progressStageRefining": "Refining palettes and pixel assignments",
     "block.progressStageFinalizing": "Calculating metrics",
     "block.progressStageComplete": "Compression complete",
     "block.progressStageSearching": "Searching compression settings",

@@ -45,6 +45,16 @@ and 11 stored mip levels. See the [multi-palette compressor screenshot](./docs/i
 for the encoded image, storage breakdown, selected block, and reconstructed
 shared palettes.
 
+## Iterative encoder refinement
+
+After the initial block encoding, the CPU encoder performs up to four
+rate-distortion refinement passes. Each pass moves every used shared-palette
+color to the RGB mean of the source pixels that currently reference it, then
+reselects the block-local colors and pixel indices. A candidate pass is kept
+only when it reduces exact RGB mean squared error, and refinement stops early
+after convergence. This changes encoding time and reconstructed quality but
+does not add fields or bits to BPAL/BPLM files and does not affect decoding.
+
 The project contains:
 
 - [`block-palette.html`](https://witali.github.io/block-palette-compression/block-palette.html) — CPU/WebGL2 encoder, preview,
