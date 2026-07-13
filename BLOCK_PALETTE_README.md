@@ -2,9 +2,9 @@
 
 [Russian version](./BLOCK_PALETTE_README_ru.md)
 
-This project implements an experimental codec that combines one shared image
-palette with a small local palette in every rectangular block. The interactive
-version is available on [`block-palette.html`](./block-palette.html).
+This project implements an experimental codec that combines one or more shared
+image palettes with a small local palette in every rectangular block. The
+interactive version is available on [`block-palette.html`](./block-palette.html).
 
 The codec is intended for exploring the tradeoff between size, quality, and
 decoding cost. The result can be saved in the compact custom BPAL format or
@@ -16,13 +16,14 @@ By default, the page uses 8×8 blocks, eight colors per block, and a shared
 ## Codec concept
 
 The image is divided into blocks of 4×4, 8×8, 16×16, 32×32, or 64×64 pixels.
-One shared palette is built for the entire image, while each block stores only
-a small number of indices into it. Every pixel then references a color in its
-block's local palette.
+One, two, four, or eight shared palettes are built for the image. Every block
+selects one of them and stores only a small number of palette-local indices.
+Every pixel then references a color in its block's local palette.
 
 For example, with four colors per block:
 
 - a pixel's local index occupies 2 bits;
+- with four shared palettes, the block selector occupies 2 bits;
 - the block stores four indices into the shared palette;
 - with a 256-color shared palette, each such index occupies 8 bits.
 
@@ -32,6 +33,7 @@ Supported settings:
 | --- | --- |
 | Block size | 4, 8, 16, 32, or 64 pixels |
 | Colors per block | 2, 4, 8, or 16 |
+| Shared palette count | 1, 2, 4, or 8 |
 | Shared palette colors | 8, 16, 32, 64, 128, 256, 1024, or 4096 |
 | Color format | RGB565, 16 bits; RGB888, 24 bits |
 | Search color space | OKLab or RGB |
@@ -46,29 +48,39 @@ Let:
 - `W`, `H` be the image width and height;
 - `S` be the block size;
 - `L` be the local palette color count;
-- `G` be the shared palette color count;
+- `P` be the shared palette count;
+- `G` be the color count in each shared palette;
 - `C` be 16 or 24 bits per color.
 
-The payload then consists of three parts:
+The payload then consists of four parts:
 
 ```text
-shared palette = G × C bits
+shared palettes = P × G × C bits
 
+block selectors = ceil(W / S) × ceil(H / S) × log2(P) bits
 block palettes = ceil(W / S) × ceil(H / S) × L × log2(G) bits
 pixels = W × H × log2(L) bits
 ```
 
-The 14-byte BPAL v3 header is added to this sum. The sections are written as a
+The 14-byte BPAL v4 header is added to this sum. The sections are written as a
 single bitstream without byte alignment; only the final byte of the file is
 padded with zeros.
 
 The page shows the size of every section, the effective number of bits per
 pixel, the ratio to uncompressed RGB, and RMSE per color channel.
 
-## Building the shared palette
+## Building the shared palettes
 
-Every shared-palette color is stored explicitly. Colors are selected by
-weighted clustering in RGB or OKLab. The **Accuracy — diversity** slider changes
+Every shared-palette color is stored explicitly. When multiple palettes are
+requested, each block is described by the mean and standard deviation of its
+colors in the selected search space. The codec initializes cluster centers by
+repeatedly choosing the farthest block descriptor, then applies Lloyd-style
+assignment and center-update iterations. This deterministic content clustering
+gives each block a palette selector before colors are quantized independently
+for every cluster.
+
+Within each cluster, colors are selected by weighted clustering in RGB or
+OKLab. The **Accuracy — diversity** slider changes
 the weight of rare colors: toward accuracy, average error has more influence;
 toward diversity, rare hues receive more influence.
 
@@ -85,10 +97,11 @@ For large images, the shared palette is built from a uniform sample of at most
 
 ## Selecting block colors
 
-For every block, the codec chooses `L` indices from the shared palette. The
-selection considers both color frequency and the total error across all pixels
-in the block. This reduces visible steps along high-contrast boundaries, where
-a rare but important shade might otherwise be omitted from the local palette.
+For every block, the codec first uses its cluster's shared palette, then chooses
+`L` indices from that palette. The selection considers both color frequency and
+the total error across all pixels in the block. This reduces visible steps
+along high-contrast boundaries, where a rare but important shade might
+otherwise be omitted from the local palette.
 
 The error is calculated from the mean coordinates of each source-pixel color
 group in the selected space, rather than from already rounded shared-palette
@@ -124,10 +137,12 @@ carrying error between such palettes produced large rectangular artifacts.
 
 ## CPU and WebGL2
 
-The CPU implementation runs the entire pipeline in a background Worker. The
-WebGL2 variant parallelizes shared-palette pixel assignment and final block
-encoding in fragment shaders. Palette construction and local-color selection
-remain on the CPU.
+The CPU implementation runs the entire pipeline in a background Worker. For a
+single shared palette, the WebGL2 variant parallelizes shared-palette pixel
+assignment and final block encoding in fragment shaders. Palette construction
+and local-color selection remain on the CPU. Multi-palette compression
+currently runs through the CPU path so that content clustering and all selector
+decisions are identical to the reference encoder.
 
 Floyd–Steinberg depends on previously processed neighboring pixels, so in this
 mode WebGL2 accelerates the independent stages while error diffusion runs on
@@ -156,7 +171,7 @@ to the shared palette.
 
 The page also displays:
 
-- the shared palette exactly as reconstructed;
+- the shared palettes exactly as reconstructed;
 - local and shared color indices;
 - processing time and the stages that were actually accelerated;
 - the complete size calculation for the resulting BPAL file.
@@ -166,8 +181,8 @@ The page also displays:
 The separate [`cube-bpal-sampler.html`](./cube-bpal-sampler.html) page uploads
 BPAL as a set of indexed GPU atlases and reconstructs colors in the fragment
 shader. During upload, it builds up to 16 independent mip levels for the source
-image. Every level has its own local block palettes but uses the original BPAL
-shared palette.
+image. Every level has its own local block palettes and selectors but uses the
+original BPAL shared palettes.
 
 The page provides four rendering modes:
 
@@ -185,10 +200,11 @@ quality and performance evaluation.
 
 ## BPAL format
 
-BPAL v3 begins with the `BPAL` magic value and a version number. Header bit
-fields contain the image dimensions, block parameters, index widths, and color
-format. New files store the shared palette explicitly. For compatibility, the
-decoder continues to read BPAL v1 files and BPAL v2/v3 vector palettes.
+BPAL v4 begins with the `BPAL` magic value and a version number. Header bit
+fields contain the image dimensions, block parameters, index widths, shared
+palette count, and color format. New files store the shared palettes and one
+selector per block explicitly. For compatibility, the decoder continues to
+read BPAL v1 files and BPAL v2/v3 vector palettes.
 
 The exact header and payload layouts are documented in
 [`BLOCK_PALETTE_FORMAT.md`](./BLOCK_PALETTE_FORMAT.md).
@@ -218,7 +234,7 @@ npm test
 ```
 
 The tests cover bit-layout calculations, block and palette sizes, RGB565,
-dithering, per-block Floyd–Steinberg isolation, BPAL v1/v2/v3 compatibility,
+dithering, per-block Floyd–Steinberg isolation, BPAL v1-v4 compatibility,
 the optimizer, and WebGL2-to-CPU fallback.
 
 ## Main files

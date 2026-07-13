@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1280" height="570" viewBox="0 0 1280 570" role="img" aria-labelledby="title desc">
-  <title id="title">Tightly packed BPAL v3 bitstream</title>
-  <desc id="desc">The BPAL file contains a 14-byte header, an explicit shared palette, block palette indices, pixel indices, and at most seven final padding bits.</desc>
+  <title id="title">Tightly packed BPAL v4 bitstream</title>
+  <desc id="desc">The BPAL file contains a 14-byte header, explicit shared palettes, block palette selectors, block palette indices, pixel indices, and at most seven final padding bits.</desc>
   <defs>
     <style>
       .background{fill:#fff}.heading{font:700 22px system-ui,sans-serif;fill:#1f2328}.label{font:600 16px system-ui,sans-serif;fill:#1f2328}.body{font:14px system-ui,sans-serif;fill:#59636e}.small{font:12px system-ui,sans-serif;fill:#59636e}.mono{font:13px ui-monospace,SFMono-Regular,Consolas,monospace;fill:#1f2328}.outline{stroke:#8c959f;stroke-width:1.5}.magic{fill:#dbeafe}.header{fill:#e9d5ff}.palette{fill:#d1fae5}.tables{fill:#ffedd5}.pixels{fill:#fce7f3}.padding{fill:#eaeef2}.card{fill:#f6f8fa;stroke:#d0d7de;stroke-width:1.5}.arrow{stroke:#8c959f;stroke-width:2;fill:none}
@@ -9,20 +9,21 @@
   </defs>
 
   <rect width="1280" height="570" class="background"/>
-  <text x="40" y="48" class="heading">BPAL v3 is one continuous bitstream</text>
+  <text x="40" y="48" class="heading">BPAL v4 is one continuous bitstream</text>
   <text x="40" y="76" class="body">Fields are written MSB first with no alignment between sections; only the last byte may contain zero padding.</text>
 
   <text x="40" y="120" class="label">File layout</text>
   <g transform="translate(40 138)">
-    <rect x="0" y="0" width="110" height="72" rx="10" class="magic outline"/><text x="55" y="29" text-anchor="middle" class="label">BPAL</text><text x="55" y="52" text-anchor="middle" class="small">magic · 32 bits</text>
-    <rect x="116" y="0" width="154" height="72" rx="10" class="header outline"/><text x="193" y="29" text-anchor="middle" class="label">v3 header</text><text x="193" y="52" text-anchor="middle" class="small">80 bits</text>
-    <rect x="276" y="0" width="354" height="72" rx="10" class="palette outline"/><text x="453" y="29" text-anchor="middle" class="label">Shared RGB palette</text><text x="453" y="52" text-anchor="middle" class="small">G × C bits</text>
-    <rect x="636" y="0" width="276" height="72" rx="10" class="tables outline"/><text x="774" y="29" text-anchor="middle" class="label">Block tables</text><text x="774" y="52" text-anchor="middle" class="small">blocks × L × log₂(G)</text>
-    <rect x="918" y="0" width="238" height="72" rx="10" class="pixels outline"/><text x="1037" y="29" text-anchor="middle" class="label">Pixel indices</text><text x="1037" y="52" text-anchor="middle" class="small">W × H × log₂(L)</text>
-    <rect x="1162" y="0" width="78" height="72" rx="10" class="padding outline"/><text x="1201" y="29" text-anchor="middle" class="label">pad</text><text x="1201" y="52" text-anchor="middle" class="small">0…7 bits</text>
+    <rect x="0" y="0" width="90" height="72" rx="10" class="magic outline"/><text x="45" y="29" text-anchor="middle" class="label">BPAL</text><text x="45" y="52" text-anchor="middle" class="small">32 bits</text>
+    <rect x="96" y="0" width="125" height="72" rx="10" class="header outline"/><text x="158" y="29" text-anchor="middle" class="label">v4 header</text><text x="158" y="52" text-anchor="middle" class="small">80 bits</text>
+    <rect x="227" y="0" width="260" height="72" rx="10" class="palette outline"/><text x="357" y="29" text-anchor="middle" class="label">Shared RGB palettes</text><text x="357" y="52" text-anchor="middle" class="small">P × G × C bits</text>
+    <rect x="493" y="0" width="180" height="72" rx="10" class="tables outline"/><text x="583" y="29" text-anchor="middle" class="label">Block selectors</text><text x="583" y="52" text-anchor="middle" class="small">blocks × log₂(P)</text>
+    <rect x="679" y="0" width="210" height="72" rx="10" class="tables outline"/><text x="784" y="29" text-anchor="middle" class="label">Block tables</text><text x="784" y="52" text-anchor="middle" class="small">blocks × L × log₂(G)</text>
+    <rect x="895" y="0" width="240" height="72" rx="10" class="pixels outline"/><text x="1015" y="29" text-anchor="middle" class="label">Pixel indices</text><text x="1015" y="52" text-anchor="middle" class="small">W × H × log₂(L)</text>
+    <rect x="1141" y="0" width="99" height="72" rx="10" class="padding outline"/><text x="1190" y="29" text-anchor="middle" class="label">pad</text><text x="1190" y="52" text-anchor="middle" class="small">0…7 bits</text>
   </g>
 
-  <text x="40" y="250" class="label">The 80-bit v3 header</text>
+  <text x="40" y="250" class="label">The 80-bit v4 header</text>
   <g transform="translate(40 268)">
     <rect x="0" y="0" width="94" height="62" rx="8" class="header outline"/><text x="47" y="25" text-anchor="middle" class="mono">version</text><text x="47" y="46" text-anchor="middle" class="small">4 bits</text>
     <rect x="100" y="0" width="126" height="62" rx="8" class="header outline"/><text x="163" y="25" text-anchor="middle" class="mono">width − 1</text><text x="163" y="46" text-anchor="middle" class="small">24 bits</text>
@@ -34,20 +35,21 @@
     <rect x="796" y="0" width="96" height="62" rx="8" class="header outline"/><text x="844" y="25" text-anchor="middle" class="mono">palette</text><text x="844" y="46" text-anchor="middle" class="small">1 bit</text>
     <rect x="898" y="0" width="132" height="62" rx="8" class="header outline"/><text x="964" y="25" text-anchor="middle" class="mono">legacy count</text><text x="964" y="46" text-anchor="middle" class="small">9 bits</text>
     <rect x="1036" y="0" width="94" height="62" rx="8" class="header outline"/><text x="1083" y="25" text-anchor="middle" class="mono">space</text><text x="1083" y="46" text-anchor="middle" class="small">1 bit</text>
-    <rect x="1136" y="0" width="104" height="62" rx="8" class="header outline"/><text x="1188" y="25" text-anchor="middle" class="mono">reserved</text><text x="1188" y="46" text-anchor="middle" class="small">7 bits</text>
+    <rect x="1136" y="0" width="58" height="62" rx="8" class="header outline"/><text x="1165" y="25" text-anchor="middle" class="mono">P log₂</text><text x="1165" y="46" text-anchor="middle" class="small">2 bits</text>
+    <rect x="1200" y="0" width="40" height="62" rx="8" class="header outline"/><text x="1220" y="25" text-anchor="middle" class="mono">rsv</text><text x="1220" y="46" text-anchor="middle" class="small">5 bits</text>
   </g>
 
-  <text x="40" y="382" class="label">Worked example · 24×16 px · 8×8 blocks · L=4 · G=256 · RGB888</text>
+  <text x="40" y="382" class="label">Worked example · 24×16 px · 8×8 blocks · P=4 · L=4 · G=256 · RGB888</text>
   <g transform="translate(40 402)">
     <rect x="0" y="0" width="218" height="112" rx="12" class="card"/><text x="18" y="28" class="label">Header</text><text x="18" y="55" class="mono">32 + 80 bits</text><text x="18" y="82" class="body">14 bytes</text>
     <text x="273" y="62" class="heading">+</text>
-    <rect x="310" y="0" width="218" height="112" rx="12" class="card"/><text x="328" y="28" class="label">Shared palette</text><text x="328" y="55" class="mono">256 × 24 bits</text><text x="328" y="82" class="body">768 bytes</text>
+    <rect x="310" y="0" width="218" height="112" rx="12" class="card"/><text x="328" y="28" class="label">Shared palettes</text><text x="328" y="55" class="mono">4 × 256 × 24 bits</text><text x="328" y="82" class="body">3,072 bytes</text>
     <text x="543" y="62" class="heading">+</text>
-    <rect x="580" y="0" width="218" height="112" rx="12" class="card"/><text x="598" y="28" class="label">Six block tables</text><text x="598" y="55" class="mono">6 × 4 × 8 bits</text><text x="598" y="82" class="body">24 bytes</text>
+    <rect x="580" y="0" width="218" height="112" rx="12" class="card"/><text x="598" y="28" class="label">Selectors + tables</text><text x="598" y="55" class="mono">6×2 + 6×4×8 bits</text><text x="598" y="82" class="body">25.5 bytes</text>
     <text x="813" y="62" class="heading">+</text>
     <rect x="850" y="0" width="218" height="112" rx="12" class="card"/><text x="868" y="28" class="label">384 pixels</text><text x="868" y="55" class="mono">384 × 2 bits</text><text x="868" y="82" class="body">96 bytes</text>
     <text x="1083" y="62" class="heading">=</text>
-    <rect x="1120" y="0" width="120" height="112" rx="12" class="palette outline"/><text x="1180" y="34" text-anchor="middle" class="label">BPAL</text><text x="1180" y="64" text-anchor="middle" class="heading">902 B</text><text x="1180" y="88" text-anchor="middle" class="small">0 pad bits</text>
+    <rect x="1120" y="0" width="120" height="112" rx="12" class="palette outline"/><text x="1180" y="34" text-anchor="middle" class="label">BPAL</text><text x="1180" y="64" text-anchor="middle" class="heading">3,208 B</text><text x="1180" y="88" text-anchor="middle" class="small">4 pad bits</text>
   </g>
   <text x="40" y="548" class="small">Segment widths are illustrative; numeric sizes are exact for this example.</text>
 </svg>

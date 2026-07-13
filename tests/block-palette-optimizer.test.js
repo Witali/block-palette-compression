@@ -59,7 +59,7 @@ test("removes settings dominated by both file size and error", () => {
   assert.deepEqual(frontier, [smaller, best]);
 });
 
-test("optimizes using explicit-palette storage and the BPAL v3 header", () => {
+test("optimizes using explicit-palette storage and the current BPAL header", () => {
   const source = new Uint8ClampedArray([
     0, 0, 0, 255, 85, 85, 85, 255,
     170, 170, 170, 255, 255, 255, 255, 255,
