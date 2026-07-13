@@ -28,6 +28,19 @@
           </label>
 
           <label>
+            <span data-i18n="block.qualityPreset">Quality preset</span>
+            <select id="quality-preset" name="qualityPreset">
+              <option value="" selected data-i18n="block.presetNone">Not selected</option>
+              <option value="2">2 bpp</option>
+              <option value="2.5">2.5 bpp</option>
+              <option value="3">3 bpp</option>
+              <option value="4">4 bpp</option>
+              <option value="5">5 bpp</option>
+              <option value="6">6 bpp</option>
+            </select>
+          </label>
+
+          <label>
             <span data-i18n="block.blockSize">Block size</span>
             <select id="block-size" name="blockSize">
               <option value="4">4 × 4</option>
@@ -262,9 +275,9 @@
     <script src="./src/palette/block-palette-format.js?v=palette128-1"></script>
     <script src="./src/decoders/bpal-texture.js?v=multi-palette-1"></script>
     <script src="./src/palette/bplm-format.js?v=multi-palette-1"></script>
-    <script src="./src/i18n/en.js?v=refinement-select-1"></script>
-    <script src="./src/i18n/ru.js?v=refinement-select-1"></script>
+    <script src="./src/i18n/en.js?v=quality-presets-1"></script>
+    <script src="./src/i18n/ru.js?v=quality-presets-1"></script>
     <script src="./src/i18n/i18n.js"></script>
-    <script src="./src/pages/block-palette-page.js?v=refinement-select-1"></script>
+    <script src="./src/pages/block-palette-page.js?v=quality-presets-1"></script>
   </body>
 </html>

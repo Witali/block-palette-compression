@@ -54,6 +54,37 @@ test("defaults to 64 shared palettes with 64 colors each", () => {
   );
 });
 
+test("offers researched quality presets immediately after the image selector", () => {
+  const imageIndex = html.indexOf('id="image-url"');
+  const presetIndex = html.indexOf('id="quality-preset"');
+  const blockSizeIndex = html.indexOf('id="block-size"');
+
+  assert.ok(imageIndex >= 0);
+  assert.ok(presetIndex > imageIndex);
+  assert.ok(blockSizeIndex > presetIndex);
+  assert.match(
+    html,
+    /<select id="quality-preset" name="qualityPreset">\s*<option value="" selected data-i18n="block\.presetNone">/
+  );
+
+  for (const value of ["2", "2.5", "3", "4", "5", "6"]) {
+    assert.match(html, new RegExp(`<option value="${value.replace(".", "\\.")}">${value} bpp</option>`));
+  }
+
+  assert.match(source, /qualityPresetSelect\.addEventListener\("change", applyQualityPreset\)/);
+  assert.match(source, /"2": \{ blockSize: 4, localColorCount: 2, globalColorCount: 128, paletteCount: 2 \}/);
+  assert.match(source, /"2\.5": \{ blockSize: 8, localColorCount: 4, globalColorCount: 64, paletteCount: 32 \}/);
+  assert.match(source, /"3": \{ blockSize: 8, localColorCount: 4, globalColorCount: 256, paletteCount: 64 \}/);
+  assert.match(source, /"4": \{ blockSize: 8, localColorCount: 8, globalColorCount: 128, paletteCount: 16 \}/);
+  assert.match(source, /"5": \{ blockSize: 16, localColorCount: 16, globalColorCount: 256, paletteCount: 64 \}/);
+  assert.match(source, /"6": \{ blockSize: 8, localColorCount: 16, globalColorCount: 128, paletteCount: 32 \}/);
+  assert.match(source, /paletteColorBitsSelect\.value = "24"/);
+  assert.match(source, /colorSpaceSelect\.value = "rgb"/);
+  assert.match(source, /diversityInput\.value = "0"/);
+  assert.match(source, /refinementPassesSelect\.value = "4"/);
+  assert.match(source, /qualityPresetSelect\.disabled = busy/);
+});
+
 test("offers zero to four refinement passes and defaults to one", () => {
   assert.match(html, /<select id="refinement-passes" name="refinementPasses">/);
 

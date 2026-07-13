@@ -4,6 +4,7 @@ const t = (key, parameters) => window.I18n.t(key, parameters);
 
 const controls = document.getElementById("controls");
 const imageSelect = document.getElementById("image-url");
+const qualityPresetSelect = document.getElementById("quality-preset");
 const blockSizeSelect = document.getElementById("block-size");
 const localColorCountSelect = document.getElementById("local-color-count");
 const globalColorCountSelect = document.getElementById("global-color-count");
@@ -112,6 +113,14 @@ const PROGRESS_STAGE_KEYS = {
   "complete": "block.progressStageComplete",
   "searching-settings": "block.progressStageSearching",
 };
+const QUALITY_PRESETS = Object.freeze({
+  "2": { blockSize: 4, localColorCount: 2, globalColorCount: 128, paletteCount: 2 },
+  "2.5": { blockSize: 8, localColorCount: 4, globalColorCount: 64, paletteCount: 32 },
+  "3": { blockSize: 8, localColorCount: 4, globalColorCount: 256, paletteCount: 64 },
+  "4": { blockSize: 8, localColorCount: 8, globalColorCount: 128, paletteCount: 16 },
+  "5": { blockSize: 16, localColorCount: 16, globalColorCount: 256, paletteCount: 64 },
+  "6": { blockSize: 8, localColorCount: 16, globalColorCount: 128, paletteCount: 32 },
+});
 
 controls.addEventListener("submit", (event) => {
   event.preventDefault();
@@ -124,6 +133,8 @@ imageSelect.addEventListener("change", () => {
   releaseUploadedImage();
   loadImage(imageSelect.value, optionLabel(imageSelect.selectedOptions[0])).catch(showError);
 });
+
+qualityPresetSelect.addEventListener("change", applyQualityPreset);
 
 for (const select of [
   blockSizeSelect,
@@ -138,12 +149,14 @@ for (const select of [
   refinementPassesSelect,
 ]) {
   select.addEventListener("change", () => {
+    qualityPresetSelect.value = "";
     state.optimizationApplied = false;
     processImage();
   });
 }
 
 diversityInput.addEventListener("input", () => {
+  qualityPresetSelect.value = "";
   state.optimizationApplied = false;
   updateDiversityLabel();
   window.clearTimeout(state.debounceTimer);
@@ -207,6 +220,29 @@ window.addEventListener("languagechange", () => {
     renderDoneStatus(state.result, fileLayout);
   }
 });
+
+function applyQualityPreset() {
+  const preset = QUALITY_PRESETS[qualityPresetSelect.value];
+
+  if (!preset) {
+    return;
+  }
+
+  blockSizeSelect.value = String(preset.blockSize);
+  localColorCountSelect.value = String(preset.localColorCount);
+  globalColorCountSelect.value = String(preset.globalColorCount);
+  paletteCountSelect.value = String(preset.paletteCount);
+  paletteColorBitsSelect.value = "24";
+  colorSpaceSelect.value = "rgb";
+  clusteringMethodSelect.value = "k-means";
+  algorithmSelect.value = "cpu";
+  diversityInput.value = "0";
+  ditheringSelect.value = "none";
+  refinementPassesSelect.value = "4";
+  state.optimizationApplied = false;
+  updateDiversityLabel();
+  processImage();
+}
 
 updateDiversityLabel();
 loadImage(imageSelect.value, optionLabel(imageSelect.selectedOptions[0])).catch(showError);
@@ -931,6 +967,7 @@ function optimizeSettings() {
       localColorCountSelect.value = String(settings.localColorCount);
       globalColorCountSelect.value = String(settings.globalColorCount);
       paletteColorBitsSelect.value = String(settings.paletteColorBits);
+      qualityPresetSelect.value = "";
       state.optimizationApplied = true;
       stopOptimizer();
       setBusy(false);
@@ -1163,6 +1200,7 @@ function setBusy(busy) {
   processButton.disabled = busy;
   optimizeButton.disabled = busy;
   imageSelect.disabled = busy;
+  qualityPresetSelect.disabled = busy;
   uploadButton.disabled = busy;
   blockSizeSelect.disabled = busy;
   localColorCountSelect.disabled = busy;

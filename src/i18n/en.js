@@ -106,6 +106,8 @@
 
     "block.title": "Block-palette compression",
     "block.description": "One or more shared RGB palettes store the image colors, while each block selects a palette and contains a small table of its indices.",
+    "block.qualityPreset": "Quality preset",
+    "block.presetNone": "Not selected",
     "block.blockSize": "Block size",
     "block.localColors": "Colors per block",
     "block.globalPalette": "Shared palette",
