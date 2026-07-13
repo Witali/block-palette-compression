@@ -33,6 +33,7 @@
     const blockSize = Number(options.blockSize || 8);
     const localColorCount = Number(options.localColorCount || 8);
     const globalColorCount = Number(options.globalColorCount || 256);
+    const paletteCount = Number(options.paletteCount || 1);
     const paletteColorBits = Number(options.paletteColorBits || 24);
     const paletteMode = options.paletteMode || "explicit";
     const colorSpace = options.colorSpace || "oklab";
@@ -48,6 +49,7 @@
       blockSize,
       localColorCount,
       globalColorCount,
+      paletteCount,
       paletteColorBits,
       paletteMode,
       colorSpace,
@@ -56,42 +58,52 @@
       diversity
     );
 
+    const blocksX = Math.ceil(width / blockSize);
+    const blocksY = Math.ceil(height / blockSize);
+    const blockCount = blocksX * blocksY;
     const maximumSamplePixels = globalColorCount >= 4096
       ? 8192
       : MAX_PALETTE_SAMPLE_PIXELS;
-    const sample = samplePixels(sourcePixels, maximumSamplePixels);
-    const quantizedSample = paletteQuantizer.quantizeImage(
-      sample,
-      sample.length / 4,
-      1,
+    const paletteBuild = buildGlobalPalettes({
+      sourcePixels,
+      width,
+      height,
+      blockSize,
+      blocksX,
+      blocksY,
+      blockCount,
+      paletteCount,
       globalColorCount,
-      {
-        colorSpace,
-        clusteringMethod,
-        dithering: "none",
-        diversity,
-        maxIterations: globalColorCount >= 4096 ? 6 : 16,
-      }
+      paletteColorBits,
+      colorSpace,
+      clusteringMethod,
+      diversity,
+      maximumSamplePixels,
+    });
+    const {
+      palette,
+      activePalettes,
+      activePaletteCounts,
+      blockPaletteSelectors,
+      iterations,
+    } = paletteBuild;
+    const palettePoints = palette.map((color) => colorPoint(color.r, color.g, color.b, colorSpace));
+    const activePalettePoints = activePalettes.map((activePalette) =>
+      activePalette.map((color) => colorPoint(color.r, color.g, color.b, colorSpace))
     );
-    const activePalette = quantizedSample.palette.length > 0
-      ? quantizedSample.palette.map((color) => applyPaletteColorDepth(color, paletteColorBits))
-      : [{ r: 0, g: 0, b: 0, hex: "#000000", count: 0 }];
-    const iterations = quantizedSample.iterations;
-    const palette = padPalette(activePalette, globalColorCount);
-    const palettePoints = activePalette.map((color) => colorPoint(color.r, color.g, color.b, colorSpace));
-    const paletteDistances = createPaletteDistanceMatrix(palettePoints);
-    const paletteNeighborCache = new Map();
+    const paletteDistances = activePalettePoints.map(createPaletteDistanceMatrix);
+    const paletteNeighborCaches = activePalettePoints.map(() => new Map());
     const sourcePointByColor = new Map();
     const globalIndexByColor = new Map();
     let globalAssignments;
     let uniqueColorCount;
 
-    if (accelerator && typeof accelerator.mapGlobalAssignments === "function") {
+    if (paletteCount === 1 && accelerator && typeof accelerator.mapGlobalAssignments === "function") {
       globalAssignments = accelerator.mapGlobalAssignments({
         sourcePixels,
         width,
         height,
-        palette: activePalette,
+        palette: activePalettes[0],
         colorSpace,
       });
 
@@ -108,7 +120,7 @@
           continue;
         }
 
-        if (globalAssignments[pixel] >= activePalette.length) {
+        if (globalAssignments[pixel] >= activePalettes[0].length) {
           throw new RangeError("Accelerated global assignment is outside the active palette");
         }
 
@@ -122,6 +134,7 @@
       uniqueColorCount = uniqueColors.size;
     } else {
       globalAssignments = new Uint16Array(width * height);
+      const uniqueColors = new Set();
 
       for (let pixel = 0; pixel < width * height; pixel += 1) {
         const offset = pixel * 4;
@@ -131,33 +144,38 @@
         }
 
         const key = colorKey(sourcePixels[offset], sourcePixels[offset + 1], sourcePixels[offset + 2]);
-        let globalIndex = globalIndexByColor.get(key);
+        const blockX = Math.floor(pixel % width / blockSize);
+        const blockY = Math.floor(Math.floor(pixel / width) / blockSize);
+        const blockIndex = blockY * blocksX + blockX;
+        const paletteIndex = blockPaletteSelectors[blockIndex];
+        const assignmentKey = paletteIndex * 0x1000000 + key;
+        let globalIndex = globalIndexByColor.get(assignmentKey);
 
         if (globalIndex === undefined) {
           const point = colorPoint(sourcePixels[offset], sourcePixels[offset + 1], sourcePixels[offset + 2], colorSpace);
 
           sourcePointByColor.set(key, point);
-          globalIndex = nearestPointIndex(point, palettePoints);
-          globalIndexByColor.set(key, globalIndex);
+          globalIndex = nearestPointIndex(point, activePalettePoints[paletteIndex]);
+          globalIndexByColor.set(assignmentKey, globalIndex);
         }
 
+        uniqueColors.add(key);
         globalAssignments[pixel] = globalIndex;
       }
 
-      uniqueColorCount = globalIndexByColor.size;
+      uniqueColorCount = uniqueColors.size;
     }
 
-    const blocksX = Math.ceil(width / blockSize);
-    const blocksY = Math.ceil(height / blockSize);
-    const blockCount = blocksX * blocksY;
     const blockPaletteIndices = new Uint16Array(blockCount * localColorCount);
     let pixelIndices = new Uint8Array(width * height);
     let outputPixels = new Uint8ClampedArray(sourcePixels.length);
-    const resultUsage = new Uint32Array(globalColorCount);
+    const resultUsage = new Uint32Array(paletteCount * globalColorCount);
 
     for (let blockY = 0; blockY < blocksY; blockY += 1) {
       for (let blockX = 0; blockX < blocksX; blockX += 1) {
         const blockIndex = blockY * blocksX + blockX;
+        const paletteIndex = blockPaletteSelectors[blockIndex];
+        const currentPalettePoints = activePalettePoints[paletteIndex];
         const selected = selectBlockPalette(
           globalAssignments,
           sourcePixels,
@@ -167,11 +185,11 @@
           blockY,
           blockSize,
           localColorCount,
-          activePalette.length,
-          paletteDistances,
-          palettePoints,
+          currentPalettePoints.length,
+          paletteDistances[paletteIndex],
+          currentPalettePoints,
           colorSpace,
-          paletteNeighborCache
+          paletteNeighborCaches[paletteIndex]
         );
 
         for (let localIndex = 0; localIndex < localColorCount; localIndex += 1) {
@@ -183,6 +201,7 @@
 
     if (
       dithering !== "floyd-steinberg" &&
+      paletteCount === 1 &&
       accelerator &&
       typeof accelerator.encodeBlocks === "function"
     ) {
@@ -245,6 +264,8 @@
         blockSize,
         blocksX,
         localColorCount,
+        globalColorCount,
+        blockPaletteSelectors,
         blockPaletteIndices,
         palette,
         palettePoints,
@@ -258,6 +279,7 @@
           const selected = Array.from(
             blockPaletteIndices.slice(paletteOffset, paletteOffset + localColorCount)
           );
+          const paletteBase = blockPaletteSelectors[blockIndex] * globalColorCount;
 
           encodeBlock(
             sourcePixels,
@@ -270,6 +292,7 @@
             blockY,
             blockSize,
             selected,
+            paletteBase,
             palette,
             palettePoints,
             colorSpace,
@@ -281,17 +304,25 @@
     }
 
     palette.forEach((color, index) => {
+      const paletteIndex = Math.floor(index / globalColorCount);
+      const paletteColorIndex = index % globalColorCount;
+
       color.count = resultUsage[index];
-      color.active = index < activePalette.length;
+      color.active = paletteColorIndex < activePaletteCounts[paletteIndex];
+      color.paletteIndex = paletteIndex;
+      color.paletteColorIndex = paletteColorIndex;
     });
 
     const globalIndexBits = Math.log2(globalColorCount);
     const localIndexBits = Math.log2(localColorCount);
-    const globalPaletteBits = globalColorCount * paletteColorBits;
+    const paletteIndexBits = Math.log2(paletteCount);
+    const globalPaletteBits = paletteCount * globalColorCount * paletteColorBits;
+    const blockPaletteSelectorBits = blockCount * paletteIndexBits;
     const blockPaletteBits = blockCount * localColorCount * globalIndexBits;
     const pixelDataBits = width * height * localIndexBits;
-    const payloadBits = globalPaletteBits + blockPaletteBits + pixelDataBits;
+    const payloadBits = globalPaletteBits + blockPaletteSelectorBits + blockPaletteBits + pixelDataBits;
     const globalPaletteBytes = Math.ceil(globalPaletteBits / 8);
+    const blockPaletteSelectorBytes = Math.ceil(blockPaletteSelectorBits / 8);
     const blockPaletteBytes = Math.ceil(blockPaletteBits / 8);
     const pixelDataBytes = Math.ceil(pixelDataBits / 8);
     const totalBytes = Math.ceil(payloadBits / 8);
@@ -302,6 +333,9 @@
       height,
       pixels: outputPixels,
       palette,
+      paletteCount,
+      paletteIndexBits,
+      blockPaletteSelectors,
       blockPaletteIndices,
       pixelIndices,
       blockSize,
@@ -312,7 +346,8 @@
       globalColorCount,
       paletteColorBits,
       paletteMode: "explicit",
-      activeGlobalColorCount: activePalette.length,
+      activeGlobalColorCount: activePaletteCounts.reduce((sum, count) => sum + count, 0),
+      activeGlobalColorCounts: activePaletteCounts.slice(),
       globalIndexBits,
       localIndexBits,
       uniqueColorCount,
@@ -325,10 +360,12 @@
       iterations,
       storage: {
         globalPaletteBits,
+        blockPaletteSelectorBits,
         blockPaletteBits,
         pixelDataBits,
         payloadBits,
         globalPaletteBytes,
+        blockPaletteSelectorBytes,
         blockPaletteBytes,
         pixelDataBytes,
         totalBytes,
@@ -337,6 +374,358 @@
         compressionRatio: rawRgbBytes * 8 / payloadBits,
       },
     };
+  }
+
+  function buildGlobalPalettes(options) {
+    const {
+      sourcePixels,
+      width,
+      height,
+      blockSize,
+      blocksX,
+      blocksY,
+      blockCount,
+      paletteCount,
+      globalColorCount,
+      paletteColorBits,
+      colorSpace,
+      clusteringMethod,
+      diversity,
+      maximumSamplePixels,
+    } = options;
+    const blockPaletteSelectors = paletteCount === 1
+      ? new Uint8Array(blockCount)
+      : clusterBlocksByContent(
+        sourcePixels,
+        width,
+        height,
+        blockSize,
+        blocksX,
+        blocksY,
+        paletteCount,
+        colorSpace
+      );
+    const activePalettes = [];
+    const activePaletteCounts = [];
+    const palette = [];
+    let iterations = 0;
+
+    for (let paletteIndex = 0; paletteIndex < paletteCount; paletteIndex += 1) {
+      const sample = paletteCount === 1
+        ? samplePixels(sourcePixels, maximumSamplePixels)
+        : samplePalettePixels(
+          sourcePixels,
+          width,
+          height,
+          blockSize,
+          blocksX,
+          blocksY,
+          blockPaletteSelectors,
+          paletteIndex,
+          maximumSamplePixels
+        );
+      const quantized = quantizePaletteSample(
+        sample,
+        globalColorCount,
+        paletteColorBits,
+        colorSpace,
+        clusteringMethod,
+        diversity
+      );
+
+      activePalettes.push(quantized.palette);
+      activePaletteCounts.push(quantized.palette.length);
+      palette.push(...padPalette(quantized.palette, globalColorCount));
+      iterations += quantized.iterations;
+    }
+
+    return {
+      palette,
+      activePalettes,
+      activePaletteCounts,
+      blockPaletteSelectors,
+      iterations,
+    };
+  }
+
+  function quantizePaletteSample(
+    sample,
+    globalColorCount,
+    paletteColorBits,
+    colorSpace,
+    clusteringMethod,
+    diversity
+  ) {
+    if (sample.length === 0) {
+      return {
+        palette: [{ r: 0, g: 0, b: 0, hex: "#000000", count: 0 }],
+        iterations: 0,
+      };
+    }
+
+    const quantizedSample = paletteQuantizer.quantizeImage(
+      sample,
+      sample.length / 4,
+      1,
+      globalColorCount,
+      {
+        colorSpace,
+        clusteringMethod,
+        dithering: "none",
+        diversity,
+        maxIterations: globalColorCount >= 4096 ? 6 : 16,
+      }
+    );
+    const activePalette = quantizedSample.palette.length > 0
+      ? quantizedSample.palette.map((color) => applyPaletteColorDepth(color, paletteColorBits))
+      : [{ r: 0, g: 0, b: 0, hex: "#000000", count: 0 }];
+
+    return { palette: activePalette, iterations: quantizedSample.iterations };
+  }
+
+  function clusterBlocksByContent(
+    sourcePixels,
+    width,
+    height,
+    blockSize,
+    blocksX,
+    blocksY,
+    paletteCount,
+    colorSpace
+  ) {
+    const descriptors = describeBlocks(
+      sourcePixels,
+      width,
+      height,
+      blockSize,
+      blocksX,
+      blocksY,
+      colorSpace
+    );
+    const clusterCount = Math.min(paletteCount, descriptors.length);
+    const centroidSourceIndices = [0];
+    const centroids = [descriptors[0].slice()];
+
+    while (centroids.length < clusterCount) {
+      let bestBlock = -1;
+      let bestDistance = -1;
+
+      for (let blockIndex = 0; blockIndex < descriptors.length; blockIndex += 1) {
+        if (centroidSourceIndices.includes(blockIndex)) {
+          continue;
+        }
+
+        let nearestDistance = Infinity;
+
+        for (const centroid of centroids) {
+          nearestDistance = Math.min(
+            nearestDistance,
+            descriptorDistance(descriptors[blockIndex], centroid)
+          );
+        }
+
+        if (nearestDistance > bestDistance) {
+          bestBlock = blockIndex;
+          bestDistance = nearestDistance;
+        }
+      }
+
+      centroidSourceIndices.push(bestBlock);
+      centroids.push(descriptors[bestBlock].slice());
+    }
+
+    const selectors = new Uint8Array(descriptors.length);
+
+    for (let iteration = 0; iteration < 8; iteration += 1) {
+      const sums = centroids.map((centroid) => new Float64Array(centroid.length));
+      const counts = new Uint32Array(centroids.length);
+      let changed = false;
+
+      for (let blockIndex = 0; blockIndex < descriptors.length; blockIndex += 1) {
+        const nextCluster = nearestDescriptorIndex(descriptors[blockIndex], centroids);
+
+        changed = changed || selectors[blockIndex] !== nextCluster;
+        selectors[blockIndex] = nextCluster;
+        counts[nextCluster] += 1;
+
+        for (let component = 0; component < descriptors[blockIndex].length; component += 1) {
+          sums[nextCluster][component] += descriptors[blockIndex][component];
+        }
+      }
+
+      let movement = 0;
+
+      for (let cluster = 0; cluster < centroids.length; cluster += 1) {
+        if (counts[cluster] === 0) {
+          continue;
+        }
+
+        const nextCentroid = Array.from(
+          sums[cluster],
+          (value) => value / counts[cluster]
+        );
+
+        movement += descriptorDistance(centroids[cluster], nextCentroid);
+        centroids[cluster] = nextCentroid;
+      }
+
+      if (!changed || movement < 1e-12) {
+        break;
+      }
+    }
+
+    return selectors;
+  }
+
+  function describeBlocks(
+    sourcePixels,
+    width,
+    height,
+    blockSize,
+    blocksX,
+    blocksY,
+    colorSpace
+  ) {
+    const descriptors = [];
+
+    for (let blockY = 0; blockY < blocksY; blockY += 1) {
+      for (let blockX = 0; blockX < blocksX; blockX += 1) {
+        const startX = blockX * blockSize;
+        const startY = blockY * blockSize;
+        const endX = Math.min(width, startX + blockSize);
+        const endY = Math.min(height, startY + blockSize);
+        const sums = [0, 0, 0];
+        const squareSums = [0, 0, 0];
+        let count = 0;
+
+        for (let y = startY; y < endY; y += 1) {
+          for (let x = startX; x < endX; x += 1) {
+            const offset = (y * width + x) * 4;
+
+            if (sourcePixels[offset + 3] === 0) {
+              continue;
+            }
+
+            const point = colorPoint(
+              sourcePixels[offset],
+              sourcePixels[offset + 1],
+              sourcePixels[offset + 2],
+              colorSpace
+            );
+
+            for (let channel = 0; channel < 3; channel += 1) {
+              sums[channel] += point[channel];
+              squareSums[channel] += point[channel] * point[channel];
+            }
+
+            count += 1;
+          }
+        }
+
+        const means = count > 0
+          ? sums.map((sum) => sum / count)
+          : [0, 0, 0];
+        const deviations = count > 0
+          ? squareSums.map((squareSum, channel) =>
+            Math.sqrt(Math.max(0, squareSum / count - means[channel] * means[channel])) * 0.5
+          )
+          : [0, 0, 0];
+
+        descriptors.push([...means, ...deviations]);
+      }
+    }
+
+    return descriptors;
+  }
+
+  function nearestDescriptorIndex(descriptor, centroids) {
+    let bestIndex = 0;
+    let bestDistance = descriptorDistance(descriptor, centroids[0]);
+
+    for (let index = 1; index < centroids.length; index += 1) {
+      const distance = descriptorDistance(descriptor, centroids[index]);
+
+      if (distance < bestDistance) {
+        bestIndex = index;
+        bestDistance = distance;
+      }
+    }
+
+    return bestIndex;
+  }
+
+  function descriptorDistance(left, right) {
+    let distance = 0;
+
+    for (let component = 0; component < left.length; component += 1) {
+      const difference = left[component] - right[component];
+
+      distance += difference * difference;
+    }
+
+    return distance;
+  }
+
+  function samplePalettePixels(
+    sourcePixels,
+    width,
+    height,
+    blockSize,
+    blocksX,
+    blocksY,
+    blockPaletteSelectors,
+    paletteIndex,
+    maximumPixels
+  ) {
+    let assignedPixelCount = 0;
+
+    for (let blockY = 0; blockY < blocksY; blockY += 1) {
+      for (let blockX = 0; blockX < blocksX; blockX += 1) {
+        const blockIndex = blockY * blocksX + blockX;
+
+        if (blockPaletteSelectors[blockIndex] !== paletteIndex) {
+          continue;
+        }
+
+        assignedPixelCount += (
+          Math.min(blockSize, width - blockX * blockSize) *
+          Math.min(blockSize, height - blockY * blockSize)
+        );
+      }
+    }
+
+    if (assignedPixelCount === 0) {
+      return new Uint8ClampedArray(0);
+    }
+
+    const step = Math.max(1, Math.ceil(assignedPixelCount / maximumPixels));
+    const sample = new Uint8ClampedArray(Math.ceil(assignedPixelCount / step) * 4);
+    let assignedPixel = 0;
+    let target = 0;
+
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const blockIndex = Math.floor(y / blockSize) * blocksX + Math.floor(x / blockSize);
+
+        if (blockPaletteSelectors[blockIndex] !== paletteIndex) {
+          continue;
+        }
+
+        if (assignedPixel % step === 0) {
+          const sourceOffset = (y * width + x) * 4;
+
+          sample[target] = sourcePixels[sourceOffset];
+          sample[target + 1] = sourcePixels[sourceOffset + 1];
+          sample[target + 2] = sourcePixels[sourceOffset + 2];
+          sample[target + 3] = sourcePixels[sourceOffset + 3];
+          target += 4;
+        }
+
+        assignedPixel += 1;
+      }
+    }
+
+    return target === sample.length ? sample : sample.slice(0, target);
   }
 
   function selectBlockPalette(
@@ -939,6 +1328,7 @@
     blockY,
     blockSize,
     selected,
+    paletteBase,
     palette,
     palettePoints,
     colorSpace,
@@ -949,7 +1339,7 @@
     const startY = blockY * blockSize;
     const endX = Math.min(width, startX + blockSize);
     const endY = Math.min(height, startY + blockSize);
-    const localPoints = selected.map((globalIndex) => palettePoints[globalIndex]);
+    const localPoints = selected.map((globalIndex) => palettePoints[paletteBase + globalIndex]);
 
     for (let y = startY; y < endY; y += 1) {
       for (let x = startX; x < endX; x += 1) {
@@ -982,7 +1372,7 @@
         }
 
         const localIndex = nearestPointIndex(point, localPoints);
-        const globalIndex = selected[localIndex];
+        const globalIndex = paletteBase + selected[localIndex];
         const color = palette[globalIndex];
 
         pixelIndices[pixel] = localIndex;
@@ -1008,6 +1398,8 @@
     blockSize,
     blocksX,
     localColorCount,
+    globalColorCount,
+    blockPaletteSelectors,
     blockPaletteIndices,
     palette,
     palettePoints,
@@ -1024,7 +1416,9 @@
       for (let startX = 0; startX < width; startX += blockSize) {
         const endX = Math.min(width, startX + blockSize);
         const blockX = Math.floor(startX / blockSize);
-        const paletteOffset = (blockY * blocksX + blockX) * localColorCount;
+        const blockIndex = blockY * blocksX + blockX;
+        const paletteOffset = blockIndex * localColorCount;
+        const paletteBase = blockPaletteSelectors[blockIndex] * globalColorCount;
 
         currentErrors.fill(0);
         nextErrors.fill(0);
@@ -1051,11 +1445,12 @@
             const localIndex = nearestBlockPaletteIndex(
               point,
               paletteOffset,
+              paletteBase,
               localColorCount,
               blockPaletteIndices,
               palettePoints
             );
-            const globalIndex = blockPaletteIndices[paletteOffset + localIndex];
+            const globalIndex = paletteBase + blockPaletteIndices[paletteOffset + localIndex];
             const color = palette[globalIndex];
 
             pixelIndices[pixel] = localIndex;
@@ -1083,6 +1478,7 @@
   function nearestBlockPaletteIndex(
     point,
     paletteOffset,
+    paletteBase,
     localColorCount,
     blockPaletteIndices,
     palettePoints
@@ -1090,13 +1486,13 @@
     let bestLocalIndex = 0;
     let bestDistance = squaredDistance(
       point,
-      palettePoints[blockPaletteIndices[paletteOffset]]
+      palettePoints[paletteBase + blockPaletteIndices[paletteOffset]]
     );
 
     for (let localIndex = 1; localIndex < localColorCount; localIndex += 1) {
       const distance = squaredDistance(
         point,
-        palettePoints[blockPaletteIndices[paletteOffset + localIndex]]
+        palettePoints[paletteBase + blockPaletteIndices[paletteOffset + localIndex]]
       );
 
       if (distance < bestDistance) {
@@ -1266,6 +1662,7 @@
     blockSize,
     localColorCount,
     globalColorCount,
+    paletteCount,
     paletteColorBits,
     paletteMode,
     colorSpace,
@@ -1291,6 +1688,10 @@
 
     if (!isPowerOfTwo(globalColorCount) || globalColorCount < 2 || globalColorCount > 4096) {
       throw new RangeError("globalColorCount must be a power of two from 2 to 4096");
+    }
+
+    if (!isPowerOfTwo(paletteCount) || paletteCount < 1 || paletteCount > 8) {
+      throw new RangeError("paletteCount must be 1, 2, 4, or 8");
     }
 
     if (paletteColorBits !== 16 && paletteColorBits !== 24) {

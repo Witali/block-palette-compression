@@ -77,6 +77,68 @@ test("keeps exact colors when every block can reference them", () => {
   assert.equal(result.meanSquaredError, 0);
 });
 
+test("assigns blocks with different color distributions to separate global palettes", () => {
+  const source = pixels([
+    [127, 127, 127, 255], [128, 128, 128, 255], [0, 0, 0, 255], [255, 255, 255, 255],
+    [128, 128, 128, 255], [127, 127, 127, 255], [255, 255, 255, 255], [0, 0, 0, 255],
+  ]);
+  const result = compressImage(source, 4, 2, {
+    blockSize: 2,
+    localColorCount: 2,
+    globalColorCount: 2,
+    paletteCount: 2,
+    colorSpace: "rgb",
+  });
+
+  assert.equal(result.paletteCount, 2);
+  assert.equal(result.paletteIndexBits, 1);
+  assert.deepEqual(Array.from(result.blockPaletteSelectors), [0, 1]);
+  assert.deepEqual(result.activeGlobalColorCounts, [2, 2]);
+  assert.equal(result.palette.length, 4);
+  assert.ok(Array.from(result.blockPaletteIndices).every((index) => index < 2));
+  assert.deepEqual(Array.from(result.pixels), Array.from(source));
+  assert.equal(result.storage.globalPaletteBits, 4 * 24);
+  assert.equal(result.storage.blockPaletteSelectorBits, 2);
+  assert.equal(result.storage.payloadBits, 110);
+});
+
+test("supports two, four, and eight content palettes", () => {
+  const colors = [
+    [255, 0, 0, 255],
+    [0, 255, 0, 255],
+    [0, 0, 255, 255],
+    [255, 255, 0, 255],
+    [255, 0, 255, 255],
+    [0, 255, 255, 255],
+    [255, 255, 255, 255],
+    [0, 0, 0, 255],
+  ];
+  const values = [];
+
+  for (let row = 0; row < 2; row += 1) {
+    for (const color of colors) {
+      values.push(color, color);
+    }
+  }
+
+  for (const paletteCount of [2, 4, 8]) {
+    const result = compressImage(pixels(values), 16, 2, {
+      blockSize: 2,
+      localColorCount: 2,
+      globalColorCount: 2,
+      paletteCount,
+      colorSpace: "rgb",
+      dithering: "floyd-steinberg",
+    });
+
+    assert.equal(result.paletteCount, paletteCount);
+    assert.equal(result.paletteIndexBits, Math.log2(paletteCount));
+    assert.equal(result.palette.length, paletteCount * 2);
+    assert.ok(Array.from(result.blockPaletteSelectors).every((index) => index < paletteCount));
+    assert.equal(new Set(result.blockPaletteSelectors).size, paletteCount);
+  }
+});
+
 test("calculates the tightly packed 256-color, four-color block layout", () => {
   const source = new Uint8ClampedArray(8 * 8 * 4);
 
@@ -409,6 +471,15 @@ test("rejects non-power-of-two format settings", () => {
   assert.throws(
     () => compressImage(source, 2, 2, { blockSize: 2, localColorCount: 2, globalColorCount: 8192 }),
     /globalColorCount must be a power of two from 2 to 4096/
+  );
+  assert.throws(
+    () => compressImage(source, 2, 2, {
+      blockSize: 2,
+      localColorCount: 2,
+      globalColorCount: 4,
+      paletteCount: 3,
+    }),
+    /paletteCount must be 1, 2, 4, or 8/
   );
   assert.throws(
     () => compressImage(source, 2, 2, {
