@@ -180,11 +180,11 @@ test("keeps multi-palette selectors compact and separate from color indices", ()
   );
 });
 
-test("packs six-bit selectors for 64-palette WebGL2 textures", () => {
-  const paletteCount = 64;
-  const blockCount = 64;
+test("packs seven-bit selectors for 128-palette WebGL2 textures", () => {
+  const paletteCount = 128;
+  const blockCount = 128;
   const texture = decode(encodeBlockPaletteFile({
-    width: 16,
+    width: 32,
     height: 16,
     blockSize: 2,
     localColorCount: 2,
@@ -199,15 +199,15 @@ test("packs six-bit selectors for 64-palette WebGL2 textures", () => {
     })),
     blockPaletteSelectors: Uint8Array.from({ length: blockCount }, (_, index) => index),
     blockPaletteIndices: Uint16Array.from({ length: blockCount * 2 }, (_, index) => index % 2),
-    pixelIndices: Uint8Array.from({ length: 16 * 16 }, (_, index) => index % 2),
+    pixelIndices: Uint8Array.from({ length: 32 * 16 }, (_, index) => index % 2),
   }));
   const compact = createCompactShaderTextureData(texture, 64);
 
-  assert.equal(compact.paletteCount, 64);
-  assert.equal(compact.paletteIndexBits, 6);
+  assert.equal(compact.paletteCount, 128);
+  assert.equal(compact.paletteIndexBits, 7);
   assert.equal(
-    readPackedValue(compact.paletteSelectorAtlas.data, 63, compact.paletteIndexBits),
-    63
+    readPackedValue(compact.paletteSelectorAtlas.data, 127, compact.paletteIndexBits),
+    127
   );
 });
 

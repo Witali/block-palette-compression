@@ -98,13 +98,13 @@ test("stores palette selectors throughout a multi-palette mip chain", () => {
   });
 });
 
-test("stores 64-palette selectors and direct mip indices", () => {
-  const source = new Uint8ClampedArray(16 * 16 * 4);
+test("stores 128-palette selectors and direct mip indices", () => {
+  const source = new Uint8ClampedArray(32 * 16 * 4);
 
   for (let y = 0; y < 16; y += 1) {
-    for (let x = 0; x < 16; x += 1) {
-      const block = Math.floor(y / 2) * 8 + Math.floor(x / 2);
-      const offset = (y * 16 + x) * 4;
+    for (let x = 0; x < 32; x += 1) {
+      const block = Math.floor(y / 2) * 16 + Math.floor(x / 2);
+      const offset = (y * 32 + x) * 4;
 
       source[offset] = block * 53 & 255;
       source[offset + 1] = block * 97 & 255;
@@ -113,20 +113,20 @@ test("stores 64-palette selectors and direct mip indices", () => {
     }
   }
 
-  const image = compressImage(source, 16, 16, {
+  const image = compressImage(source, 32, 16, {
     blockSize: 2,
     localColorCount: 2,
     globalColorCount: 2,
-    paletteCount: 64,
+    paletteCount: 128,
     colorSpace: "rgb",
   });
   const decoded = BplmFormat.decodeBplmFile(BplmFormat.encodeBplmFile(image));
 
-  assert.equal(decoded.paletteCount, 64);
-  assert.equal(decoded.paletteIndexBits, 6);
-  assert.equal(Math.max(...decoded.blockPaletteSelectors), 63);
+  assert.equal(decoded.paletteCount, 128);
+  assert.equal(decoded.paletteIndexBits, 7);
+  assert.equal(Math.max(...decoded.blockPaletteSelectors), 127);
   assert.ok(decoded.mipLevels[1].directGlobalIndices instanceof Uint16Array);
-  assert.ok(Math.max(...decoded.mipLevels[1].directGlobalIndices) >= 64);
+  assert.ok(Math.max(...decoded.mipLevels[1].directGlobalIndices) >= 128);
 });
 
 test("reconstructs regular and direct BPLM mip levels into RGBA pixels", () => {
