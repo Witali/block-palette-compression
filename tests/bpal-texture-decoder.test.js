@@ -129,8 +129,54 @@ test("bit-packs BPAL indices and palette colors for WebGL2 integer textures", ()
   assert.equal(
     compact.gpuBytes,
     compact.pixelAtlas.data.byteLength +
+      compact.paletteSelectorAtlas.data.byteLength +
       compact.blockPaletteAtlas.data.byteLength +
       compact.paletteAtlas.data.byteLength
+  );
+});
+
+test("keeps multi-palette selectors compact and separate from color indices", () => {
+  const texture = decode(encodeBlockPaletteFile({
+    width: 4,
+    height: 2,
+    blockSize: 2,
+    localColorCount: 2,
+    globalColorCount: 2,
+    paletteCount: 2,
+    paletteColorBits: 24,
+    paletteMode: "explicit",
+    palette: [
+      { r: 255, g: 0, b: 0 },
+      { r: 128, g: 0, b: 0 },
+      { r: 0, g: 0, b: 255 },
+      { r: 0, g: 0, b: 128 },
+    ],
+    blockPaletteSelectors: new Uint8Array([0, 1]),
+    blockPaletteIndices: new Uint16Array([0, 1, 0, 1]),
+    pixelIndices: new Uint8Array([0, 1, 0, 1, 1, 0, 1, 0]),
+  }));
+  const regular = createShaderTextureData(texture, 16);
+  const compact = createCompactShaderTextureData(texture, 16);
+
+  assert.equal(texture.paletteCount, 2);
+  assert.deepEqual(Array.from(regular.paletteSelectorAtlas.data), [0, 1]);
+  assert.equal(compact.paletteIndexBits, 1);
+  assert.equal(compact.globalIndexBits, 1);
+  assert.deepEqual(
+    Array.from({ length: 2 }, (_, index) => readPackedValue(
+      compact.paletteSelectorAtlas.data,
+      index,
+      compact.paletteIndexBits
+    )),
+    [0, 1]
+  );
+  assert.deepEqual(
+    Array.from({ length: 4 }, (_, index) => readPackedValue(
+      compact.blockPaletteAtlas.data,
+      index,
+      compact.globalIndexBits
+    )),
+    [0, 1, 0, 1]
   );
 });
 
@@ -190,6 +236,7 @@ test("builds independently indexed BPAL mip levels for shader filtering", () => 
   assert.equal(
     mipmapped.gpuBytes,
     mipmapped.pixelAtlas.data.byteLength +
+      mipmapped.paletteSelectorAtlas.data.byteLength +
       mipmapped.blockPaletteAtlas.data.byteLength +
       mipmapped.paletteAtlas.data.byteLength
   );

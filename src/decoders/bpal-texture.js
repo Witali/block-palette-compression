@@ -42,10 +42,13 @@
       blockSize: decoded.blockSize,
       localColorCount: decoded.localColorCount,
       globalColorCount: decoded.globalColorCount,
+      paletteCount: decoded.paletteCount,
+      paletteIndexBits: decoded.paletteIndexBits,
       paletteMode: decoded.paletteMode,
       paletteColorBits: decoded.paletteColorBits,
       blocksX: decoded.blocksX,
       palette: decoded.palette,
+      blockPaletteSelectors: decoded.blockPaletteSelectors,
       blockPaletteIndices: decoded.blockPaletteIndices,
       pixelIndices: decoded.pixelIndices,
     };
@@ -75,6 +78,16 @@
         target[offset + 3] = 255;
       }
     );
+    const paletteSelectorAtlas = createAtlas(
+      texture.blockPaletteSelectors || new Uint8Array(
+        texture.blocksX * Math.ceil(texture.height / texture.blockSize)
+      ),
+      1,
+      textureLimit,
+      (target, offset, value) => {
+        target[offset] = value;
+      }
+    );
     const paletteAtlas = createAtlas(texture.palette, 4, textureLimit, (target, offset, color) => {
       target[offset] = color.r;
       target[offset + 1] = color.g;
@@ -88,7 +101,10 @@
       blockSize: texture.blockSize,
       blocksX: texture.blocksX,
       localColorCount: texture.localColorCount,
+      globalColorCount: texture.globalColorCount,
+      paletteCount: texture.paletteCount || 1,
       pixelAtlas,
+      paletteSelectorAtlas,
       blockPaletteAtlas,
       paletteAtlas,
     };
@@ -106,7 +122,9 @@
     }
 
     const localIndexBits = indexBitCount(texture.localColorCount);
-    const globalIndexBits = indexBitCount(texture.palette.length);
+    const globalIndexBits = indexBitCount(texture.globalColorCount);
+    const paletteCount = texture.paletteCount || 1;
+    const paletteIndexBits = Math.log2(paletteCount);
     const paletteColorBits = texture.paletteColorBits === 16 ? 16 : 24;
     const pixelAtlas = createPackedUintAtlas(
       texture.pixelIndices,
@@ -117,6 +135,14 @@
     const blockPaletteAtlas = createPackedUintAtlas(
       texture.blockPaletteIndices,
       globalIndexBits,
+      textureLimit,
+      (value) => value
+    );
+    const paletteSelectorAtlas = createPackedUintAtlas(
+      texture.blockPaletteSelectors || new Uint8Array(
+        texture.blocksX * Math.ceil(texture.height / texture.blockSize)
+      ),
+      Math.max(1, paletteIndexBits),
       textureLimit,
       (value) => value
     );
@@ -134,13 +160,18 @@
       blockSize: texture.blockSize,
       blocksX: texture.blocksX,
       localColorCount: texture.localColorCount,
+      globalColorCount: texture.globalColorCount,
+      paletteCount,
       localIndexBits,
       globalIndexBits,
+      paletteIndexBits,
       paletteColorBits,
       pixelAtlas,
+      paletteSelectorAtlas,
       blockPaletteAtlas,
       paletteAtlas,
       gpuBytes: pixelAtlas.data.byteLength +
+        paletteSelectorAtlas.data.byteLength +
         blockPaletteAtlas.data.byteLength +
         paletteAtlas.data.byteLength,
     };
@@ -161,24 +192,32 @@
     }
 
     let pixelCount = 0;
+    let paletteSelectorCount = 0;
     let blockPaletteEntryCount = 0;
 
     levels.forEach((level) => {
       level.pixelOffset = pixelCount;
+      level.paletteSelectorOffset = paletteSelectorCount;
       level.blockPaletteOffset = blockPaletteEntryCount;
       level.direct = Boolean(level.direct || level.directGlobalIndices);
       pixelCount += level.pixelIndices ? level.pixelIndices.length : 0;
+      paletteSelectorCount += level.direct ? 0 : level.blockPaletteSelectors.length;
       blockPaletteEntryCount += level.direct
         ? level.directGlobalIndices.length
         : level.blockPaletteIndices.length;
     });
 
     const pixelIndices = new Uint8Array(pixelCount);
+    const blockPaletteSelectors = new Uint8Array(Math.max(1, paletteSelectorCount));
     const blockPaletteIndices = new Uint16Array(blockPaletteEntryCount);
 
     levels.forEach((level) => {
       if (level.pixelIndices) {
         pixelIndices.set(level.pixelIndices, level.pixelOffset);
+      }
+
+      if (!level.direct) {
+        blockPaletteSelectors.set(level.blockPaletteSelectors, level.paletteSelectorOffset);
       }
 
       blockPaletteIndices.set(
@@ -200,6 +239,14 @@
         target[offset + 3] = 255;
       }
     );
+    const paletteSelectorAtlas = createAtlas(
+      blockPaletteSelectors,
+      1,
+      maxTextureSize,
+      (target, offset, value) => {
+        target[offset] = value;
+      }
+    );
     const paletteAtlas = createAtlas(texture.palette, 4, maxTextureSize, (target, offset, color) => {
       target[offset] = color.r;
       target[offset + 1] = color.g;
@@ -212,13 +259,17 @@
       height: texture.height,
       blockSize: texture.blockSize,
       localColorCount: texture.localColorCount,
+      globalColorCount: texture.globalColorCount,
+      paletteCount: texture.paletteCount || 1,
       blocksX: texture.blocksX,
       mipCount: levels.length,
       levels,
       pixelAtlas,
+      paletteSelectorAtlas,
       blockPaletteAtlas,
       paletteAtlas,
       gpuBytes: pixelAtlas.data.byteLength +
+        paletteSelectorAtlas.data.byteLength +
         blockPaletteAtlas.data.byteLength +
         paletteAtlas.data.byteLength,
     };
@@ -237,6 +288,8 @@
     const maximumMipLevels = Math.floor(
       Math.max(1, Math.min(255, Number(settings.maxMipLevels) || 255))
     );
+    const paletteCount = texture.paletteCount || 1;
+    const globalColorCount = texture.globalColorCount || texture.palette.length;
     const palettePoints = texture.palette.map((color) => [
       srgbByteToLinear(color.r),
       srgbByteToLinear(color.g),
@@ -246,6 +299,18 @@
       palettePoints.map((point, index) => ({ point, index })),
       0
     );
+    const palettePointsByPalette = Array.from({ length: paletteCount }, (_, paletteIndex) =>
+      palettePoints.slice(
+        paletteIndex * globalColorCount,
+        (paletteIndex + 1) * globalColorCount
+      )
+    );
+    const paletteSearchTrees = palettePointsByPalette.map((points) =>
+      buildPaletteSearchTree(
+        points.map((point, index) => ({ point, index })),
+        0
+      )
+    );
     const levels = [{
       width: texture.width,
       height: texture.height,
@@ -253,6 +318,9 @@
       localColorCount: texture.localColorCount,
       blocksX: texture.blocksX,
       blocksY: Math.ceil(texture.height / texture.blockSize),
+      blockPaletteSelectors: texture.blockPaletteSelectors || new Uint8Array(
+        texture.blocksX * Math.ceil(texture.height / texture.blockSize)
+      ),
       pixelIndices: texture.pixelIndices,
       blockPaletteIndices: texture.blockPaletteIndices,
     }];
@@ -281,8 +349,8 @@
           downsampled.height,
           blockSize,
           localColorCount,
-          palettePoints,
-          paletteSearchTree
+          palettePointsByPalette,
+          paletteSearchTrees
         );
 
       levels.push(encoded);
@@ -342,12 +410,16 @@
     height,
     blockSize,
     localColorCount,
-    palettePoints,
-    paletteSearchTree
+    palettePointsByPalette,
+    paletteSearchTrees
   ) {
     const blocksX = Math.ceil(width / blockSize);
     const blocksY = Math.ceil(height / blockSize);
-    const assignments = assignPixelsToPalette(pixels, width, height, paletteSearchTree);
+    const pixelPoints = createPixelPoints(pixels, width, height);
+    const assignmentsByPalette = paletteSearchTrees.map((paletteSearchTree) =>
+      assignPixelsToPalette(pixels, width, height, paletteSearchTree)
+    );
+    const blockPaletteSelectors = new Uint8Array(blocksX * blocksY);
     const blockPaletteIndices = new Uint16Array(blocksX * blocksY * localColorCount);
     const pixelIndices = new Uint8Array(width * height);
 
@@ -356,6 +428,32 @@
         const counts = new Map();
         const endX = Math.min(width, (blockX + 1) * blockSize);
         const endY = Math.min(height, (blockY + 1) * blockSize);
+        let paletteIndex = 0;
+        let bestPaletteError = Infinity;
+
+        for (let candidate = 0; candidate < palettePointsByPalette.length; candidate += 1) {
+          let error = 0;
+
+          for (let y = blockY * blockSize; y < endY; y += 1) {
+            for (let x = blockX * blockSize; x < endX; x += 1) {
+              const pixel = y * width + x;
+              const colorIndex = assignmentsByPalette[candidate][pixel];
+
+              error += squaredDistance(
+                pixelPoints[pixel],
+                palettePointsByPalette[candidate][colorIndex]
+              );
+            }
+          }
+
+          if (error < bestPaletteError) {
+            paletteIndex = candidate;
+            bestPaletteError = error;
+          }
+        }
+
+        const assignments = assignmentsByPalette[paletteIndex];
+        const palettePoints = palettePointsByPalette[paletteIndex];
 
         for (let y = blockY * blockSize; y < endY; y += 1) {
           for (let x = blockX * blockSize; x < endX; x += 1) {
@@ -381,6 +479,8 @@
         const blockIndex = blockY * blocksX + blockX;
         const paletteOffset = blockIndex * localColorCount;
 
+        blockPaletteSelectors[blockIndex] = paletteIndex;
+
         for (let localIndex = 0; localIndex < localColorCount; localIndex += 1) {
           blockPaletteIndices[paletteOffset + localIndex] = selected[localIndex];
         }
@@ -388,7 +488,7 @@
         for (let y = blockY * blockSize; y < endY; y += 1) {
           for (let x = blockX * blockSize; x < endX; x += 1) {
             const pixel = y * width + x;
-            const targetPoint = palettePoints[assignments[pixel]];
+            const targetPoint = pixelPoints[pixel];
             let bestLocalIndex = 0;
             let bestDistance = squaredDistance(targetPoint, palettePoints[selected[0]]);
 
@@ -414,6 +514,7 @@
       localColorCount,
       blocksX,
       blocksY,
+      blockPaletteSelectors,
       blockPaletteIndices,
       pixelIndices,
     };
@@ -461,6 +562,22 @@
     }
 
     return assignments;
+  }
+
+  function createPixelPoints(pixels, width, height) {
+    const points = new Array(width * height);
+
+    for (let pixel = 0; pixel < points.length; pixel += 1) {
+      const offset = pixel * 4;
+
+      points[pixel] = [
+        srgbByteToLinear(pixels[offset]),
+        srgbByteToLinear(pixels[offset + 1]),
+        srgbByteToLinear(pixels[offset + 2]),
+      ];
+    }
+
+    return points;
   }
 
   function buildPaletteSearchTree(entries, depth) {

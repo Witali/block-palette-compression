@@ -130,7 +130,8 @@
         height,
         blockSize,
         base.localColorCount,
-        base.globalColorCount
+        base.globalColorCount,
+        base.paletteCount
       );
 
       if (payloadBytes !== layout.payloadBytes) {
@@ -151,7 +152,9 @@
         const directGlobalIndices = new Uint16Array(width * height);
 
         for (let index = 0; index < directGlobalIndices.length; index += 1) {
-          directGlobalIndices[index] = reader.read(base.globalIndexBits);
+          directGlobalIndices[index] = reader.read(
+            base.globalIndexBits + base.paletteIndexBits
+          );
         }
 
         level = {
@@ -165,8 +168,13 @@
           directGlobalIndices,
         };
       } else {
+        const blockPaletteSelectors = new Uint8Array(layout.blockCount);
         const blockPaletteIndices = new Uint16Array(layout.blockPaletteEntryCount);
         const pixelIndices = new Uint8Array(width * height);
+
+        for (let index = 0; index < blockPaletteSelectors.length; index += 1) {
+          blockPaletteSelectors[index] = reader.read(base.paletteIndexBits);
+        }
 
         for (let index = 0; index < blockPaletteIndices.length; index += 1) {
           blockPaletteIndices[index] = reader.read(base.globalIndexBits);
@@ -183,6 +191,7 @@
           localColorCount: layout.localColorCount,
           blocksX: layout.blocksX,
           blocksY: layout.blocksY,
+          blockPaletteSelectors,
           blockPaletteIndices,
           pixelIndices,
         };
@@ -250,9 +259,10 @@
           const blockIndex = blockY * level.blocksX + blockX;
           const localIndex = level.pixelIndices[pixelIndex];
 
-          globalIndex = level.blockPaletteIndices[
+          globalIndex = level.blockPaletteSelectors[blockIndex] * image.globalColorCount +
+            level.blockPaletteIndices[
             blockIndex * level.localColorCount + localIndex
-          ];
+            ];
         }
 
         const color = image.palette[globalIndex];
@@ -279,7 +289,8 @@
       level.height,
       level.blockSize,
       base.localColorCount,
-      base.globalColorCount
+      base.globalColorCount,
+      base.paletteCount
     );
 
     const payload = new Uint8Array(layout.payloadBytes);
@@ -289,14 +300,20 @@
       validateIndexArray(
         level.directGlobalIndices,
         level.width * level.height,
-        base.globalColorCount,
+        base.paletteCount * base.globalColorCount,
         "direct global"
       );
 
       for (const globalIndex of level.directGlobalIndices) {
-        writer.write(globalIndex, base.globalIndexBits);
+        writer.write(globalIndex, base.globalIndexBits + base.paletteIndexBits);
       }
     } else {
+      validateIndexArray(
+        level.blockPaletteSelectors,
+        layout.blockCount,
+        base.paletteCount,
+        "palette selector"
+      );
       validateIndexArray(
         level.blockPaletteIndices,
         layout.blockPaletteEntryCount,
@@ -309,6 +326,10 @@
         layout.localColorCount,
         "local pixel"
       );
+
+      for (const paletteIndex of level.blockPaletteSelectors) {
+        writer.write(paletteIndex, base.paletteIndexBits);
+      }
 
       for (const globalIndex of level.blockPaletteIndices) {
         writer.write(globalIndex, base.globalIndexBits);
@@ -330,12 +351,20 @@
       localColorCount: base.localColorCount,
       blocksX: base.blocksX,
       blocksY: base.blocksY,
+      blockPaletteSelectors: base.blockPaletteSelectors,
       blockPaletteIndices: base.blockPaletteIndices,
       pixelIndices: base.pixelIndices,
     };
   }
 
-  function getLevelLayout(width, height, blockSize, localColorCount, globalColorCount) {
+  function getLevelLayout(
+    width,
+    height,
+    blockSize,
+    localColorCount,
+    globalColorCount,
+    paletteCount
+  ) {
     if (!Number.isInteger(width) || width < 1 || !Number.isInteger(height) || height < 1) {
       throw new RangeError("BPLM mip dimensions must be positive integers");
     }
@@ -349,12 +378,15 @@
     const localIndexBits = direct ? 0 : Math.log2(levelLocalColorCount);
     const blocksX = Math.ceil(width / blockSize);
     const blocksY = Math.ceil(height / blockSize);
+    const blockCount = blocksX * blocksY;
+    const paletteIndexBits = Math.log2(paletteCount);
     const blockPaletteEntryCount = direct
       ? width * height
       : blocksX * blocksY * levelLocalColorCount;
     const payloadBits = direct
-      ? width * height * Math.log2(globalColorCount)
-      : blockPaletteEntryCount * Math.log2(globalColorCount) +
+      ? width * height * (Math.log2(globalColorCount) + paletteIndexBits)
+      : blockCount * paletteIndexBits +
+        blockPaletteEntryCount * Math.log2(globalColorCount) +
         width * height * localIndexBits;
 
     return {
@@ -363,6 +395,7 @@
       localIndexBits,
       blocksX,
       blocksY,
+      blockCount,
       blockPaletteEntryCount,
       payloadBits,
       payloadBytes: Math.ceil(payloadBits / 8),
