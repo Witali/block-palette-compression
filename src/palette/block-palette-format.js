@@ -13,7 +13,7 @@
 
   const MAGIC = [0x42, 0x50, 0x41, 0x4c];
   const MAGIC_TEXT = "BPAL";
-  const VERSION = 4;
+  const VERSION = 5;
   const MAGIC_BYTES = 4;
   const VERSION_1_HEADER_BITS = 64;
   const BIT_FIELD_HEADER_BITS = 80;
@@ -39,8 +39,8 @@
     writer.write(metadata.paletteMode === "vector" ? 1 : 0, 1);
     writer.write(metadata.paletteMode === "vector" ? metadata.paletteVectorCount - 1 : 0, 9);
     writer.write(metadata.vectorColorSpace === "oklab" ? 1 : 0, 1);
-    writer.write(metadata.paletteIndexBits, 2);
-    writer.write(0, 5);
+    writer.write(metadata.paletteIndexBits, 3);
+    writer.write(0, 4);
 
     const storedColors = metadata.paletteMode === "vector"
       ? metadata.paletteVectors.flatMap((vector) => [vector.start, vector.end])
@@ -100,8 +100,12 @@
       return decodeVersion3(bytes, reader, version);
     }
 
-    if (version === VERSION) {
+    if (version === 4) {
       return decodeVersion4(bytes, reader, version);
+    }
+
+    if (version === VERSION) {
+      return decodeVersion5(bytes, reader, version);
     }
 
     throw new RangeError(`Unsupported BPAL version: ${version}`);
@@ -216,18 +220,22 @@
   }
 
   function decodeVersion2(bytes, reader, version) {
-    return decodeVectorVersion(bytes, reader, version, false, false);
+    return decodeVectorVersion(bytes, reader, version, false, 0);
   }
 
   function decodeVersion3(bytes, reader, version) {
-    return decodeVectorVersion(bytes, reader, version, true, false);
+    return decodeVectorVersion(bytes, reader, version, true, 0);
   }
 
   function decodeVersion4(bytes, reader, version) {
-    return decodeVectorVersion(bytes, reader, version, true, true);
+    return decodeVectorVersion(bytes, reader, version, true, 2);
   }
 
-  function decodeVectorVersion(bytes, reader, version, storesVectorColorSpace, storesPaletteCount) {
+  function decodeVersion5(bytes, reader, version) {
+    return decodeVectorVersion(bytes, reader, version, true, 3);
+  }
+
+  function decodeVectorVersion(bytes, reader, version, storesVectorColorSpace, paletteCountBitCount) {
     if (bytes.length < HEADER_BYTES) {
       throw new RangeError(`Truncated BPAL v${version} header`);
     }
@@ -243,8 +251,12 @@
     const vectorColorSpace = storesVectorColorSpace && reader.read(1) === 1
       ? "oklab"
       : "rgb";
-    const paletteIndexBits = storesPaletteCount ? reader.read(2) : 0;
-    const reserved = reader.read(storesPaletteCount ? 5 : storesVectorColorSpace ? 7 : 8);
+    const paletteIndexBits = paletteCountBitCount > 0 ? reader.read(paletteCountBitCount) : 0;
+    const reserved = reader.read(
+      paletteCountBitCount > 0
+        ? 7 - paletteCountBitCount
+        : storesVectorColorSpace ? 7 : 8
+    );
     const paletteVectorCount = paletteMode === "vector" ? storedVectorCount : 0;
     const paletteCount = 2 ** paletteIndexBits;
     const blockSize = 2 ** blockSizeExponent;
@@ -570,8 +582,8 @@
       throw new RangeError("BPAL globalColorCount must be a power of two from 2 to 4096");
     }
 
-    if (!isPowerOfTwo(image.paletteCount) || image.paletteCount < 1 || image.paletteCount > 8) {
-      throw new RangeError("BPAL paletteCount must be 1, 2, 4, or 8");
+    if (!isPowerOfTwo(image.paletteCount) || image.paletteCount < 1 || image.paletteCount > 64) {
+      throw new RangeError("BPAL paletteCount must be a power of two from 1 to 64");
     }
 
     if (image.localColorCount > image.globalColorCount) {
