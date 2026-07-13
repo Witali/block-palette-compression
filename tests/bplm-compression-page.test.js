@@ -103,6 +103,13 @@ test("highlights the selected block even when the grid is hidden", () => {
   assert.match(source, /context\.strokeStyle = "#7ddcff"/);
 });
 
+test("hides the block grid by default and vertically aligns its control", () => {
+  assert.match(html, /<input id="show-grid" type="checkbox">/);
+  assert.doesNotMatch(html, /<input id="show-grid" type="checkbox" checked>/);
+  assert.match(css, /\.result-caption label \{[\s\S]*?display: inline-flex;[\s\S]*?align-items: center;/);
+  assert.match(css, /\.result-caption input \{[^}]*margin: 0;/);
+});
+
 test("shows real compression stages in a cancellable modal progress dialog", () => {
   assert.match(html, /<dialog id="progress-dialog"/);
   assert.match(html, /<progress id="progress-bar" max="100" value="0">/);

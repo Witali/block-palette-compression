@@ -230,8 +230,19 @@ figcaption {
 .result-caption { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .result-caption-controls { display: flex; align-items: center; gap: 14px; }
 .result-caption output { color: #69b5ff; font: 700 12px/1 ui-monospace, Consolas, monospace; }
-.result-caption label { color: #8e9aa8; font-size: 12px; font-weight: 500; }
-.result-caption input { accent-color: #4d96ed; }
+.result-caption label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 16px;
+  transform: translateY(-1px);
+  color: #8e9aa8;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+}
+.result-caption input { flex: 0 0 auto; margin: 0; accent-color: #4d96ed; }
 
 .canvas-viewport {
   display: flex;
