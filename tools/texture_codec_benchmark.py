@@ -117,6 +117,20 @@ PROFILES: list[dict[str, Any]] = [
         },
     },
     {
+        "id": "bpal-v5-mp128",
+        "codec": "BPAL",
+        "adapter": "bpal",
+        "label": "BPAL v5 16x16 / 8 local / 128 palettes x 32 colors",
+        "nominalBpp": 3.0 + 40.0 / 256.0 + 7.0 / 256.0,
+        "settings": {
+            "blockSize": 16,
+            "localColorCount": 8,
+            "globalColorCount": 32,
+            "paletteCount": 128,
+            "paletteColorBits": 24,
+        },
+    },
+    {
         "id": "bpal-4",
         "codec": "BPAL",
         "adapter": "bpal",
@@ -1000,6 +1014,7 @@ def render_key_comparisons(aggregate: list[dict[str, Any]]) -> list[str]:
 
     add("astc-8x8", "bpal-2.1")
     add("bpal-v5-mp64", "bpal-v5-sp1")
+    add("bpal-v5-mp128", "bpal-v5-mp64")
     add("bpal-v5-mp64", "bpal-v5-mp32")
     add("astc-6x6", "bpal-v5-mp64")
     add("bc1", "bpal-v5-mp64")
