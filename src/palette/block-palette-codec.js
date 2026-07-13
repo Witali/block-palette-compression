@@ -41,6 +41,9 @@
     const dithering = options.dithering || "none";
     const diversity = options.diversity === undefined ? 0 : Number(options.diversity);
     const accelerator = options.accelerator || null;
+    const onProgress = typeof options.onProgress === "function"
+      ? options.onProgress
+      : null;
 
     validateInput(
       sourcePixels,
@@ -61,6 +64,13 @@
     const blocksX = Math.ceil(width / blockSize);
     const blocksY = Math.ceil(height / blockSize);
     const blockCount = blocksX * blocksY;
+
+    reportProgress(onProgress, "preparing", 0, {
+      completed: 0,
+      total: blockCount,
+      targetClusters: paletteCount,
+    });
+
     const maximumSamplePixels = globalColorCount >= 4096
       ? 8192
       : MAX_PALETTE_SAMPLE_PIXELS;
@@ -79,6 +89,7 @@
       clusteringMethod,
       diversity,
       maximumSamplePixels,
+      onProgress,
     });
     const {
       palette,
@@ -97,6 +108,11 @@
     const globalIndexByColor = new Map();
     let globalAssignments;
     let uniqueColorCount;
+
+    reportProgress(onProgress, "assigning-pixels", 0.5, {
+      completed: 0,
+      total: width * height,
+    });
 
     if (paletteCount === 1 && accelerator && typeof accelerator.mapGlobalAssignments === "function") {
       globalAssignments = accelerator.mapGlobalAssignments({
@@ -132,6 +148,10 @@
       }
 
       uniqueColorCount = uniqueColors.size;
+      reportProgress(onProgress, "assigning-pixels", 0.62, {
+        completed: width * height,
+        total: width * height,
+      });
     } else {
       globalAssignments = new Uint16Array(width * height);
       const uniqueColors = new Set();
@@ -161,6 +181,13 @@
 
         uniqueColors.add(key);
         globalAssignments[pixel] = globalIndex;
+
+        if (shouldReportProgress(pixel + 1, width * height)) {
+          reportProgress(onProgress, "assigning-pixels", 0.5 + 0.12 * ((pixel + 1) / (width * height)), {
+            completed: pixel + 1,
+            total: width * height,
+          });
+        }
       }
 
       uniqueColorCount = uniqueColors.size;
@@ -170,6 +197,11 @@
     let pixelIndices = new Uint8Array(width * height);
     let outputPixels = new Uint8ClampedArray(sourcePixels.length);
     const resultUsage = new Uint32Array(paletteCount * globalColorCount);
+
+    reportProgress(onProgress, "building-block-palettes", 0.62, {
+      completed: 0,
+      total: blockCount,
+    });
 
     for (let blockY = 0; blockY < blocksY; blockY += 1) {
       for (let blockX = 0; blockX < blocksX; blockX += 1) {
@@ -197,7 +229,19 @@
         }
 
       }
+
+      if (shouldReportProgress(blockY + 1, blocksY)) {
+        reportProgress(onProgress, "building-block-palettes", 0.62 + 0.2 * ((blockY + 1) / blocksY), {
+          completed: Math.min((blockY + 1) * blocksX, blockCount),
+          total: blockCount,
+        });
+      }
     }
+
+    reportProgress(onProgress, "encoding-pixels", 0.82, {
+      completed: 0,
+      total: width * height,
+    });
 
     if (
       dithering !== "floyd-steinberg" &&
@@ -253,6 +297,11 @@
           resultUsage[globalIndex] += 1;
         }
       }
+
+      reportProgress(onProgress, "encoding-pixels", 0.96, {
+        completed: width * height,
+        total: width * height,
+      });
     } else if (dithering === "floyd-steinberg") {
       applyBlockFloydSteinbergDithering(
         sourcePixels,
@@ -269,7 +318,13 @@
         blockPaletteIndices,
         palette,
         palettePoints,
-        colorSpace
+        colorSpace,
+        (completedBlocks) => {
+          reportProgress(onProgress, "encoding-pixels", 0.82 + 0.14 * (completedBlocks / blockCount), {
+            completed: Math.min(completedBlocks * blockSize * blockSize, width * height),
+            total: width * height,
+          });
+        }
       );
     } else {
       for (let blockY = 0; blockY < blocksY; blockY += 1) {
@@ -300,8 +355,22 @@
             dithering
           );
         }
+
+        if (shouldReportProgress(blockY + 1, blocksY)) {
+          const completedBlocks = Math.min((blockY + 1) * blocksX, blockCount);
+
+          reportProgress(onProgress, "encoding-pixels", 0.82 + 0.14 * (completedBlocks / blockCount), {
+            completed: Math.min(completedBlocks * blockSize * blockSize, width * height),
+            total: width * height,
+          });
+        }
       }
     }
+
+    reportProgress(onProgress, "finalizing", 0.97, {
+      completed: 0,
+      total: 1,
+    });
 
     palette.forEach((color, index) => {
       const paletteIndex = Math.floor(index / globalColorCount);
@@ -327,6 +396,16 @@
     const pixelDataBytes = Math.ceil(pixelDataBits / 8);
     const totalBytes = Math.ceil(payloadBits / 8);
     const rawRgbBytes = width * height * 3;
+    const reconstructionError = meanSquaredError(sourcePixels, outputPixels);
+
+    reportProgress(onProgress, "complete", 1, {
+      completed: 1,
+      total: 1,
+      clusters: paletteCount,
+      targetClusters: paletteCount,
+      palette: paletteCount,
+      paletteTotal: paletteCount,
+    });
 
     return {
       width,
@@ -352,7 +431,7 @@
       localIndexBits,
       uniqueColorCount,
       resultColorCount: countNonZero(resultUsage),
-      meanSquaredError: meanSquaredError(sourcePixels, outputPixels),
+      meanSquaredError: reconstructionError,
       colorSpace,
       clusteringMethod,
       dithering,
@@ -392,7 +471,17 @@
       clusteringMethod,
       diversity,
       maximumSamplePixels,
+      onProgress,
     } = options;
+
+    if (paletteCount > 1) {
+      reportProgress(onProgress, "analyzing-blocks", 0.03, {
+        completed: 0,
+        total: blockCount,
+        targetClusters: paletteCount,
+      });
+    }
+
     const blockPaletteSelectors = paletteCount === 1
       ? new Uint8Array(blockCount)
       : clusterBlocksByContent(
@@ -403,7 +492,8 @@
         blocksX,
         blocksY,
         paletteCount,
-        colorSpace
+        colorSpace,
+        onProgress
       );
     const activePalettes = [];
     const activePaletteCounts = [];
@@ -411,6 +501,13 @@
     let iterations = 0;
 
     for (let paletteIndex = 0; paletteIndex < paletteCount; paletteIndex += 1) {
+      reportProgress(onProgress, "building-palettes", 0.22 + 0.28 * (paletteIndex / paletteCount), {
+        palette: paletteIndex + 1,
+        paletteTotal: paletteCount,
+        clusters: 0,
+        targetClusters: globalColorCount,
+      });
+
       const sample = paletteCount === 1
         ? samplePixels(sourcePixels, maximumSamplePixels)
         : samplePalettePixels(
@@ -430,7 +527,22 @@
         paletteColorBits,
         colorSpace,
         clusteringMethod,
-        diversity
+        diversity,
+        (quantizerProgress) => {
+          reportProgress(
+            onProgress,
+            "building-palettes",
+            0.22 + 0.28 * ((paletteIndex + quantizerProgress.fraction) / paletteCount),
+            {
+              palette: paletteIndex + 1,
+              paletteTotal: paletteCount,
+              clusters: quantizerProgress.clusters,
+              targetClusters: globalColorCount,
+              iteration: quantizerProgress.iteration,
+              totalIterations: quantizerProgress.totalIterations,
+            }
+          );
+        }
       );
 
       activePalettes.push(quantized.palette);
@@ -454,7 +566,8 @@
     paletteColorBits,
     colorSpace,
     clusteringMethod,
-    diversity
+    diversity,
+    onProgress
   ) {
     if (sample.length === 0) {
       return {
@@ -474,6 +587,7 @@
         dithering: "none",
         diversity,
         maxIterations: globalColorCount >= 4096 ? 6 : 16,
+        onProgress,
       }
     );
     const activePalette = quantizedSample.palette.length > 0
@@ -491,7 +605,8 @@
     blocksX,
     blocksY,
     paletteCount,
-    colorSpace
+    colorSpace,
+    onProgress
   ) {
     const descriptors = describeBlocks(
       sourcePixels,
@@ -500,11 +615,19 @@
       blockSize,
       blocksX,
       blocksY,
-      colorSpace
+      colorSpace,
+      onProgress
     );
     const clusterCount = Math.min(paletteCount, descriptors.length);
     const centroidSourceIndices = [0];
     const centroids = [descriptors[0].slice()];
+
+    reportProgress(onProgress, "clustering-blocks", 0.12, {
+      clusters: 1,
+      targetClusters: clusterCount,
+      completed: 1,
+      total: clusterCount,
+    });
 
     while (centroids.length < clusterCount) {
       let bestBlock = -1;
@@ -532,6 +655,12 @@
 
       centroidSourceIndices.push(bestBlock);
       centroids.push(descriptors[bestBlock].slice());
+      reportProgress(onProgress, "clustering-blocks", 0.12 + 0.03 * (centroids.length / clusterCount), {
+        clusters: centroids.length,
+        targetClusters: clusterCount,
+        completed: centroids.length,
+        total: clusterCount,
+      });
     }
 
     const selectors = new Uint8Array(descriptors.length);
@@ -569,6 +698,17 @@
         centroids[cluster] = nextCentroid;
       }
 
+      const activeClusters = countNonZero(counts);
+
+      reportProgress(onProgress, "clustering-blocks", 0.15 + 0.07 * ((iteration + 1) / 8), {
+        clusters: activeClusters,
+        targetClusters: clusterCount,
+        iteration: iteration + 1,
+        totalIterations: 8,
+        completed: descriptors.length,
+        total: descriptors.length,
+      });
+
       if (!changed || movement < 1e-12) {
         break;
       }
@@ -584,7 +724,8 @@
     blockSize,
     blocksX,
     blocksY,
-    colorSpace
+    colorSpace,
+    onProgress
   ) {
     const descriptors = [];
 
@@ -632,6 +773,13 @@
           : [0, 0, 0];
 
         descriptors.push([...means, ...deviations]);
+      }
+
+      if (shouldReportProgress(blockY + 1, blocksY)) {
+        reportProgress(onProgress, "analyzing-blocks", 0.03 + 0.09 * ((blockY + 1) / blocksY), {
+          completed: Math.min((blockY + 1) * blocksX, blocksX * blocksY),
+          total: blocksX * blocksY,
+        });
       }
     }
 
@@ -1403,7 +1551,8 @@
     blockPaletteIndices,
     palette,
     palettePoints,
-    colorSpace
+    colorSpace,
+    onProgress
   ) {
     const rowLength = (blockSize + 2) * 3;
     let currentErrors = new Float32Array(rowLength);
@@ -1471,6 +1620,10 @@
           nextErrors = previousErrors;
           nextErrors.fill(0);
         }
+      }
+
+      if (onProgress && shouldReportProgress(blockY + 1, Math.ceil(height / blockSize))) {
+        onProgress(Math.min((blockY + 1) * blocksX, blocksX * Math.ceil(height / blockSize)));
       }
     }
   }
@@ -1635,6 +1788,26 @@
     }
 
     return channelCount === 0 ? 0 : error / channelCount;
+  }
+
+  function reportProgress(callback, stage, progress, details) {
+    if (!callback) {
+      return;
+    }
+
+    const normalizedProgress = Math.max(0, Math.min(1, Number(progress) || 0));
+
+    callback({
+      stage,
+      progress: Math.round(normalizedProgress * 1000000) / 1000000,
+      ...(details || {}),
+    });
+  }
+
+  function shouldReportProgress(completed, total) {
+    const step = Math.max(1, Math.ceil(total / 100));
+
+    return completed >= total || completed % step === 0;
   }
 
   function countNonZero(values) {

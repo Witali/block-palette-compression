@@ -7,6 +7,8 @@ const path = require("node:path");
 const root = path.resolve(__dirname, "..");
 const html = fs.readFileSync(path.join(root, "block-palette.html"), "utf8");
 const source = fs.readFileSync(path.join(root, "src", "pages", "block-palette-page.js"), "utf8");
+const workerSource = fs.readFileSync(path.join(root, "src", "palette", "block-palette-worker.js"), "utf8");
+const css = fs.readFileSync(path.join(root, "block-palette.css"), "utf8");
 
 test("offers BPLM export after compression", () => {
   assert.match(html, /<button id="download-bplm-button"[^>]*data-i18n="block\.saveBplm"[^>]*>/);
@@ -59,6 +61,17 @@ test("highlights the selected block even when the grid is hidden", () => {
   assert.doesNotMatch(source, /if \(!result \|\| !showGridInput\.checked\)/);
   assert.match(source, /context\.fillStyle = "rgba\(41, 182, 255, 0\.24\)"/);
   assert.match(source, /context\.strokeStyle = "#7ddcff"/);
+});
+
+test("shows real compression stages in a cancellable modal progress dialog", () => {
+  assert.match(html, /<dialog id="progress-dialog"/);
+  assert.match(html, /<progress id="progress-bar" max="100" value="0">/);
+  assert.match(html, /id="progress-cluster-count"/);
+  assert.match(source, /event\.data\.type === "progress"/);
+  assert.match(source, /progressDialog\.showModal\(\)/);
+  assert.match(source, /function cancelProcessing\(\)/);
+  assert.match(workerSource, /type: "progress", progress/);
+  assert.match(css, /\.progress-dialog::backdrop/);
 });
 
 function test(name, callback) {

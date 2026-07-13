@@ -38,6 +38,9 @@
     const colorSpace = settings.colorSpace || "oklab";
     const clusteringMethod = settings.clusteringMethod || "k-means";
     const diversity = settings.diversity === undefined ? 0 : Number(settings.diversity);
+    const onProgress = typeof settings.onProgress === "function"
+      ? settings.onProgress
+      : null;
 
     if (!DITHERING_MODES.has(dithering)) {
       throw new RangeError(`Unsupported dithering mode: ${dithering}`);
@@ -55,9 +58,18 @@
       throw new RangeError("diversity must be between 0 and 1");
     }
 
+    reportProgress(onProgress, { phase: "histogram", fraction: 0 });
+
     const histogram = buildHistogram(sourcePixels);
 
+    reportProgress(onProgress, {
+      phase: "histogram",
+      fraction: 0.12,
+      uniqueColors: histogram.colors.length,
+    });
+
     if (histogram.colors.length === 0) {
+      reportProgress(onProgress, { phase: "complete", fraction: 1, clusters: 0 });
       return {
         width,
         height,
@@ -77,6 +89,13 @@
       Math.max(1, Math.round(requestedColorCount)),
       histogram.colors.length
     );
+
+    reportProgress(onProgress, {
+      phase: "initializing",
+      fraction: 0.18,
+      clusters: colorCount,
+    });
+
     const clusteringColors = colorSpace === "oklab"
       ? histogram.colors.map((color) => srgbToOklab(color[0], color[1], color[2]))
       : histogram.colors;
@@ -90,6 +109,13 @@
     const assignments = new Int16Array(histogram.colors.length);
 
     assignments.fill(-1);
+    reportProgress(onProgress, {
+      phase: "clustering",
+      fraction: 0.28,
+      clusters: colorCount,
+      iteration: 0,
+      totalIterations: maxIterations,
+    });
 
     let iterations = 0;
 
@@ -110,6 +136,14 @@
 
       const movementThreshold = colorSpace === "oklab" ? 1e-8 : 0.01;
 
+      reportProgress(onProgress, {
+        phase: "clustering",
+        fraction: 0.28 + 0.57 * ((iterations + 1) / maxIterations),
+        clusters: colorCount,
+        iteration: iterations + 1,
+        totalIterations: maxIterations,
+      });
+
       if (!changed || moved < movementThreshold) {
         iterations += 1;
         break;
@@ -127,6 +161,13 @@
       centroids,
       colorSpace
     );
+    reportProgress(onProgress, {
+      phase: "reconstructing",
+      fraction: 0.9,
+      clusters: paletteData.palette.length,
+      iteration: iterations,
+      totalIterations: maxIterations,
+    });
     const outputPixels = applyPalette(
       sourcePixels,
       histogram.indexByColor,
@@ -139,6 +180,14 @@
       colorSpace,
       clusteringMethod
     );
+
+    reportProgress(onProgress, {
+      phase: "complete",
+      fraction: 1,
+      clusters: paletteData.palette.length,
+      iteration: iterations,
+      totalIterations: maxIterations,
+    });
 
     return {
       width,
@@ -153,6 +202,12 @@
       clusteringMethod,
       diversity,
     };
+  }
+
+  function reportProgress(callback, progress) {
+    if (callback) {
+      callback(progress);
+    }
   }
 
   function createClusteringWeights(pixelCounts, diversity) {

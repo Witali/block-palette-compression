@@ -102,6 +102,53 @@ test("assigns blocks with different color distributions to separate global palet
   assert.equal(result.storage.payloadBits, 110);
 });
 
+test("reports real multi-stage compression progress", () => {
+  const source = pixels([
+    [255, 0, 0, 255], [220, 20, 20, 255], [0, 0, 255, 255], [20, 20, 220, 255],
+    [220, 20, 20, 255], [255, 0, 0, 255], [20, 20, 220, 255], [0, 0, 255, 255],
+  ]);
+  const progress = [];
+
+  compressImage(source, 4, 2, {
+    blockSize: 2,
+    localColorCount: 2,
+    globalColorCount: 2,
+    paletteCount: 2,
+    colorSpace: "rgb",
+    onProgress: (entry) => progress.push(entry),
+  });
+
+  const stages = new Set(progress.map((entry) => entry.stage));
+
+  for (const stage of [
+    "preparing",
+    "analyzing-blocks",
+    "clustering-blocks",
+    "building-palettes",
+    "assigning-pixels",
+    "building-block-palettes",
+    "encoding-pixels",
+    "finalizing",
+    "complete",
+  ]) {
+    assert.ok(stages.has(stage), `missing progress stage: ${stage}`);
+  }
+
+  const regressedAt = progress.findIndex((entry, index) =>
+    index > 0 && entry.progress < progress[index - 1].progress
+  );
+
+  assert.equal(
+    regressedAt,
+    -1,
+    regressedAt < 0 ? "" : JSON.stringify(progress.slice(regressedAt - 1, regressedAt + 1))
+  );
+  assert.ok(progress.some((entry) =>
+    entry.stage === "clustering-blocks" && entry.clusters === 2 && entry.targetClusters === 2
+  ));
+  assert.equal(progress.at(-1).progress, 1);
+});
+
 test("supports two, four, and eight content palettes", () => {
   const colors = [
     [255, 0, 0, 255],

@@ -1,7 +1,7 @@
 "use strict";
 
-importScripts("./palette-quantizer.js?v=src-layout-4");
-importScripts("./block-palette-codec.js?v=block-palette-20");
+importScripts("./palette-quantizer.js?v=progress-1");
+importScripts("./block-palette-codec.js?v=progress-1");
 importScripts("./block-palette-webgl-codec.js?v=block-palette-3");
 
 self.addEventListener("message", (event) => {
@@ -13,7 +13,10 @@ self.addEventListener("message", (event) => {
       new Uint8ClampedArray(pixels),
       width,
       height,
-      settings
+      {
+        ...settings,
+        onProgress: (progress) => self.postMessage({ type: "progress", progress }),
+      }
     );
 
     result.durationMs = performance.now() - startedAt;

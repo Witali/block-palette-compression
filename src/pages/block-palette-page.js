@@ -24,6 +24,15 @@ const downloadBplmButton = document.getElementById("download-bplm-button");
 const downloadButton = document.getElementById("download-button");
 const showGridInput = document.getElementById("show-grid");
 const statusElement = document.getElementById("status");
+const progressDialog = document.getElementById("progress-dialog");
+const progressBar = document.getElementById("progress-bar");
+const progressPercent = document.getElementById("progress-percent");
+const progressStage = document.getElementById("progress-stage");
+const progressDetail = document.getElementById("progress-detail");
+const progressStageCount = document.getElementById("progress-stage-count");
+const progressClusterCount = document.getElementById("progress-cluster-count");
+const progressPaletteCount = document.getElementById("progress-palette-count");
+const progressCancelButton = document.getElementById("progress-cancel");
 const sourceViewport = document.getElementById("source-viewport");
 const resultViewport = document.getElementById("result-viewport");
 const sourceStage = document.getElementById("source-stage");
@@ -70,12 +79,35 @@ const state = {
   synchronizingScroll: false,
   viewportDrag: null,
   optimizationApplied: false,
+  progress: null,
 };
 
 const MIN_ZOOM = 0.125;
 const MAX_ZOOM = 16;
 const DRAG_THRESHOLD = 5;
 const DRAG_DELAY_MS = 140;
+const PROGRESS_STAGES = [
+  "preparing",
+  "analyzing-blocks",
+  "clustering-blocks",
+  "building-palettes",
+  "assigning-pixels",
+  "building-block-palettes",
+  "encoding-pixels",
+  "finalizing",
+];
+const PROGRESS_STAGE_KEYS = {
+  "preparing": "block.progressStagePreparing",
+  "analyzing-blocks": "block.progressStageAnalyzing",
+  "clustering-blocks": "block.progressStageBlockClustering",
+  "building-palettes": "block.progressStagePalettes",
+  "assigning-pixels": "block.progressStageAssignments",
+  "building-block-palettes": "block.progressStageBlockPalettes",
+  "encoding-pixels": "block.progressStageEncoding",
+  "finalizing": "block.progressStageFinalizing",
+  "complete": "block.progressStageComplete",
+  "searching-settings": "block.progressStageSearching",
+};
 
 controls.addEventListener("submit", (event) => {
   event.preventDefault();
@@ -115,6 +147,11 @@ diversityInput.addEventListener("input", () => {
 
 uploadButton.addEventListener("click", () => fileInput.click());
 optimizeButton.addEventListener("click", optimizeSettings);
+progressCancelButton.addEventListener("click", cancelProcessing);
+progressDialog.addEventListener("cancel", (event) => {
+  event.preventDefault();
+  cancelProcessing();
+});
 fileInput.addEventListener("change", () => {
   const file = fileInput.files && fileInput.files[0];
 
@@ -154,6 +191,10 @@ window.addEventListener("beforeunload", () => {
 });
 window.addEventListener("languagechange", () => {
   updateDiversityLabel();
+
+  if (state.progress) {
+    renderProgress(state.progress);
+  }
 
   if (state.result) {
     const fileLayout = renderResult(state.result);
@@ -218,11 +259,19 @@ function processImage() {
   const sourceCopy = new Uint8ClampedArray(state.sourceImageData.data);
   const processingId = ++state.processingId;
   const workerUrl = settings.algorithm === "webgl"
-    ? "./src/palette/block-palette-webgl-worker.js?v=block-palette-13"
-    : "./src/palette/block-palette-worker.js?v=block-palette-19";
+    ? "./src/palette/block-palette-webgl-worker.js?v=progress-1"
+    : "./src/palette/block-palette-worker.js?v=progress-1";
   const worker = new Worker(workerUrl);
 
   state.worker = worker;
+  startProgress({
+    stage: "preparing",
+    progress: 0,
+    completed: 0,
+    total: Math.ceil(state.sourceImageData.width / settings.blockSize) *
+      Math.ceil(state.sourceImageData.height / settings.blockSize),
+    targetClusters: settings.paletteCount,
+  });
   setStatus(
     t("block.processing", {
       algorithm: getAlgorithmLabel(settings.algorithm),
@@ -250,10 +299,17 @@ function processImage() {
       return;
     }
 
+    if (event.data.type === "progress") {
+      updateProgress(event.data.progress);
+      return;
+    }
+
     const fileLayout = renderResult(event.data);
+    updateProgress({ stage: "complete", progress: 1 });
     stopWorker();
     setBusy(false);
     renderDoneStatus(event.data, fileLayout);
+    closeProgress();
   });
 
   worker.addEventListener("error", (event) => {
@@ -808,6 +864,12 @@ function optimizeSettings() {
   setBusy(true);
   optimizeButton.textContent = t("block.optimizeInitial");
   setStatus(t("block.optimizePreparing"), "busy");
+  startProgress({
+    stage: "searching-settings",
+    progress: 0,
+    completed: 0,
+    total: 20,
+  });
 
   const preview = createOptimizationPreview();
   const worker = new Worker("./src/palette/block-palette-optimizer-worker.js?v=block-palette-12");
@@ -823,6 +885,16 @@ function optimizeSettings() {
       const { completed, total, candidate } = event.data;
 
       optimizeButton.textContent = t("block.optimizeProgress", { completed, total });
+      updateProgress({
+        stage: "searching-settings",
+        progress: completed / total,
+        completed,
+        total,
+        search: {
+          size: candidate.fileBytes,
+          rmse: candidate.rmse,
+        },
+      });
       setStatus(
         t("block.optimizeSearching", {
           completed,
@@ -911,6 +983,108 @@ function createOptimizationPreview() {
   return context.getImageData(0, 0, width, height);
 }
 
+function startProgress(progress) {
+  updateProgress(progress);
+
+  if (progressDialog.open) {
+    return;
+  }
+
+  if (typeof progressDialog.showModal === "function") {
+    progressDialog.showModal();
+  } else {
+    progressDialog.setAttribute("open", "");
+  }
+}
+
+function updateProgress(progress) {
+  state.progress = { ...progress };
+  renderProgress(state.progress);
+}
+
+function renderProgress(progress) {
+  const normalized = Math.max(0, Math.min(1, Number(progress.progress) || 0));
+  const percent = Math.round(normalized * 100);
+  const stageKey = PROGRESS_STAGE_KEYS[progress.stage] || PROGRESS_STAGE_KEYS.preparing;
+  const stageIndex = progress.stage === "searching-settings"
+    ? 1
+    : progress.stage === "complete"
+      ? PROGRESS_STAGES.length
+      : Math.max(1, PROGRESS_STAGES.indexOf(progress.stage) + 1);
+  const stageTotal = progress.stage === "searching-settings" ? 1 : PROGRESS_STAGES.length;
+
+  progressBar.value = percent;
+  progressBar.textContent = `${percent}%`;
+  progressPercent.value = `${percent}%`;
+  progressStage.textContent = t(stageKey);
+  progressStageCount.textContent = `${formatInteger(stageIndex)} / ${formatInteger(stageTotal)}`;
+  progressClusterCount.textContent = formatProgressCount(
+    progress.clusters,
+    progress.targetClusters
+  );
+  progressPaletteCount.textContent = formatProgressCount(
+    progress.palette,
+    progress.paletteTotal
+  );
+
+  if (progress.search) {
+    progressDetail.textContent = t("block.progressSearchDetail", {
+      completed: formatInteger(progress.completed),
+      total: formatInteger(progress.total),
+      size: formatBytes(progress.search.size),
+      rmse: progress.search.rmse.toFixed(2),
+    });
+  } else if (Number.isFinite(progress.iteration) && Number.isFinite(progress.totalIterations)) {
+    progressDetail.textContent = t("block.progressIteration", {
+      current: formatInteger(progress.iteration),
+      total: formatInteger(progress.totalIterations),
+    });
+  } else if (Number.isFinite(progress.completed) && Number.isFinite(progress.total)) {
+    progressDetail.textContent = t("block.progressItems", {
+      completed: formatInteger(progress.completed),
+      total: formatInteger(progress.total),
+    });
+  } else {
+    progressDetail.textContent = t("block.progressWaiting");
+  }
+}
+
+function formatProgressCount(value, total) {
+  if (!Number.isFinite(value)) {
+    return "—";
+  }
+
+  return Number.isFinite(total)
+    ? `${formatInteger(value)} / ${formatInteger(total)}`
+    : formatInteger(value);
+}
+
+function closeProgress() {
+  if (progressDialog.open) {
+    if (typeof progressDialog.close === "function") {
+      progressDialog.close();
+    } else {
+      progressDialog.removeAttribute("open");
+    }
+  }
+
+  state.progress = null;
+}
+
+function cancelProcessing() {
+  if (!state.worker && !state.optimizerWorker) {
+    closeProgress();
+    return;
+  }
+
+  state.processingId += 1;
+  stopWorker();
+  stopOptimizer();
+  setBusy(false);
+  closeProgress();
+  setStatus(t("block.progressCancelled"));
+}
+
 function stopWorker() {
   if (state.worker) {
     state.worker.terminate();
@@ -969,6 +1143,7 @@ function resetResultMetrics() {
 function showError(error) {
   console.error("Block palette conversion failed.", error);
   setBusy(false);
+  closeProgress();
   setStatus(error && error.message ? error.message : String(error), "error");
 }
 

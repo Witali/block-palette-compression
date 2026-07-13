@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title data-i18n="block.title">Block-palette compression</title>
-    <link rel="stylesheet" href="./block-palette.css?v=pan-2">
+    <link rel="stylesheet" href="./block-palette.css?v=progress-1">
     <link rel="stylesheet" href="./i18n.css">
   </head>
   <body>
@@ -215,12 +215,40 @@
       </section>
     </main>
 
+    <dialog id="progress-dialog" class="progress-dialog" aria-labelledby="progress-title" aria-describedby="progress-stage progress-detail">
+      <div class="progress-heading">
+        <div>
+          <span class="progress-eyebrow" data-i18n="block.progressEyebrow">BPAL encoder</span>
+          <h2 id="progress-title" data-i18n="block.progressTitle">Compression progress</h2>
+        </div>
+        <output id="progress-percent">0%</output>
+      </div>
+      <p id="progress-stage" class="progress-stage" data-i18n="block.progressStagePreparing">Preparing source data</p>
+      <progress id="progress-bar" max="100" value="0">0%</progress>
+      <p id="progress-detail" class="progress-detail" data-i18n="block.progressWaiting">Waiting for the encoder…</p>
+      <dl class="progress-statistics">
+        <div>
+          <dt data-i18n="block.progressStage">Stage</dt>
+          <dd id="progress-stage-count">1 / 7</dd>
+        </div>
+        <div>
+          <dt data-i18n="block.progressClusters">Clusters</dt>
+          <dd id="progress-cluster-count">—</dd>
+        </div>
+        <div>
+          <dt data-i18n="block.progressPalette">Palette</dt>
+          <dd id="progress-palette-count">—</dd>
+        </div>
+      </dl>
+      <button id="progress-cancel" type="button" data-i18n="common.cancel">Cancel</button>
+    </dialog>
+
     <script src="./src/palette/block-palette-format.js?v=multi-palette-1"></script>
     <script src="./src/decoders/bpal-texture.js?v=multi-palette-1"></script>
     <script src="./src/palette/bplm-format.js?v=multi-palette-1"></script>
     <script src="./src/i18n/en.js"></script>
     <script src="./src/i18n/ru.js"></script>
     <script src="./src/i18n/i18n.js"></script>
-    <script src="./src/pages/block-palette-page.js?v=multi-palette-1"></script>
+    <script src="./src/pages/block-palette-page.js?v=progress-1"></script>
   </body>
 </html>
