@@ -41,6 +41,8 @@
     "common.preparing": "Подготовка…",
     "common.size": "Размер",
     "common.rmse": "RMSE на канал",
+    "common.psnr": "PSNR RGB",
+    "common.psnrTitle": "Пиковое отношение сигнала к шуму; больше — лучше",
     "common.sourceImage": "Исходное изображение",
     "common.imageComparison": "Сравнение изображений",
     "common.processingTime": "Время обработки",

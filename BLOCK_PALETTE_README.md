@@ -67,7 +67,9 @@ single bitstream without byte alignment; only the final byte of the file is
 padded with zeros.
 
 The page shows the size of every section, the effective number of bits per
-pixel, the ratio to uncompressed RGB, and RMSE per color channel.
+pixel, the ratio to uncompressed RGB, RMSE per color channel, and RGB PSNR.
+PSNR is derived from exact RGB MSE as `10 * log10(255² / MSE)`; a perfect
+reconstruction is reported as infinity.
 
 ## Building the shared palettes
 

@@ -53,6 +53,7 @@ const metricPayload = document.getElementById("metric-payload");
 const metricBpp = document.getElementById("metric-bpp");
 const metricRatio = document.getElementById("metric-ratio");
 const metricError = document.getElementById("metric-error");
+const metricPsnr = document.getElementById("metric-psnr");
 const storageHeader = document.getElementById("storage-header");
 const storageHeaderFormula = document.getElementById("storage-header-formula");
 const storageGlobal = document.getElementById("storage-global");
@@ -347,6 +348,7 @@ function renderResult(result) {
   metricBpp.textContent = result.storage.bitsPerPixel.toFixed(2);
   metricRatio.textContent = `${result.storage.compressionRatio.toFixed(2)}×`;
   metricError.textContent = Math.sqrt(result.meanSquaredError).toFixed(2);
+  metricPsnr.textContent = formatPsnr(result.meanSquaredError);
   processingTime.textContent = `${t("units.ms", { value: result.durationMs.toFixed(1) })} · ${getColorSpaceLabel(result.colorSpace)} · ${getClusteringMethodLabel(result.clusteringMethod)} · ${getAlgorithmLabel(result.algorithm)}`;
 
   storageHeader.textContent = formatBytes(fileLayout.headerBytes);
@@ -418,6 +420,7 @@ function renderResult(result) {
     diversity: result.diversity,
     storage: result.storage,
     rmse: Math.sqrt(result.meanSquaredError),
+    psnr: calculatePsnr(result.meanSquaredError),
     durationMs: result.durationMs,
     file: fileLayout,
   };
@@ -1126,7 +1129,7 @@ function resetResultMetrics() {
   gridCanvas.width = 0;
   gridCanvas.height = 0;
 
-  for (const element of [metricBlocks, metricPayload, metricBpp, metricRatio, metricError, storageHeader, storageGlobal, storageBlocks, storagePixels, storageTotal]) {
+  for (const element of [metricBlocks, metricPayload, metricBpp, metricRatio, metricError, metricPsnr, storageHeader, storageGlobal, storageBlocks, storagePixels, storageTotal]) {
     element.textContent = "—";
   }
 
@@ -1179,6 +1182,26 @@ function setStatus(message, kind) {
 
 function formatInteger(value) {
   return window.I18n.formatNumber(value);
+}
+
+function calculatePsnr(meanSquaredError) {
+  const mse = Number(meanSquaredError);
+
+  if (!Number.isFinite(mse) || mse < 0) {
+    return NaN;
+  }
+
+  return mse === 0 ? Infinity : 10 * Math.log10((255 * 255) / mse);
+}
+
+function formatPsnr(meanSquaredError) {
+  const psnr = calculatePsnr(meanSquaredError);
+
+  if (psnr === Infinity) {
+    return "∞ dB";
+  }
+
+  return Number.isFinite(psnr) ? `${psnr.toFixed(2)} dB` : "—";
 }
 
 function formatBytes(bytes) {

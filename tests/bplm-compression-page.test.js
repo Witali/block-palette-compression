@@ -54,6 +54,18 @@ test("enables four-pass iterative refinement by default and lets users disable i
   assert.match(optimizerSource, /refinementPasses: searchOptions\.refinementPasses === undefined/);
 });
 
+test("shows RGB PSNR for the reconstructed image", () => {
+  assert.match(
+    html,
+    /data-i18n="common\.psnr"[^>]*data-i18n-title="common\.psnrTitle"[^>]*>PSNR RGB<\/span><strong id="metric-psnr">/
+  );
+  assert.match(source, /const metricPsnr = document\.getElementById\("metric-psnr"\)/);
+  assert.match(source, /10 \* Math\.log10\(\(255 \* 255\) \/ mse\)/);
+  assert.match(source, /return mse === 0 \? Infinity/);
+  assert.match(source, /metricPsnr\.textContent = formatPsnr\(result\.meanSquaredError\)/);
+  assert.match(source, /psnr: calculatePsnr\(result\.meanSquaredError\)/);
+});
+
 test("pans both compression previews by dragging", () => {
   assert.match(source, /for \(const viewport of \[sourceViewport, resultViewport\]\)/);
   assert.match(source, /viewport\.addEventListener\("pointerdown", startViewportDrag\)/);

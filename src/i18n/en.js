@@ -41,6 +41,8 @@
     "common.preparing": "Preparing…",
     "common.size": "Size",
     "common.rmse": "RMSE per channel",
+    "common.psnr": "PSNR RGB",
+    "common.psnrTitle": "Peak signal-to-noise ratio; higher is better",
     "common.sourceImage": "Source image",
     "common.imageComparison": "Image comparison",
     "common.processingTime": "Processing time",

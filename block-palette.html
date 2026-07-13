@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title data-i18n="block.title">Block-palette compression</title>
-    <link rel="stylesheet" href="./block-palette.css?v=iterative-refinement-1">
+    <link rel="stylesheet" href="./block-palette.css?v=psnr-1">
     <link rel="stylesheet" href="./i18n.css">
   </head>
   <body>
@@ -152,6 +152,7 @@
         <div><span data-i18n="block.bitsPerPixel">Bits per pixel</span><strong id="metric-bpp">—</strong></div>
         <div><span data-i18n="block.rgbRatio">Compression vs RGB</span><strong id="metric-ratio">—</strong></div>
         <div><span data-i18n="common.rmse">RMSE per channel</span><strong id="metric-error">—</strong></div>
+        <div><span data-i18n="common.psnr" data-i18n-title="common.psnrTitle" title="Peak signal-to-noise ratio; higher is better">PSNR RGB</span><strong id="metric-psnr">—</strong></div>
       </section>
 
       <section class="storage-section" aria-labelledby="storage-title">
@@ -255,9 +256,9 @@
     <script src="./src/palette/block-palette-format.js?v=palette128-1"></script>
     <script src="./src/decoders/bpal-texture.js?v=multi-palette-1"></script>
     <script src="./src/palette/bplm-format.js?v=multi-palette-1"></script>
-    <script src="./src/i18n/en.js?v=iterative-refinement-2"></script>
-    <script src="./src/i18n/ru.js?v=iterative-refinement-2"></script>
+    <script src="./src/i18n/en.js?v=psnr-1"></script>
+    <script src="./src/i18n/ru.js?v=psnr-1"></script>
     <script src="./src/i18n/i18n.js"></script>
-    <script src="./src/pages/block-palette-page.js?v=iterative-refinement-1"></script>
+    <script src="./src/pages/block-palette-page.js?v=psnr-1"></script>
   </body>
 </html>
