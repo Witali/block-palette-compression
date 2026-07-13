@@ -1,7 +1,7 @@
 "use strict";
 
 const assert = require("node:assert/strict");
-const { encodeBlockPaletteFile } = require("../src/palette/block-palette-format.js");
+const { VERSION, encodeBlockPaletteFile } = require("../src/palette/block-palette-format.js");
 const {
   decode,
   createMipLevels,
@@ -30,7 +30,7 @@ test("decodes a BPAL file into uploadable RGBA texture pixels", () => {
 
   assert.equal(texture.width, 2);
   assert.equal(texture.height, 2);
-  assert.equal(texture.version, 3);
+  assert.equal(texture.version, VERSION);
   assert.equal(texture.localColorCount, 2);
   assert.equal(texture.globalColorCount, 2);
   assert.equal(texture.paletteMode, "explicit");
