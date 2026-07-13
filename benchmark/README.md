@@ -9,12 +9,14 @@ Compression.
 Profiles included by default:
 
 - BPAL at approximately 2.1, 2.4, 4, and 6 bits per pixel;
-- BPAL v5 at approximately 3.2 bits per pixel with 64 and 128 shared palettes,
+- BPAL v5 at approximately 3.2 bits per pixel with 32, 64, and 128 shared palettes,
   32 colors per shared palette, and 8 local colors per 16x16 block;
 - a matching single-palette BPAL v5 control with the same block size, local
   color count, shared-palette size, and color format;
+- matching single-, 64-, and 128-palette profiles encoded and decoded by the
+  standalone C11 implementation with runtime AVX2 dispatch;
 - BC1 and BC7 through Microsoft DirectXTex `texconv`;
-- ASTC 8x8, 6x6, and 4x4 through Arm `astcenc`.
+- ASTC 8x8, 6x6, 5x5, and 4x4 through Arm `astcenc`.
 
 ### Multi-palette profile selection
 
@@ -22,13 +24,13 @@ The 64-palette BPAL v5 profile was selected with a controlled 32-versus-64
 palette run over the complete eight-image CLIC subset. Both candidates used
 16x16 blocks, 8 local colors, 32 colors per shared palette, RGB888 storage,
 and otherwise identical encoder settings. The 64-palette candidate reached
-34.872 dB aggregate RGB PSNR and 0.973393 luma SSIM at 3.2266 payload bpp. The
-32-palette candidate reached 34.639 dB and 0.971847 at 3.1992 bpp. Thus the
-sixth selector bit bought +0.233 dB and +0.001546 SSIM for +0.0274 bpp, and
+35.049 dB aggregate RGB PSNR and 0.973903 luma SSIM at 3.2266 payload bpp. The
+32-palette candidate reached 34.772 dB and 0.972216 at 3.1992 bpp. Thus the
+sixth selector bit bought +0.277 dB and +0.001687 SSIM for +0.0273 bpp, and
 improved both quality metrics on every image in the corpus.
 
-The 32-palette candidate remains available as an opt-in profile so the choice
-can be reproduced:
+The 32-palette candidate remains in the default comparison so the choice can
+be reproduced directly:
 
 ```powershell
 python tools/texture_codec_benchmark.py `
@@ -43,6 +45,25 @@ The benchmark reports:
 - RGB PSNR in the stored 8-bit domain;
 - luminance SSIM with an 11x11 Gaussian window and sigma 1.5;
 - cold command-line encode and decode time.
+
+All BPAL profiles request up to four iterative-refinement passes. The setting
+is written explicitly into every result record, and resume mode reruns a BPAL
+record when its effective encoder settings differ from the current profile.
+
+Compared with the previous zero-refinement run, refinement raised aggregate
+PSNR from 34.872 to 35.049 dB for 64 palettes and from 35.063 to 35.315 dB for
+128 palettes without changing their 3.2266 and 3.2773 payload bpp rates.
+
+### Native C/SIMD comparison
+
+At 64 palettes, the C/SIMD implementation reached 34.733 dB and 0.971205 SSIM,
+versus 35.049 dB and 0.973903 for the JavaScript quality-oriented encoder at
+the same 3.2266 payload bpp. Its aggregate cold encode time was 9.796 seconds
+instead of 44.510 seconds (4.54x faster), and decode time was 0.116 instead of
+0.606 seconds (5.21x faster). At 128 palettes, the corresponding speedups were
+4.78x for encoding and 5.31x for decoding, with a 0.317 dB PSNR difference.
+The native rows therefore measure a faster independent encoder, not merely a
+SIMD rewrite that produces byte-identical output.
 
 Only RGB is scored. Every current corpus image is opaque because BPAL does not
 store alpha. The run is intentionally limited to mip level 0 so every codec is
@@ -84,6 +105,13 @@ tables, but not the dataset itself.
 
 ## Run
 
+Build the native C/SIMD codec first:
+
+```powershell
+cmake -S native/bpal5_simd -B native/bpal5_simd/build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build native/bpal5_simd/build
+```
+
 ```powershell
 npm run benchmark:textures
 ```
@@ -95,7 +123,9 @@ can be overridden:
 ```powershell
 python tools/texture_codec_benchmark.py `
   --texconv C:\path\to\texconv.exe `
-  --astcenc C:\path\to\astcenc-avx2.exe
+  --astcenc C:\path\to\astcenc-avx2.exe `
+  --bpal5enc C:\path\to\bpal5enc.exe `
+  --bpal5dec C:\path\to\bpal5dec.exe
 ```
 
 The default CLIC subset first keeps images of at least 1024x1024, sorts their
@@ -135,4 +165,5 @@ not by profile name alone.
 
 Encode/decode timings are cold process timings and include executable startup
 and file I/O. They are useful for repeatability checks, not as a GPU sampling
-benchmark.
+benchmark. The JavaScript adapter reads and writes raw RGBA, while the standalone
+C tools use PPM RGB, so small I/O differences are included in their timings.
