@@ -11,8 +11,8 @@ indices in every block. Pixels store only indices into their block's table.
 The image is split into fixed-size blocks. A pixel stores a compact local slot,
 the block table maps that slot to an index in a shared image palette, and the
 block's palette selector chooses which shared palette provides the final RGB
-color. BPAL v5 supports 1, 2, 4, 8, 16, 32, or 64 shared palettes, using 0 to
-6 selector bits per block.
+color. BPAL v5 supports 1, 2, 4, 8, 16, 32, 64, or 128 shared palettes, using
+0 to 7 selector bits per block.
 
 ![BPAL indexing from image blocks to the final RGB color](./docs/images/bpal-double-indexing.svg)
 
@@ -32,7 +32,7 @@ shared palette. A block then stores a `log2(palette count)`-bit selector in
 addition to its local color table, while pixels keep the same compact local
 indices as in the single-palette format.
 
-BPAL v5 extends this model to 1, 2, 4, 8, 16, 32, or 64 shared palettes. The
+BPAL v5 extends this model to 1, 2, 4, 8, 16, 32, 64, or 128 shared palettes. The
 encoder UI exposes the palette count, reports clustering and palette-building
 progress, and shows all reconstructed palettes. BPAL/BPLM serialization, the
 viewer, mip generation, the WebGL cube demos, and the compact WebGL2 shader

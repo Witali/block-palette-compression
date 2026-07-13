@@ -4,8 +4,9 @@
 
 `BPAL` is a compact block-palette image format. All multibit values are written
 from the most significant bit to the least significant bit. Version 5 supports
-1, 2, 4, 8, 16, 32, or 64 explicit shared palettes. Every image block selects one shared
-palette and stores a small table of indices local to that palette.
+1, 2, 4, 8, 16, 32, 64, or 128 explicit shared palettes. Every image block
+selects one shared palette and stores a small table of indices local to that
+palette.
 
 The decoder remains compatible with BPAL v1-v4 files and their legacy vector
 palette model. The v5 image compressor writes explicit palettes.
@@ -27,11 +28,12 @@ The first 4 bytes are the ASCII magic value `BPAL`. They are followed by an
 | 62 | 1 | Palette model: `0` for explicit, `1` for the legacy vector model |
 | 63 | 9 | Zero in new files; vector count minus 1 in the legacy model |
 | 72 | 1 | Zero in new files; legacy model space: `0` for RGB, `1` for OKLab |
-| 73 | 3 | `log2(shared palette count)`: from `0` through `6` |
+| 73 | 3 | `log2(shared palette count)`: from `0` through `7` |
 | 76 | 4 | Reserved; zero in v5 |
 
 The complete v5 service header is 14 bytes: 4 magic bytes and 10 bytes of bit
-fields.
+fields. The value `7` represents 128 palettes and uses the last available
+encoding of the existing 3-bit field; it does not enlarge the header.
 
 ## Payload
 

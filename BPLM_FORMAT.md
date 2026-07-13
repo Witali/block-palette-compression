@@ -1,7 +1,8 @@
 # BPLM v1 file format
 
 BPLM stores a complete BPAL base image and a precomputed mip chain. All levels
-share the 1, 2, 4, 8, 16, 32, or 64 palettes embedded in the base BPAL stream.
+share the 1, 2, 4, 8, 16, 32, 64, or 128 palettes embedded in the base BPAL
+stream.
 
 All multi-byte integers in BPLM headers are unsigned and little-endian. Index
 payloads are packed most-significant bit first, as in BPAL.

@@ -16,7 +16,7 @@ By default, the page uses 8×8 blocks, eight colors per block, and a shared
 ## Codec concept
 
 The image is divided into blocks of 4×4, 8×8, 16×16, 32×32, or 64×64 pixels.
-One to 64 power-of-two shared palettes are built for the image. Every block
+One to 128 power-of-two shared palettes are built for the image. Every block
 selects one of them and stores only a small number of palette-local indices.
 Every pixel then references a color in its block's local palette.
 
@@ -33,7 +33,7 @@ Supported settings:
 | --- | --- |
 | Block size | 4, 8, 16, 32, or 64 pixels |
 | Colors per block | 2, 4, 8, or 16 |
-| Shared palette count | 1, 2, 4, 8, 16, 32, or 64 |
+| Shared palette count | 1, 2, 4, 8, 16, 32, 64, or 128 |
 | Shared palette colors | 8, 16, 32, 64, 128, 256, 1024, or 4096 |
 | Color format | RGB565, 16 bits; RGB888, 24 bits |
 | Search color space | OKLab or RGB |
