@@ -6,6 +6,11 @@ import unittest
 import numpy as np
 
 from benchmark.metrics import psnr_rgb, rgb_error, ssim_luma
+from tools.texture_codec_benchmark import (
+    BPAL_REFINEMENT_PASSES,
+    PROFILES,
+    expected_effective_settings,
+)
 
 
 class MetricTests(unittest.TestCase):
@@ -35,6 +40,27 @@ class MetricTests(unittest.TestCase):
                 np.zeros((8, 8, 3), dtype=np.uint8),
                 np.zeros((8, 9, 3), dtype=np.uint8),
             )
+
+    def test_every_bpal_profile_pins_refinement_settings(self) -> None:
+        bpal_profiles = [
+            profile for profile in PROFILES
+            if profile["adapter"] in {"bpal", "bpal-native"}
+        ]
+
+        self.assertTrue(bpal_profiles)
+        for profile in bpal_profiles:
+            settings = expected_effective_settings(profile)
+            self.assertIsNotNone(settings)
+            self.assertEqual(settings["refinementPasses"], BPAL_REFINEMENT_PASSES)
+
+    def test_native_bpal_comparison_covers_single_64_and_128_palettes(self) -> None:
+        native_palette_counts = {
+            profile["settings"]["paletteCount"]
+            for profile in PROFILES
+            if profile["adapter"] == "bpal-native"
+        }
+
+        self.assertEqual(native_palette_counts, {1, 64, 128})
 
 
 if __name__ == "__main__":

@@ -38,6 +38,9 @@ Decode it:
 bpal5dec input.bpal output.ppm
 ```
 
+Both programs accept `--version`; the output also identifies the runtime SIMD
+backend selected on the current CPU.
+
 Encoder options:
 
 - `--block N`: block width and height, power of two from 2 to 64;

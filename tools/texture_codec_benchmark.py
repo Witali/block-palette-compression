@@ -30,6 +30,11 @@ if str(ROOT) not in sys.path:
 from benchmark.metrics import psnr_rgb, rgb_error, ssim_luma  # noqa: E402
 
 
+BPAL_REFINEMENT_PASSES = 4
+BPAL_NATIVE_KMEANS_ITERATIONS = 8
+BPAL_HEADER_BYTES = 14
+
+
 PROFILES: list[dict[str, Any]] = [
     {
         "id": "bpal-2.1",
@@ -92,7 +97,6 @@ PROFILES: list[dict[str, Any]] = [
         "codec": "BPAL",
         "adapter": "bpal",
         "label": "BPAL v5 16x16 / 8 local / 32 palettes x 32 colors",
-        "default": False,
         "nominalBpp": 3.0 + 40.0 / 256.0 + 5.0 / 256.0,
         "settings": {
             "blockSize": 16,
@@ -121,6 +125,48 @@ PROFILES: list[dict[str, Any]] = [
         "codec": "BPAL",
         "adapter": "bpal",
         "label": "BPAL v5 16x16 / 8 local / 128 palettes x 32 colors",
+        "nominalBpp": 3.0 + 40.0 / 256.0 + 7.0 / 256.0,
+        "settings": {
+            "blockSize": 16,
+            "localColorCount": 8,
+            "globalColorCount": 32,
+            "paletteCount": 128,
+            "paletteColorBits": 24,
+        },
+    },
+    {
+        "id": "bpal-native-v5-sp1",
+        "codec": "BPAL C/SIMD",
+        "adapter": "bpal-native",
+        "label": "BPAL C/SIMD v5 16x16 / 8 local / 1 palette x 32 colors",
+        "nominalBpp": 3.0 + 40.0 / 256.0,
+        "settings": {
+            "blockSize": 16,
+            "localColorCount": 8,
+            "globalColorCount": 32,
+            "paletteCount": 1,
+            "paletteColorBits": 24,
+        },
+    },
+    {
+        "id": "bpal-native-v5-mp64",
+        "codec": "BPAL C/SIMD",
+        "adapter": "bpal-native",
+        "label": "BPAL C/SIMD v5 16x16 / 8 local / 64 palettes x 32 colors",
+        "nominalBpp": 3.0 + 40.0 / 256.0 + 6.0 / 256.0,
+        "settings": {
+            "blockSize": 16,
+            "localColorCount": 8,
+            "globalColorCount": 32,
+            "paletteCount": 64,
+            "paletteColorBits": 24,
+        },
+    },
+    {
+        "id": "bpal-native-v5-mp128",
+        "codec": "BPAL C/SIMD",
+        "adapter": "bpal-native",
+        "label": "BPAL C/SIMD v5 16x16 / 8 local / 128 palettes x 32 colors",
         "nominalBpp": 3.0 + 40.0 / 256.0 + 7.0 / 256.0,
         "settings": {
             "blockSize": 16,
@@ -220,7 +266,9 @@ def main() -> int:
         source_dir.mkdir(parents=True, exist_ok=True)
         source_png = source_dir / "source.png"
         source_raw = source_dir / "source.rgba"
+        source_ppm = source_dir / "source.ppm"
         Image.fromarray(source, mode="RGBA").save(source_png, optimize=False)
+        Image.fromarray(source[:, :, :3], mode="RGB").save(source_ppm)
         source_raw.write_bytes(source.tobytes())
 
         height, width, _ = source.shape
@@ -235,6 +283,14 @@ def main() -> int:
                 flush=True,
             )
             resumed = resumed_records.get((image_entry["id"], profile["id"]))
+            expected_settings = expected_effective_settings(profile)
+            if (
+                resumed
+                and expected_settings is not None
+                and resumed.get("effectiveSettings") != expected_settings
+            ):
+                print("    resume settings differ; rerunning", flush=True)
+                resumed = None
             if resumed:
                 if resumed.get("width") != width or resumed.get("height") != height:
                     raise SystemExit(
@@ -260,6 +316,7 @@ def main() -> int:
                     source,
                     source_png,
                     source_raw,
+                    source_ppm,
                     work_dir,
                     tools,
                 )
@@ -303,6 +360,15 @@ def parse_args() -> argparse.Namespace:
         "--astcenc",
         default=".benchmark-tools/astcenc-5.6.0/bin/astcenc-avx2.exe",
     )
+    executable_suffix = ".exe" if os.name == "nt" else ""
+    parser.add_argument(
+        "--bpal5enc",
+        default=f"native/bpal5_simd/build/bpal5enc{executable_suffix}",
+    )
+    parser.add_argument(
+        "--bpal5dec",
+        default=f"native/bpal5_simd/build/bpal5dec{executable_suffix}",
+    )
     return parser.parse_args()
 
 
@@ -342,6 +408,35 @@ def select_profiles(profile_text: str | None) -> list[dict[str, Any]]:
         raise SystemExit(f"Unknown benchmark profiles: {', '.join(unknown)}")
 
     return [by_id[profile_id] for profile_id in requested]
+
+
+def effective_bpal_settings(profile: dict[str, Any]) -> dict[str, Any]:
+    return {
+        **profile["settings"],
+        "paletteMode": "explicit",
+        "colorSpace": "rgb",
+        "clusteringMethod": "k-means",
+        "dithering": "none",
+        "diversity": 0,
+        "refinementPasses": BPAL_REFINEMENT_PASSES,
+    }
+
+
+def effective_native_bpal_settings(profile: dict[str, Any]) -> dict[str, Any]:
+    return {
+        **profile["settings"],
+        "kmeansIterations": BPAL_NATIVE_KMEANS_ITERATIONS,
+        "refinementPasses": BPAL_REFINEMENT_PASSES,
+        "simd": True,
+    }
+
+
+def expected_effective_settings(profile: dict[str, Any]) -> dict[str, Any] | None:
+    if profile["adapter"] == "bpal":
+        return effective_bpal_settings(profile)
+    if profile["adapter"] == "bpal-native":
+        return effective_native_bpal_settings(profile)
+    return None
 
 
 def load_manifest(path: Path, image_text: str | None) -> list[dict[str, Any]]:
@@ -468,6 +563,10 @@ def resolve_tools(
             raise SystemExit("Node.js is required for BPAL benchmark profiles")
         tools["node"] = require_executable(Path(args.node), "Node.js")
 
+    if "bpal-native" in adapters:
+        tools["bpal5enc"] = require_executable(resolve_path(args.bpal5enc), "bpal5enc")
+        tools["bpal5dec"] = require_executable(resolve_path(args.bpal5dec), "bpal5dec")
+
     if "texconv" in adapters:
         tools["texconv"] = require_executable(resolve_path(args.texconv), "texconv")
 
@@ -533,6 +632,7 @@ def run_profile(
     source: np.ndarray,
     source_png: Path,
     source_raw: Path,
+    source_ppm: Path,
     work_dir: Path,
     tools: dict[str, Path],
 ) -> dict[str, Any]:
@@ -541,6 +641,15 @@ def run_profile(
 
     if profile["adapter"] == "bpal":
         encoded = run_bpal(profile, source, source_raw, case_dir, tools["node"])
+    elif profile["adapter"] == "bpal-native":
+        encoded = run_native_bpal(
+            profile,
+            source,
+            source_ppm,
+            case_dir,
+            tools["bpal5enc"],
+            tools["bpal5dec"],
+        )
     elif profile["adapter"] == "texconv":
         encoded = run_texconv(profile, source, source_png, case_dir, tools["texconv"])
     elif profile["adapter"] == "astc":
@@ -592,14 +701,7 @@ def run_bpal(
     artifact = case_dir / "texture.bpal"
     metadata_path = case_dir / "metadata.json"
     decoded_path = case_dir / "decoded.rgba"
-    settings = {
-        **profile["settings"],
-        "paletteMode": "explicit",
-        "colorSpace": "rgb",
-        "clusteringMethod": "k-means",
-        "dithering": "none",
-        "diversity": 0,
-    }
+    settings = effective_bpal_settings(profile)
     adapter = ROOT / "tools" / "benchmark_bpal_adapter.js"
 
     encode_ms = run_command(
@@ -623,6 +725,59 @@ def run_bpal(
         "artifact": artifact,
         "artifactBytes": artifact.stat().st_size,
         "payloadBytes": int(metadata["payloadBytes"]),
+        "encodeMilliseconds": encode_ms,
+        "decodeMilliseconds": decode_ms,
+        "effectiveSettings": settings,
+        "pixels": decoded,
+    }
+
+
+def run_native_bpal(
+    profile: dict[str, Any],
+    source: np.ndarray,
+    source_ppm: Path,
+    case_dir: Path,
+    encoder: Path,
+    decoder: Path,
+) -> dict[str, Any]:
+    artifact = case_dir / "texture.bpal"
+    decoded_path = case_dir / "decoded.ppm"
+    settings = effective_native_bpal_settings(profile)
+    command: list[os.PathLike[str] | str] = [
+        encoder,
+        source_ppm,
+        artifact,
+        "--block",
+        str(settings["blockSize"]),
+        "--local",
+        str(settings["localColorCount"]),
+        "--global",
+        str(settings["globalColorCount"]),
+        "--palettes",
+        str(settings["paletteCount"]),
+        "--iterations",
+        str(settings["kmeansIterations"]),
+        "--refine",
+        str(settings["refinementPasses"]),
+    ]
+    if settings["paletteColorBits"] == 16:
+        command.append("--rgb565")
+
+    unlink_if_present(artifact)
+    unlink_if_present(decoded_path)
+    encode_ms = run_command(command)
+    decode_ms = run_command([decoder, artifact, decoded_path])
+    artifact = require_generated_file(artifact)
+    decoded_path = require_generated_file(decoded_path)
+    decoded = load_decoded(decoded_path, source.shape)
+    artifact_bytes = artifact.stat().st_size
+    if artifact_bytes < BPAL_HEADER_BYTES:
+        raise RuntimeError(f"Native BPAL artifact is too small: {artifact}")
+
+    return {
+        "artifact": artifact,
+        "artifactBytes": artifact_bytes,
+        "payloadBytes": artifact_bytes - BPAL_HEADER_BYTES,
         "encodeMilliseconds": encode_ms,
         "decodeMilliseconds": decode_ms,
         "effectiveSettings": settings,
@@ -852,6 +1007,8 @@ def build_report(
 def tool_description(name: str, path: Path) -> dict[str, str]:
     if name == "node":
         version = capture_command([path, "--version"])
+    elif name in {"bpal5enc", "bpal5dec"}:
+        version = capture_command([path, "--version"])
     elif name == "astcenc":
         version = capture_command([path, "-version"]).splitlines()[0]
     elif name == "texconv":
@@ -1016,6 +1173,9 @@ def render_key_comparisons(aggregate: list[dict[str, Any]]) -> list[str]:
     add("bpal-v5-mp64", "bpal-v5-sp1")
     add("bpal-v5-mp128", "bpal-v5-mp64")
     add("bpal-v5-mp64", "bpal-v5-mp32")
+    add("bpal-native-v5-mp64", "bpal-native-v5-sp1")
+    add("bpal-native-v5-mp128", "bpal-native-v5-mp64")
+    add("bpal-v5-mp64", "bpal-native-v5-mp64")
     add("astc-6x6", "bpal-v5-mp64")
     add("bc1", "bpal-v5-mp64")
     add("bpal-4", "bc1")

@@ -41,6 +41,10 @@ int main(int argc, char **argv) {
     int argument;
     int result = 1;
 
+    if (argc == 2 && strcmp(argv[1], "--version") == 0) {
+        printf("bpal5enc BPAL v%u (%s runtime backend)\n", BPAL5_VERSION, bpal5_simd_backend(1));
+        return 0;
+    }
     if (argc < 3) {
         print_usage(argv[0]);
         return 2;
