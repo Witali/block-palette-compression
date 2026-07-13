@@ -19,14 +19,17 @@ uniform sampler2D uSpecularTexture;
 uniform sampler2D uBpalPixelIndices;
 uniform sampler2D uBpalBlockPalettes;
 uniform sampler2D uBpalGlobalPalette;
+uniform sampler2D uBpalPaletteSelectors;
 uniform float uUseBpalTexture;
 uniform vec2 uBpalImageSize;
 uniform float uBpalBlockSize;
 uniform float uBpalBlocksX;
 uniform float uBpalLocalColorCount;
+uniform float uBpalGlobalColorCount;
 uniform vec2 uBpalPixelAtlasSize;
 uniform vec2 uBpalBlockPaletteAtlasSize;
 uniform vec2 uBpalPaletteAtlasSize;
+uniform vec2 uBpalPaletteSelectorAtlasSize;
 uniform vec2 uHeightTexelSize;
 uniform float uHeightStrength;
 uniform vec3 uLightPosition;
@@ -58,6 +61,14 @@ vec3 fetchBpalColor(vec2 pixelCoord) {
   ).rg;
   float globalIndex = floor(packedGlobalIndex.r * 255.0 + 0.5) +
     floor(packedGlobalIndex.g * 255.0 + 0.5) * 256.0;
+  float paletteIndex = floor(
+    texture2D(
+      uBpalPaletteSelectors,
+      atlasTexCoord(blockIndex, uBpalPaletteSelectorAtlasSize)
+    ).r * 255.0 + 0.5
+  );
+
+  globalIndex += paletteIndex * uBpalGlobalColorCount;
 
   return texture2D(
     uBpalGlobalPalette,

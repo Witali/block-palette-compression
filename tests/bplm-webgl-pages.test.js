@@ -19,7 +19,7 @@ test("accepts BPLM uploads on both WebGL pages", () => {
   for (const html of [cubeHtml, samplerHtml]) {
     assert.match(html, /accept="\.bpal,\.bplm,application\/octet-stream"/);
     assert.match(html, /id="bpal-example" disabled/);
-    assert.match(html, /src="\.\/src\/palette\/bplm-format\.js\?v=bplm-1"/);
+    assert.match(html, /src="\.\/src\/palette\/bplm-format\.js\?v=multi-palette-1"/);
     assert.match(html, /src="\.\/src\/pages\/bpal-example-catalog\.js\?v=1"/);
   }
 
@@ -35,6 +35,9 @@ test("passes per-level block settings and direct indices to the mip shader", () 
   assert.match(samplerShader, /if \(blockInfo\.w > 0\.5\)/);
   assert.match(samplerShader, /fetchGlobalIndex\(info\.w \+ linearPixel\)/);
   assert.match(samplerShader, /blockIndex \* blockInfo\.z \+ localIndex/);
+  assert.match(rendererSource, /level\.paletteSelectorOffset/);
+  assert.match(samplerShader, /mipPaletteSelectorOffset\(mip\) \+ blockIndex/);
+  assert.match(samplerShader, /paletteIndex \* uBpalGlobalColorCount/);
 });
 
 test("uses stored BPLM mip levels in the programmable sampler", () => {
@@ -70,6 +73,8 @@ test("uses packed R32UI bitstreams in the optional WebGL2 renderer", () => {
   assert.match(compactFragmentShader, /uniform highp usampler2D uBpalPixelIndices/);
   assert.match(compactFragmentShader, /fetchPackedValue\(/);
   assert.match(compactFragmentShader, /texelFetch\(/);
+  assert.match(compactFragmentShader, /uBpalPaletteSelectors/);
+  assert.match(compactFragmentShader, /uBpalPaletteIndexBits/);
   assert.match(rendererSource, /gl\.R32UI/);
   assert.match(rendererSource, /gl\.RED_INTEGER/);
 });

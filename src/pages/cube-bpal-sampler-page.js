@@ -75,7 +75,7 @@ async function start() {
   renderer = await TexturedCubeRenderer.create(gl, {
     shaderUrls: {
       vertex: "src/shaders/cube.vert.glsl?v=bplm-1",
-      fragment: "src/shaders/cube-bpal-sampler.frag.glsl?v=bplm-1",
+      fragment: "src/shaders/cube-bpal-sampler.frag.glsl?v=multi-palette-1",
     },
   });
   window.__bpalSamplerRenderer = renderer;

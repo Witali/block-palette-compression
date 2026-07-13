@@ -21,12 +21,15 @@ uniform sampler2D uSpecularTexture;
 uniform sampler2D uBpalPixelIndices;
 uniform sampler2D uBpalBlockPalettes;
 uniform sampler2D uBpalGlobalPalette;
+uniform sampler2D uBpalPaletteSelectors;
 uniform float uUseBpalTexture;
 uniform float uBpalBlockSize;
 uniform float uBpalLocalColorCount;
+uniform float uBpalGlobalColorCount;
 uniform vec2 uBpalPixelAtlasSize;
 uniform vec2 uBpalBlockPaletteAtlasSize;
 uniform vec2 uBpalPaletteAtlasSize;
+uniform vec2 uBpalPaletteSelectorAtlasSize;
 uniform float uBpalMipCount;
 uniform float uBpalFilterMode;
 uniform float uBpalMaxAnisotropy;
@@ -64,6 +67,22 @@ uniform vec4 uBpalMipBlockInfo12;
 uniform vec4 uBpalMipBlockInfo13;
 uniform vec4 uBpalMipBlockInfo14;
 uniform vec4 uBpalMipBlockInfo15;
+uniform float uBpalMipPaletteSelectorOffset0;
+uniform float uBpalMipPaletteSelectorOffset1;
+uniform float uBpalMipPaletteSelectorOffset2;
+uniform float uBpalMipPaletteSelectorOffset3;
+uniform float uBpalMipPaletteSelectorOffset4;
+uniform float uBpalMipPaletteSelectorOffset5;
+uniform float uBpalMipPaletteSelectorOffset6;
+uniform float uBpalMipPaletteSelectorOffset7;
+uniform float uBpalMipPaletteSelectorOffset8;
+uniform float uBpalMipPaletteSelectorOffset9;
+uniform float uBpalMipPaletteSelectorOffset10;
+uniform float uBpalMipPaletteSelectorOffset11;
+uniform float uBpalMipPaletteSelectorOffset12;
+uniform float uBpalMipPaletteSelectorOffset13;
+uniform float uBpalMipPaletteSelectorOffset14;
+uniform float uBpalMipPaletteSelectorOffset15;
 
 uniform vec2 uHeightTexelSize;
 uniform float uHeightStrength;
@@ -127,6 +146,25 @@ vec4 mipBlockInfo(float mip) {
   return uBpalMipBlockInfo15;
 }
 
+float mipPaletteSelectorOffset(float mip) {
+  if (mip < 0.5) return uBpalMipPaletteSelectorOffset0;
+  if (mip < 1.5) return uBpalMipPaletteSelectorOffset1;
+  if (mip < 2.5) return uBpalMipPaletteSelectorOffset2;
+  if (mip < 3.5) return uBpalMipPaletteSelectorOffset3;
+  if (mip < 4.5) return uBpalMipPaletteSelectorOffset4;
+  if (mip < 5.5) return uBpalMipPaletteSelectorOffset5;
+  if (mip < 6.5) return uBpalMipPaletteSelectorOffset6;
+  if (mip < 7.5) return uBpalMipPaletteSelectorOffset7;
+  if (mip < 8.5) return uBpalMipPaletteSelectorOffset8;
+  if (mip < 9.5) return uBpalMipPaletteSelectorOffset9;
+  if (mip < 10.5) return uBpalMipPaletteSelectorOffset10;
+  if (mip < 11.5) return uBpalMipPaletteSelectorOffset11;
+  if (mip < 12.5) return uBpalMipPaletteSelectorOffset12;
+  if (mip < 13.5) return uBpalMipPaletteSelectorOffset13;
+  if (mip < 14.5) return uBpalMipPaletteSelectorOffset14;
+  return uBpalMipPaletteSelectorOffset15;
+}
+
 vec2 atlasTexCoord(float linearIndex, vec2 atlasSize) {
   float x = mod(linearIndex, atlasSize.x);
   float y = floor(linearIndex / atlasSize.x);
@@ -166,8 +204,18 @@ vec3 fetchBpalColor(vec2 pixelCoord, float mip) {
     vec2 block = floor(pixel / blockInfo.y);
     float blockIndex = block.y * blockInfo.x + block.x;
     float blockPaletteIndex = info.w + blockIndex * blockInfo.z + localIndex;
+    float paletteIndex = floor(
+      texture2D(
+        uBpalPaletteSelectors,
+        atlasTexCoord(
+          mipPaletteSelectorOffset(mip) + blockIndex,
+          uBpalPaletteSelectorAtlasSize
+        )
+      ).r * 255.0 + 0.5
+    );
 
     globalIndex = fetchGlobalIndex(blockPaletteIndex);
+    globalIndex += paletteIndex * uBpalGlobalColorCount;
   }
   vec3 srgb = texture2D(
     uBpalGlobalPalette,

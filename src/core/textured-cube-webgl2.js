@@ -10,7 +10,7 @@
 
   const COMPACT_SHADER_URLS = {
     vertex: "src/shaders/cube-webgl2.vert.glsl?v=compact-bpal-1",
-    fragment: "src/shaders/cube-webgl2.frag.glsl?v=compact-bpal-1",
+    fragment: "src/shaders/cube-webgl2.frag.glsl?v=multi-palette-1",
   };
 
   class CompactTexturedCubeRenderer {

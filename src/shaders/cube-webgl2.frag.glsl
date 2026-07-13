@@ -19,17 +19,21 @@ uniform sampler2D uSpecularTexture;
 uniform highp usampler2D uBpalPixelIndices;
 uniform highp usampler2D uBpalBlockPalettes;
 uniform highp usampler2D uBpalGlobalPalette;
+uniform highp usampler2D uBpalPaletteSelectors;
 uniform float uUseBpalTexture;
 uniform highp uvec2 uBpalImageSize;
 uniform highp uint uBpalBlockSize;
 uniform highp uint uBpalBlocksX;
 uniform highp uint uBpalLocalColorCount;
+uniform highp uint uBpalGlobalColorCount;
 uniform highp uint uBpalLocalIndexBits;
 uniform highp uint uBpalGlobalIndexBits;
+uniform highp uint uBpalPaletteIndexBits;
 uniform highp uint uBpalPaletteColorBits;
 uniform highp uvec2 uBpalPixelAtlasSize;
 uniform highp uvec2 uBpalBlockPaletteAtlasSize;
 uniform highp uvec2 uBpalPaletteAtlasSize;
+uniform highp uvec2 uBpalPaletteSelectorAtlasSize;
 uniform vec2 uHeightTexelSize;
 uniform float uHeightStrength;
 uniform vec3 uLightPosition;
@@ -98,6 +102,18 @@ vec3 fetchBpalColor(ivec2 pixelCoord) {
     blockPaletteIndex,
     uBpalGlobalIndexBits
   );
+  uint paletteIndex = 0u;
+
+  if (uBpalPaletteIndexBits > 0u) {
+    paletteIndex = fetchPackedValue(
+      uBpalPaletteSelectors,
+      uBpalPaletteSelectorAtlasSize,
+      blockIndex,
+      uBpalPaletteIndexBits
+    );
+  }
+
+  globalIndex += paletteIndex * uBpalGlobalColorCount;
   uint packedColor = fetchPackedValue(
     uBpalGlobalPalette,
     uBpalPaletteAtlasSize,
