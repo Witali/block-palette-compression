@@ -9,8 +9,30 @@ Compression.
 Profiles included by default:
 
 - BPAL at approximately 2.1, 2.4, 4, and 6 bits per pixel;
+- BPAL v5 at approximately 3.2 bits per pixel with 64 shared palettes, 32
+  colors per shared palette, and 8 local colors per 16x16 block;
 - BC1 and BC7 through Microsoft DirectXTex `texconv`;
 - ASTC 8x8, 6x6, and 4x4 through Arm `astcenc`.
+
+### Multi-palette profile selection
+
+The 64-palette BPAL v5 profile was selected with a controlled 32-versus-64
+palette run over the complete eight-image CLIC subset. Both candidates used
+16x16 blocks, 8 local colors, 32 colors per shared palette, RGB888 storage,
+and otherwise identical encoder settings. The 64-palette candidate reached
+34.872 dB aggregate RGB PSNR and 0.973393 luma SSIM at 3.2266 payload bpp. The
+32-palette candidate reached 34.639 dB and 0.971847 at 3.1992 bpp. Thus the
+sixth selector bit bought +0.233 dB and +0.001546 SSIM for +0.0274 bpp, and
+improved both quality metrics on every image in the corpus.
+
+The 32-palette candidate remains available as an opt-in profile so the choice
+can be reproduced:
+
+```powershell
+python tools/texture_codec_benchmark.py `
+  --profiles bpal-v5-mp32,bpal-v5-mp64 `
+  --output-dir benchmark/work/multi-palette-selection
+```
 
 The benchmark reports:
 

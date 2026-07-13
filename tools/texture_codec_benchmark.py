@@ -74,6 +74,35 @@ PROFILES: list[dict[str, Any]] = [
         "block": [6, 6],
     },
     {
+        "id": "bpal-v5-mp32",
+        "codec": "BPAL",
+        "adapter": "bpal",
+        "label": "BPAL v5 16x16 / 8 local / 32 palettes x 32 colors",
+        "default": False,
+        "nominalBpp": 3.0 + 40.0 / 256.0 + 5.0 / 256.0,
+        "settings": {
+            "blockSize": 16,
+            "localColorCount": 8,
+            "globalColorCount": 32,
+            "paletteCount": 32,
+            "paletteColorBits": 24,
+        },
+    },
+    {
+        "id": "bpal-v5-mp64",
+        "codec": "BPAL",
+        "adapter": "bpal",
+        "label": "BPAL v5 16x16 / 8 local / 64 palettes x 32 colors",
+        "nominalBpp": 3.0 + 40.0 / 256.0 + 6.0 / 256.0,
+        "settings": {
+            "blockSize": 16,
+            "localColorCount": 8,
+            "globalColorCount": 32,
+            "paletteCount": 64,
+            "paletteColorBits": 24,
+        },
+    },
+    {
         "id": "bpal-4",
         "codec": "BPAL",
         "adapter": "bpal",
@@ -275,7 +304,7 @@ def load_resumed_records(path_text: str | None) -> dict[tuple[str, str], dict[st
 
 def select_profiles(profile_text: str | None) -> list[dict[str, Any]]:
     if not profile_text:
-        return PROFILES
+        return [profile for profile in PROFILES if profile.get("default", True)]
 
     requested = [value.strip() for value in profile_text.split(",") if value.strip()]
     by_id = {profile["id"]: profile for profile in PROFILES}
@@ -956,6 +985,9 @@ def render_key_comparisons(aggregate: list[dict[str, Any]]) -> list[str]:
         )
 
     add("astc-8x8", "bpal-2.1")
+    add("bpal-v5-mp64", "bpal-v5-mp32")
+    add("astc-6x6", "bpal-v5-mp64")
+    add("bc1", "bpal-v5-mp64")
     add("bpal-4", "bc1")
     add("astc-6x6", "bpal-4")
     add("astc-5x5", "bpal-6")
