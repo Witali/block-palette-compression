@@ -54,6 +54,7 @@ reselects the block-local colors and pixel indices. A candidate pass is kept
 only when it reduces exact RGB mean squared error, and refinement stops early
 after convergence. This changes encoding time and reconstructed quality but
 does not add fields or bits to BPAL/BPLM files and does not affect decoding.
+The compressor UI lets users select zero to four passes and defaults to one.
 
 The project contains:
 

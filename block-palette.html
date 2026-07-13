@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title data-i18n="block.title">Block-palette compression</title>
-    <link rel="stylesheet" href="./block-palette.css?v=psnr-1">
+    <link rel="stylesheet" href="./block-palette.css?v=refinement-select-1">
     <link rel="stylesheet" href="./i18n.css">
   </head>
   <body>
@@ -128,9 +128,15 @@
             </select>
           </label>
 
-          <label class="option-toggle" title="Run up to four quality-improving passes without changing the BPAL size" data-i18n-title="block.iterativeRefinementTitle">
-            <input id="iterative-refinement" name="iterativeRefinement" type="checkbox" checked>
-            <span data-i18n="block.iterativeRefinement">Iterative refinement · 4 passes</span>
+          <label title="Select zero to four quality-improving passes without changing the BPAL size" data-i18n-title="block.refinementPassesTitle">
+            <span data-i18n="block.refinementPasses">Refinement passes</span>
+            <select id="refinement-passes" name="refinementPasses">
+              <option value="0">0</option>
+              <option value="1" selected>1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+            </select>
           </label>
 
           <button id="upload-button" type="button" data-i18n="common.uploadImage">Upload image</button>
@@ -256,9 +262,9 @@
     <script src="./src/palette/block-palette-format.js?v=palette128-1"></script>
     <script src="./src/decoders/bpal-texture.js?v=multi-palette-1"></script>
     <script src="./src/palette/bplm-format.js?v=multi-palette-1"></script>
-    <script src="./src/i18n/en.js?v=psnr-1"></script>
-    <script src="./src/i18n/ru.js?v=psnr-1"></script>
+    <script src="./src/i18n/en.js?v=refinement-select-1"></script>
+    <script src="./src/i18n/ru.js?v=refinement-select-1"></script>
     <script src="./src/i18n/i18n.js"></script>
-    <script src="./src/pages/block-palette-page.js?v=psnr-1"></script>
+    <script src="./src/pages/block-palette-page.js?v=refinement-select-1"></script>
   </body>
 </html>

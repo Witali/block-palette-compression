@@ -125,30 +125,6 @@ input[type="range"] {
   accent-color: #4d96ed;
 }
 
-#controls label.option-toggle {
-  display: flex;
-  align-items: center;
-  min-height: 40px;
-  padding: 0 12px;
-  border: 1px solid #313b48;
-  border-radius: 7px;
-  background: #171d25;
-  color: #eef3f8;
-  cursor: pointer;
-  text-transform: none;
-}
-
-.option-toggle input {
-  width: 17px;
-  height: 17px;
-  margin: 0;
-  accent-color: #4d96ed;
-}
-
-.option-toggle:hover, .option-toggle:focus-within {
-  border-color: #72aefb;
-}
-
 .status {
   min-height: 42px;
   margin-bottom: 14px;

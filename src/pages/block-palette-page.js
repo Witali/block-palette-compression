@@ -15,7 +15,7 @@ const algorithmSelect = document.getElementById("algorithm");
 const diversityInput = document.getElementById("diversity");
 const diversityValue = document.getElementById("diversity-value");
 const ditheringSelect = document.getElementById("dithering");
-const iterativeRefinementInput = document.getElementById("iterative-refinement");
+const refinementPassesSelect = document.getElementById("refinement-passes");
 const uploadButton = document.getElementById("upload-button");
 const fileInput = document.getElementById("image-file");
 const processButton = document.getElementById("process-button");
@@ -135,7 +135,7 @@ for (const select of [
   clusteringMethodSelect,
   algorithmSelect,
   ditheringSelect,
-  iterativeRefinementInput,
+  refinementPassesSelect,
 ]) {
   select.addEventListener("change", () => {
     state.optimizationApplied = false;
@@ -421,6 +421,9 @@ function renderResult(result) {
     storage: result.storage,
     rmse: Math.sqrt(result.meanSquaredError),
     psnr: calculatePsnr(result.meanSquaredError),
+    refinementPasses: result.refinementPasses,
+    refinementIterations: result.refinementIterations,
+    refinementAcceptedPasses: result.refinementAcceptedPasses,
     durationMs: result.durationMs,
     file: fileLayout,
   };
@@ -627,7 +630,7 @@ function getSettings() {
     algorithm: algorithmSelect.value,
     dithering: ditheringSelect.value,
     diversity: getDiversity(),
-    refinementPasses: iterativeRefinementInput.checked ? 4 : 0,
+    refinementPasses: Number(refinementPassesSelect.value),
   };
 }
 
@@ -959,7 +962,7 @@ function optimizeSettings() {
       clusteringMethod: clusteringMethodSelect.value,
       dithering: ditheringSelect.value,
       diversity: getDiversity(),
-      refinementPasses: iterativeRefinementInput.checked ? 4 : 0,
+      refinementPasses: Number(refinementPassesSelect.value),
       paletteCount: Number(paletteCountSelect.value),
       paletteMode: "explicit",
     },
@@ -1171,7 +1174,7 @@ function setBusy(busy) {
   algorithmSelect.disabled = busy;
   diversityInput.disabled = busy;
   ditheringSelect.disabled = busy;
-  iterativeRefinementInput.disabled = busy;
+  refinementPassesSelect.disabled = busy;
 }
 
 function setStatus(message, kind) {

@@ -43,14 +43,19 @@ test("offers power-of-two shared palette counts and applies them to compression"
   assert.match(source, /result\.storage\.blockPaletteSelectorBits \+ result\.storage\.blockPaletteBits/);
 });
 
-test("enables four-pass iterative refinement by default and lets users disable it", () => {
-  assert.match(
-    html,
-    /<input id="iterative-refinement" name="iterativeRefinement" type="checkbox" checked>/
-  );
-  assert.match(source, /const iterativeRefinementInput = document\.getElementById\("iterative-refinement"\)/);
-  assert.match(source, /refinementPasses: iterativeRefinementInput\.checked \? 4 : 0/);
-  assert.match(source, /iterativeRefinementInput\.disabled = busy/);
+test("offers zero to four refinement passes and defaults to one", () => {
+  assert.match(html, /<select id="refinement-passes" name="refinementPasses">/);
+
+  for (const count of [0, 1, 2, 3, 4]) {
+    assert.match(html, new RegExp(`<option value="${count}"(?: selected)?>${count}</option>`));
+  }
+
+  assert.match(html, /<option value="1" selected>1<\/option>/);
+  assert.match(source, /const refinementPassesSelect = document\.getElementById\("refinement-passes"\)/);
+  assert.match(source, /refinementPasses: Number\(refinementPassesSelect\.value\)/);
+  assert.match(source, /refinementPassesSelect\.disabled = busy/);
+  assert.match(source, /refinementPasses: result\.refinementPasses/);
+  assert.match(source, /refinementIterations: result\.refinementIterations/);
   assert.match(optimizerSource, /refinementPasses: searchOptions\.refinementPasses === undefined/);
 });
 
