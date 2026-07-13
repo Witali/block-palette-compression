@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title data-i18n="block.title">Block-palette compression</title>
-    <link rel="stylesheet" href="./block-palette.css?v=progress-1">
+    <link rel="stylesheet" href="./block-palette.css?v=iterative-refinement-1">
     <link rel="stylesheet" href="./i18n.css">
   </head>
   <body>
@@ -126,6 +126,11 @@
               <option value="pattern" data-i18n="common.bayer4">Bayer 4×4 pattern</option>
               <option value="floyd-steinberg">Floyd–Steinberg</option>
             </select>
+          </label>
+
+          <label class="option-toggle" title="Run up to four quality-improving passes without changing the BPAL size" data-i18n-title="block.iterativeRefinementTitle">
+            <input id="iterative-refinement" name="iterativeRefinement" type="checkbox" checked>
+            <span data-i18n="block.iterativeRefinement">Iterative refinement · 4 passes</span>
           </label>
 
           <button id="upload-button" type="button" data-i18n="common.uploadImage">Upload image</button>

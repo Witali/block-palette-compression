@@ -52,6 +52,9 @@
       clusteringMethod: searchOptions.clusteringMethod || "k-means",
       dithering: searchOptions.dithering || "none",
       diversity: searchOptions.diversity === undefined ? 0 : searchOptions.diversity,
+      refinementPasses: searchOptions.refinementPasses === undefined
+        ? 4
+        : Number(searchOptions.refinementPasses),
       paletteCount: Number(searchOptions.paletteCount || 1),
       paletteMode: "explicit",
     };

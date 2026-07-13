@@ -15,6 +15,7 @@ const algorithmSelect = document.getElementById("algorithm");
 const diversityInput = document.getElementById("diversity");
 const diversityValue = document.getElementById("diversity-value");
 const ditheringSelect = document.getElementById("dithering");
+const iterativeRefinementInput = document.getElementById("iterative-refinement");
 const uploadButton = document.getElementById("upload-button");
 const fileInput = document.getElementById("image-file");
 const processButton = document.getElementById("process-button");
@@ -133,6 +134,7 @@ for (const select of [
   clusteringMethodSelect,
   algorithmSelect,
   ditheringSelect,
+  iterativeRefinementInput,
 ]) {
   select.addEventListener("change", () => {
     state.optimizationApplied = false;
@@ -261,8 +263,8 @@ function processImage() {
   const sourceCopy = new Uint8ClampedArray(state.sourceImageData.data);
   const processingId = ++state.processingId;
   const workerUrl = settings.algorithm === "webgl"
-    ? "./src/palette/block-palette-webgl-worker.js?v=palette128-1"
-    : "./src/palette/block-palette-worker.js?v=palette128-1";
+    ? "./src/palette/block-palette-webgl-worker.js?v=iterative-refinement-1"
+    : "./src/palette/block-palette-worker.js?v=iterative-refinement-1";
   const worker = new Worker(workerUrl);
 
   state.worker = worker;
@@ -622,6 +624,7 @@ function getSettings() {
     algorithm: algorithmSelect.value,
     dithering: ditheringSelect.value,
     diversity: getDiversity(),
+    refinementPasses: iterativeRefinementInput.checked ? 4 : 0,
   };
 }
 
@@ -874,7 +877,7 @@ function optimizeSettings() {
   });
 
   const preview = createOptimizationPreview();
-  const worker = new Worker("./src/palette/block-palette-optimizer-worker.js?v=palette128-1");
+  const worker = new Worker("./src/palette/block-palette-optimizer-worker.js?v=iterative-refinement-1");
 
   state.optimizerWorker = worker;
 
@@ -953,6 +956,7 @@ function optimizeSettings() {
       clusteringMethod: clusteringMethodSelect.value,
       dithering: ditheringSelect.value,
       diversity: getDiversity(),
+      refinementPasses: iterativeRefinementInput.checked ? 4 : 0,
       paletteCount: Number(paletteCountSelect.value),
       paletteMode: "explicit",
     },
@@ -1164,6 +1168,7 @@ function setBusy(busy) {
   algorithmSelect.disabled = busy;
   diversityInput.disabled = busy;
   ditheringSelect.disabled = busy;
+  iterativeRefinementInput.disabled = busy;
 }
 
 function setStatus(message, kind) {

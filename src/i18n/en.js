@@ -162,6 +162,8 @@
     "block.global4096": "4096 colors · 12 bits",
     "block.rgb888": "24 bits · RGB888",
     "block.rgb565": "16 bits · RGB565",
+    "block.iterativeRefinement": "Iterative refinement · 4 passes",
+    "block.iterativeRefinementTitle": "Run up to four quality-improving passes without changing the BPAL size",
     "block.processing": "{algorithm} · {palettes} × {globalColors}-color shared palettes · {storage} · {format} · {clustering} · {diversity} · {blockSize}×{blockSize} blocks · {localColors} colors per block · {dithering}…",
     "block.done": "Done: {blocks} blocks, {palettes} shared palettes, {bits} bits/pixel inside a block, BPAL file {size} · {storage} · {clustering} · {algorithm} · {diversity} · {dithering}{optimized}.",
     "block.optimizedSuffix": " · optimized automatically",

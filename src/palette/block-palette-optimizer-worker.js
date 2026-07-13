@@ -2,7 +2,7 @@
 
 importScripts("./palette-quantizer.js?v=src-layout-4");
 importScripts("./block-palette-codec.js?v=iterative-refinement-1");
-importScripts("./block-palette-optimizer.js?v=block-palette-5");
+importScripts("./block-palette-optimizer.js?v=iterative-refinement-1");
 
 self.addEventListener("message", (event) => {
   const { pixels, width, height, options } = event.data;

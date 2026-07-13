@@ -8,6 +8,7 @@ const root = path.resolve(__dirname, "..");
 const html = fs.readFileSync(path.join(root, "block-palette.html"), "utf8");
 const source = fs.readFileSync(path.join(root, "src", "pages", "block-palette-page.js"), "utf8");
 const workerSource = fs.readFileSync(path.join(root, "src", "palette", "block-palette-worker.js"), "utf8");
+const optimizerSource = fs.readFileSync(path.join(root, "src", "palette", "block-palette-optimizer.js"), "utf8");
 const css = fs.readFileSync(path.join(root, "block-palette.css"), "utf8");
 
 test("offers BPLM export after compression", () => {
@@ -40,6 +41,17 @@ test("offers power-of-two shared palette counts and applies them to compression"
   assert.match(source, /result\.blockPaletteSelectors\[state\.selectedBlock\]/);
   assert.match(source, /paletteBase \+ globalIndex/);
   assert.match(source, /result\.storage\.blockPaletteSelectorBits \+ result\.storage\.blockPaletteBits/);
+});
+
+test("enables four-pass iterative refinement by default and lets users disable it", () => {
+  assert.match(
+    html,
+    /<input id="iterative-refinement" name="iterativeRefinement" type="checkbox" checked>/
+  );
+  assert.match(source, /const iterativeRefinementInput = document\.getElementById\("iterative-refinement"\)/);
+  assert.match(source, /refinementPasses: iterativeRefinementInput\.checked \? 4 : 0/);
+  assert.match(source, /iterativeRefinementInput\.disabled = busy/);
+  assert.match(optimizerSource, /refinementPasses: searchOptions\.refinementPasses === undefined/);
 });
 
 test("pans both compression previews by dragging", () => {

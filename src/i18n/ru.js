@@ -162,6 +162,8 @@
     "block.global4096": "4096 цветов · 12 бит",
     "block.rgb888": "24 бита · RGB888",
     "block.rgb565": "16 бит · RGB565",
+    "block.iterativeRefinement": "Итеративное уточнение · 4 прохода",
+    "block.iterativeRefinementTitle": "До четырёх проходов улучшения качества без изменения размера BPAL",
     "block.processing": "{algorithm} · {palettes} общих палитр по {globalColors} цветов · {storage} · {format} · {clustering} · {diversity} · блок {blockSize}×{blockSize} · {localColors} цвета на блок · {dithering}…",
     "block.done": "Готово: {blocks} блоков, общих палитр: {palettes}, {bits} бит/пиксель внутри блока, файл BPAL {size} · {storage} · {clustering} · {algorithm} · {diversity} · {dithering}{optimized}.",
     "block.optimizedSuffix": " · подобрано автоматически",
