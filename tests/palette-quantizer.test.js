@@ -207,6 +207,43 @@ test("rejects unknown color spaces", () => {
   );
 });
 
+test("K-medoids snaps weighted centers to frequent source colors", () => {
+  const source = pixels([
+    ...Array(3).fill([0, 20, 40, 255]),
+    [200, 220, 240, 255],
+  ]);
+  const means = quantizeImage(source, 4, 1, 1, {
+    colorSpace: "rgb",
+    clusteringMethod: "k-means",
+  });
+  const medoids = quantizeImage(source, 4, 1, 1, {
+    colorSpace: "rgb",
+    clusteringMethod: "k-medoids",
+  });
+
+  assert.deepEqual(means.palette.map((color) => color.hex), ["#32465a"]);
+  assert.deepEqual(medoids.palette.map((color) => color.hex), ["#001428"]);
+  assert.equal(medoids.clusteringMethod, "k-medoids");
+});
+
+test("K-medoids emits exact source colors after OKLab clustering", () => {
+  const values = [
+    [17, 61, 113, 255],
+    [29, 83, 151, 255],
+    [211, 157, 43, 255],
+  ];
+  const source = pixels(values);
+  const sourceColors = new Set(values.map((color) => color.slice(0, 3).join(",")));
+  const result = quantizeImage(source, 3, 1, 2, {
+    colorSpace: "oklab",
+    clusteringMethod: "k-medoids",
+  });
+
+  for (const color of result.palette) {
+    assert.ok(sourceColors.has(`${color.r},${color.g},${color.b}`));
+  }
+});
+
 test("rejects unknown clustering methods", () => {
   assert.throws(
     () => quantizeImage(
@@ -214,7 +251,7 @@ test("rejects unknown clustering methods", () => {
       1,
       1,
       1,
-      { clusteringMethod: "k-medoids" }
+      { clusteringMethod: "density-random" }
     ),
     /Unsupported clustering method/
   );

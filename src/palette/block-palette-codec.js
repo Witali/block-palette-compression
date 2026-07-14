@@ -406,6 +406,7 @@
       blockPaletteIndices,
       palette,
       colorSpace,
+      clusteringMethod,
       dithering,
       sourcePointByColor,
       refinementPasses,
@@ -1533,6 +1534,7 @@
       blockPaletteIndices,
       palette,
       colorSpace,
+      clusteringMethod,
       dithering,
       sourcePointByColor,
       refinementPasses,
@@ -1585,7 +1587,8 @@
         blocksX,
         localColorCount,
         globalColorCount,
-        paletteColorBits
+        paletteColorBits,
+        clusteringMethod === "k-medoids"
       );
 
       const rebuilt = rebuildBlockPaletteIndices({
@@ -1683,7 +1686,8 @@
     blocksX,
     localColorCount,
     globalColorCount,
-    paletteColorBits
+    paletteColorBits,
+    snapToSource
   ) {
     const redSums = new Float64Array(palette.length);
     const greenSums = new Float64Array(palette.length);
@@ -1712,14 +1716,67 @@
       }
     }
 
+    let medoidColors = null;
+
+    if (snapToSource) {
+      // Refinement normally stores the unconstrained RGB mean. In medoid mode,
+      // retain the nearest pixel actually assigned to the palette entry so a
+      // later refinement pass cannot reintroduce a synthetic average color.
+      const bestDistances = new Float64Array(palette.length);
+
+      medoidColors = new Uint32Array(palette.length);
+      bestDistances.fill(Infinity);
+
+      for (let y = 0; y < height; y += 1) {
+        for (let x = 0; x < width; x += 1) {
+          const pixel = y * width + x;
+          const offset = pixel * 4;
+
+          if (sourcePixels[offset + 3] === 0) {
+            continue;
+          }
+
+          const blockIndex = Math.floor(y / blockSize) * blocksX + Math.floor(x / blockSize);
+          const localIndex = pixelIndices[pixel];
+          const paletteIndex = blockPaletteSelectors[blockIndex];
+          const globalIndex = paletteIndex * globalColorCount +
+            blockPaletteIndices[blockIndex * localColorCount + localIndex];
+          const count = counts[globalIndex];
+          const red = sourcePixels[offset];
+          const green = sourcePixels[offset + 1];
+          const blue = sourcePixels[offset + 2];
+          const redDifference = red - redSums[globalIndex] / count;
+          const greenDifference = green - greenSums[globalIndex] / count;
+          const blueDifference = blue - blueSums[globalIndex] / count;
+          const distance = redDifference * redDifference +
+            greenDifference * greenDifference + blueDifference * blueDifference;
+          const packed = (red << 16) | (green << 8) | blue;
+
+          if (
+            distance < bestDistances[globalIndex] ||
+            (distance === bestDistances[globalIndex] && packed < medoidColors[globalIndex])
+          ) {
+            bestDistances[globalIndex] = distance;
+            medoidColors[globalIndex] = packed;
+          }
+        }
+      }
+    }
+
     for (let index = 0; index < palette.length; index += 1) {
       if (counts[index] === 0) {
         continue;
       }
 
-      const red = clampByte(Math.round(redSums[index] / counts[index]));
-      const green = clampByte(Math.round(greenSums[index] / counts[index]));
-      const blue = clampByte(Math.round(blueSums[index] / counts[index]));
+      const red = medoidColors === null
+        ? clampByte(Math.round(redSums[index] / counts[index]))
+        : medoidColors[index] >>> 16;
+      const green = medoidColors === null
+        ? clampByte(Math.round(greenSums[index] / counts[index]))
+        : (medoidColors[index] >>> 8) & 255;
+      const blue = medoidColors === null
+        ? clampByte(Math.round(blueSums[index] / counts[index]))
+        : medoidColors[index] & 255;
 
       palette[index] = applyPaletteColorDepth({
         r: red,
@@ -2451,7 +2508,8 @@
     if (
       clusteringMethod !== "k-means" &&
       clusteringMethod !== "k-means-uniform" &&
-      clusteringMethod !== "k-medians"
+      clusteringMethod !== "k-medians" &&
+      clusteringMethod !== "k-medoids"
     ) {
       throw new RangeError(`Unsupported clustering method: ${clusteringMethod}`);
     }

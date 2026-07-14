@@ -124,6 +124,7 @@
     "block.clusteringMethod": "Метод кластеризации",
     "block.kmeans": "K-means · евклидово",
     "block.kmeansUniform": "K-means · равномерный старт",
+    "block.kmedoids": "K-medoids · исходные цвета",
     "block.kmedians": "K-medians · манхэттенское",
     "block.algorithm": "Алгоритм",
     "block.compress": "Сжать",

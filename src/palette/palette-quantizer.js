@@ -14,7 +14,12 @@
   const DEFAULT_MAX_ITERATIONS = 24;
   const DITHERING_MODES = new Set(["none", "pattern-2x2", "pattern", "floyd-steinberg"]);
   const COLOR_SPACES = new Set(["oklab", "rgb"]);
-  const CLUSTERING_METHODS = new Set(["k-means", "k-means-uniform", "k-medians"]);
+  const CLUSTERING_METHODS = new Set([
+    "k-means",
+    "k-means-uniform",
+    "k-medians",
+    "k-medoids",
+  ]);
   const BAYER_2X2 = [
     0, 2,
     3, 1,
@@ -159,7 +164,8 @@
       histogram.weights,
       assignments,
       centroids,
-      colorSpace
+      colorSpace,
+      clusteringMethod
     );
     reportProgress(onProgress, {
       phase: "reconstructing",
@@ -421,8 +427,12 @@
   }
 
   function updateCentroids(colors, weights, assignments, centroids, clusteringMethod) {
-    return clusteringMethod === "k-medians"
-      ? updateMedians(colors, weights, assignments, centroids)
+    if (clusteringMethod === "k-medians") {
+      return updateMedians(colors, weights, assignments, centroids);
+    }
+
+    return clusteringMethod === "k-medoids"
+      ? updateMedoids(colors, weights, assignments, centroids)
       : updateMeans(colors, weights, assignments, centroids);
   }
 
@@ -488,6 +498,78 @@
     return totalMovement;
   }
 
+  function updateMedoids(colors, weights, assignments, centroids) {
+    // For squared Euclidean distance, the source point nearest the weighted
+    // mean is the exact cluster medoid: it minimizes total weighted L2 error
+    // while preventing a synthetic averaged color from entering the palette.
+    const sums = Array.from({ length: centroids.length }, () => [0, 0, 0]);
+    const clusterWeights = new Float64Array(centroids.length);
+
+    for (let colorIndex = 0; colorIndex < colors.length; colorIndex += 1) {
+      const cluster = assignments[colorIndex];
+      const weight = weights[colorIndex];
+      const color = colors[colorIndex];
+
+      sums[cluster][0] += color[0] * weight;
+      sums[cluster][1] += color[1] * weight;
+      sums[cluster][2] += color[2] * weight;
+      clusterWeights[cluster] += weight;
+    }
+
+    const means = sums.map((sum, cluster) => {
+      const weight = clusterWeights[cluster];
+
+      return weight === 0
+        ? null
+        : [sum[0] / weight, sum[1] / weight, sum[2] / weight];
+    });
+    const bestIndices = new Int32Array(centroids.length);
+    const bestDistances = new Float64Array(centroids.length);
+
+    bestIndices.fill(-1);
+    bestDistances.fill(Infinity);
+
+    for (let colorIndex = 0; colorIndex < colors.length; colorIndex += 1) {
+      const cluster = assignments[colorIndex];
+      const mean = means[cluster];
+
+      if (!mean) {
+        continue;
+      }
+
+      const distance = squaredDistance(colors[colorIndex], mean);
+      const previous = bestIndices[cluster];
+
+      if (
+        distance < bestDistances[cluster] ||
+        (
+          distance === bestDistances[cluster] &&
+          (previous < 0 || weights[colorIndex] > weights[previous])
+        )
+      ) {
+        bestDistances[cluster] = distance;
+        bestIndices[cluster] = colorIndex;
+      }
+    }
+
+    let totalMovement = 0;
+
+    for (let cluster = 0; cluster < centroids.length; cluster += 1) {
+      const colorIndex = bestIndices[cluster];
+
+      if (colorIndex < 0) {
+        continue;
+      }
+
+      const next = colors[colorIndex].slice();
+
+      totalMovement += squaredDistance(centroids[cluster], next);
+      centroids[cluster] = next;
+    }
+
+    return totalMovement;
+  }
+
   function weightedMedian(colors, weights, members, channel) {
     const sorted = members.slice().sort((left, right) => (
       colors[left][channel] - colors[right][channel] || left - right
@@ -512,15 +594,27 @@
     return colors[sorted[sorted.length - 1]][channel];
   }
 
-  function createPalette(colors, weights, assignments, centroids, colorSpace) {
+  function createPalette(
+    colors,
+    weights,
+    assignments,
+    centroids,
+    colorSpace,
+    clusteringMethod
+  ) {
     const populations = new Float64Array(centroids.length);
+    const medoidColors = clusteringMethod === "k-medoids"
+      ? selectMedoidSourceColors(colors, weights, assignments, centroids, colorSpace)
+      : null;
 
     for (let colorIndex = 0; colorIndex < colors.length; colorIndex += 1) {
       populations[assignments[colorIndex]] += weights[colorIndex];
     }
 
     const palette = centroids.map((centroid, cluster) => {
-      const rgb = colorSpace === "oklab"
+      const rgb = medoidColors !== null
+        ? medoidColors[cluster]
+        : colorSpace === "oklab"
         ? oklabToSrgb(centroid[0], centroid[1], centroid[2])
         : centroid;
       const red = clampByte(Math.round(rgb[0]));
@@ -547,6 +641,34 @@
     });
 
     return { palette, clusterToPalette };
+  }
+
+  function selectMedoidSourceColors(colors, weights, assignments, centroids, colorSpace) {
+    const selected = new Array(centroids.length).fill(null);
+    const selectedWeights = new Float64Array(centroids.length);
+    const bestDistances = new Float64Array(centroids.length);
+
+    bestDistances.fill(Infinity);
+
+    for (let colorIndex = 0; colorIndex < colors.length; colorIndex += 1) {
+      const cluster = assignments[colorIndex];
+      const color = colors[colorIndex];
+      const point = colorSpace === "oklab"
+        ? srgbToOklab(color[0], color[1], color[2])
+        : color;
+      const distance = squaredDistance(point, centroids[cluster]);
+
+      if (
+        distance < bestDistances[cluster] ||
+        (distance === bestDistances[cluster] && weights[colorIndex] > selectedWeights[cluster])
+      ) {
+        selected[cluster] = color;
+        selectedWeights[cluster] = weights[colorIndex];
+        bestDistances[cluster] = distance;
+      }
+    }
+
+    return selected;
   }
 
   function applyPalette(

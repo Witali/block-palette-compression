@@ -124,6 +124,7 @@
     "block.clusteringMethod": "Clustering method",
     "block.kmeans": "K-means · Euclidean",
     "block.kmeansUniform": "K-means · uniform initialization",
+    "block.kmedoids": "K-medoids · source colors",
     "block.kmedians": "K-medians · Manhattan",
     "block.algorithm": "Algorithm",
     "block.compress": "Compress",

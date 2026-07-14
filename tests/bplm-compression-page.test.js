@@ -103,6 +103,14 @@ test("offers zero to four refinement passes and defaults to one", () => {
   assert.match(optimizerSource, /refinementPasses: searchOptions\.refinementPasses === undefined/);
 });
 
+test("offers source-snapped K-medoids as an optional clustering method", () => {
+  assert.match(
+    html,
+    /<option value="k-medoids" data-i18n="block\.kmedoids">K-medoids · source colors<\/option>/
+  );
+  assert.match(source, /if \(value === "k-medoids"\) \{\s*return t\("block\.kmedoids"\);/);
+});
+
 test("shows RGB PSNR for the reconstructed image", () => {
   assert.match(
     html,

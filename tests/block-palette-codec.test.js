@@ -103,6 +103,30 @@ test("assigns blocks with different color distributions to separate global palet
   assert.equal(result.storage.payloadBits, 110);
 });
 
+test("keeps K-medoid palette centers on source colors through refinement", () => {
+  const values = [
+    ...Array(10).fill([20, 40, 60, 255]),
+    ...Array(4).fill([100, 120, 140, 255]),
+    ...Array(2).fill([220, 230, 240, 255]),
+  ];
+  const source = pixels(values);
+  const sourceColors = new Set(values.map((color) => color.slice(0, 3).join(",")));
+  const result = compressImage(source, 4, 4, {
+    blockSize: 4,
+    localColorCount: 2,
+    globalColorCount: 2,
+    paletteCount: 1,
+    colorSpace: "rgb",
+    clusteringMethod: "k-medoids",
+    refinementPasses: 2,
+  });
+
+  assert.equal(result.clusteringMethod, "k-medoids");
+  for (const color of result.palette.filter((entry) => entry.count > 0)) {
+    assert.ok(sourceColors.has(`${color.r},${color.g},${color.b}`));
+  }
+});
+
 test("uses accelerated pixel passes for multiple palettes and refinement", () => {
   const source = pixels([
     [127, 127, 127, 255], [128, 128, 128, 255], [0, 0, 0, 255], [255, 255, 255, 255],
@@ -672,7 +696,7 @@ test("rejects non-power-of-two format settings", () => {
       blockSize: 2,
       localColorCount: 2,
       globalColorCount: 4,
-      clusteringMethod: "k-medoids",
+      clusteringMethod: "density-random",
     }),
     /Unsupported clustering method/
   );
