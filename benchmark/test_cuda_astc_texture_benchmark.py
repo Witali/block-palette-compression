@@ -7,7 +7,9 @@ import numpy as np
 from tools.cuda_astc_texture_benchmark import (
     allocate_sample_quotas,
     bd_rate,
+    build_settings_fallback_summary,
     normal_angular_stats,
+    quality_preset_range,
     stratified_pick,
 )
 
@@ -49,6 +51,28 @@ class CudaAstcTextureBenchmarkTests(unittest.TestCase):
         for image in selected:
             counts[image["contentClass"]] += 1
         self.assertEqual(counts, {"a": 2, "b": 2, "c": 2})
+
+    def test_preset_endpoint_ranges_are_extrapolated(self) -> None:
+        self.assertEqual(quality_preset_range(1.5), (1.25, 1.75))
+        self.assertEqual(quality_preset_range(8.0), (7.0, 9.0))
+
+    def test_fallback_summary_detects_out_of_range_selection(self) -> None:
+        records = [
+            {
+                "dataset": "dtd",
+                "targetBpp": 8.0,
+                "effectiveSettings": {
+                    "findSettings": True,
+                    "selectedEstimatedBpp": selected,
+                },
+            }
+            for selected in (8.0, 9.398)
+        ]
+        summary = build_settings_fallback_summary(records)
+        self.assertEqual(summary["searchRecordCount"], 2)
+        self.assertEqual(summary["recordCount"], 1)
+        self.assertEqual(summary["byDataset"], {"dtd": 1})
+        self.assertEqual(summary["byTarget"], {"8": 1})
 
 
 if __name__ == "__main__":

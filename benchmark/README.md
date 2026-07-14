@@ -144,6 +144,9 @@ The benchmark compares eight CUDA BPAL `--find-settings` targets from 1.5 to
 `benchmark/work/cuda-astc-textures/records.jsonl`, so an interrupted run can be
 resumed with the same command. The generated Markdown report is written to
 `benchmark/results/cuda-astc-textures.md`.
+Aggregates use measured payload bpp. The report also counts searches that had
+to select the closest candidate because a small image had no profile inside a
+preset's nominal bpp range.
 
 All inputs are normalized to RGB8 before either encoder sees them. In
 particular, 16-bit displacement maps are scaled by `round(value / 257)` instead

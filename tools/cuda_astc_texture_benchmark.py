@@ -697,7 +697,7 @@ def build_report(
     args: argparse.Namespace,
 ) -> dict[str, Any]:
     groups: list[dict[str, Any]] = []
-    groups.append(build_group("all", "All downloaded texture datasets", records, profiles))
+    groups.append(build_group("all", "All selected texture images", records, profiles))
     for dataset in ("dtd", "kylberg", "ambientcg"):
         subset = [record for record in records if record["dataset"] == dataset]
         if subset:
@@ -714,6 +714,7 @@ def build_report(
         groups.append(build_group(f"pbr:{image_class}", image_class, subset, profiles))
 
     settings = build_settings_distribution(records)
+    settings_fallbacks = build_settings_fallback_summary(records)
     return {
         "schemaVersion": 1,
         "benchmarkVersion": BENCHMARK_VERSION,
@@ -751,6 +752,7 @@ def build_report(
         "profiles": profiles,
         "groups": groups,
         "settingsDistribution": settings,
+        "settingsFallbacks": settings_fallbacks,
     }
 
 
@@ -883,6 +885,53 @@ def build_settings_distribution(records: list[dict[str, Any]]) -> dict[str, Any]
     }
 
 
+def quality_preset_range(target: float) -> tuple[float, float]:
+    targets = [float(pair["target"]) for pair in RATE_PAIRS]
+    try:
+        index = targets.index(float(target))
+    except ValueError as error:
+        raise ValueError(f"Unknown BPAL target: {target}") from error
+    previous = targets[index - 1] if index > 0 else target - (targets[index + 1] - target)
+    following = (
+        targets[index + 1]
+        if index + 1 < len(targets)
+        else target + (target - targets[index - 1])
+    )
+    return (previous + target) / 2.0, (following + target) / 2.0
+
+
+def build_settings_fallback_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
+    search_records = [
+        record
+        for record in records
+        if (record.get("effectiveSettings") or {}).get("findSettings")
+    ]
+    fallback_records = []
+    for record in search_records:
+        minimum, maximum = quality_preset_range(record["targetBpp"])
+        selected = record["effectiveSettings"]["selectedEstimatedBpp"]
+        if selected < minimum - 1e-9 or selected > maximum + 1e-9:
+            fallback_records.append(record)
+    selected_rates = [
+        record["effectiveSettings"]["selectedEstimatedBpp"] for record in fallback_records
+    ]
+    return {
+        "searchRecordCount": len(search_records),
+        "recordCount": len(fallback_records),
+        "byDataset": dict(
+            sorted(collections.Counter(record["dataset"] for record in fallback_records).items())
+        ),
+        "byTarget": {
+            f"{target:g}": count
+            for target, count in sorted(
+                collections.Counter(record["targetBpp"] for record in fallback_records).items()
+            )
+        },
+        "minimumSelectedBpp": min(selected_rates) if selected_rates else None,
+        "maximumSelectedBpp": max(selected_rates) if selected_rates else None,
+    }
+
+
 def tool_info(name: str, path: Path) -> dict[str, str]:
     arguments = [path, "-version"] if name == "astcenc" else [path, "--version"]
     _, output = run_command(arguments)
@@ -916,6 +965,22 @@ def render_markdown(report: dict[str, Any]) -> str:
             "according to the Bjontegaard delta-rate calculation."
         )
 
+    fallback = report.get("settingsFallbacks") or {}
+    fallback_notes = []
+    if fallback.get("recordCount"):
+        datasets = ", ".join(
+            f"{name} {count:,}" for name, count in fallback["byDataset"].items()
+        )
+        targets = ", ".join(
+            f"target {name}: {count:,}" for name, count in fallback["byTarget"].items()
+        )
+        fallback_notes.append(
+            f"- BPAL used the closest-bpp fallback for {fallback['recordCount']:,}/"
+            f"{fallback['searchRecordCount']:,} searches with empty preset ranges "
+            f"({datasets}; {targets}); selected rates were "
+            f"{fallback['minimumSelectedBpp']:.4f}..{fallback['maximumSelectedBpp']:.4f} bpp."
+        )
+
     lines.extend(
         [
             "",
@@ -930,6 +995,7 @@ def render_markdown(report: dict[str, Any]) -> str:
             "- ambientCG previews and duplicate DirectX normal maps were excluded; NormalGL was retained.",
             "- Every input was normalized once to RGB8. Sixteen-bit displacement maps were scaled by `round(value / 257)`.",
             "- BPAL used the CUDA encoder with `--find-settings` independently for every image and target bitrate.",
+            *fallback_notes,
             f"- ASTC used linear LDR mode and `-{report['method']['astc'].split('-')[-1]}` quality.",
             "- PSNR is calculated from pooled RGB squared error in the stored uint8 domain.",
             "- Payload bpp excludes the 14-byte BPAL and 16-byte ASTC headers.",
@@ -1071,6 +1137,7 @@ def render_markdown(report: dict[str, Any]) -> str:
             "",
             "- ASTC encoding ran on the CPU; BPAL settings search and refinement ran on CUDA.",
             "- Timing includes process startup and file I/O and is not a GPU sampling benchmark.",
+            "- BPAL targets retain preset-specific palette counts, so subset curves can contain dominated points; BD-rate removes dominated points.",
             "- RGB PSNR is not perceptually linear. Normal maps additionally use angular error.",
             "- Alpha, HDR, mip-chain generation, and runtime texture filtering were not tested.",
             "",
