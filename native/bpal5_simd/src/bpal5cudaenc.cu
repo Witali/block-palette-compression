@@ -3,6 +3,7 @@
 
 #include <cuda_runtime.h>
 
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -17,6 +18,7 @@ void print_usage(const char *program) {
         "Input: JPEG, PNG, TGA, BMP, PSD, GIF, HDR, PIC, PNM\n"
         "Options:\n"
         "  --preset BPP      Quality preset: 1.5,2,2.5,3,4,5,6,8\n"
+        "  --find-settings   Find minimum-RMSE settings in the preset bpp range\n"
         "  --device N        CUDA device ordinal (default 0)\n"
         "  --block N         Block size: 2,4,8,16,32,64 (default 16)\n"
         "  --local N         Colors per block: 2,4,8,16 (default 8)\n"
@@ -69,6 +71,130 @@ int print_version() {
     return 0;
 }
 
+bool find_best_settings(
+    const uint8_t *rgb,
+    uint32_t width,
+    uint32_t height,
+    const char *preset_name,
+    bpal5_encode_options *options,
+    int device,
+    bpal5_image *output,
+    bpal5_cuda_encode_stats *output_stats,
+    char *error,
+    size_t error_size
+) {
+    bpal5_encode_options candidates[BPAL5_FIND_SETTINGS_MAX_CANDIDATES];
+    const size_t candidate_count = bpal5_find_settings_candidates(
+        options,
+        candidates,
+        BPAL5_FIND_SETTINGS_MAX_CANDIDATES
+    );
+    double target_bpp = 0.0;
+    double minimum_bpp = 0.0;
+    double maximum_bpp = 0.0;
+    double best_bpp = 0.0;
+    uint64_t best_error = UINT64_MAX;
+    uint64_t best_payload_bits = 0u;
+    bool found = false;
+
+    if (!bpal5_quality_preset_range(preset_name, &target_bpp, &minimum_bpp, &maximum_bpp)) {
+        std::snprintf(error, error_size, "Invalid preset for settings search");
+        return false;
+    }
+    std::fprintf(
+        stderr,
+        "Finding settings for preset %s in %.3f..%.3f bpp (%zu candidates)\n",
+        preset_name,
+        minimum_bpp,
+        maximum_bpp,
+        candidate_count
+    );
+    for (size_t index = 0u; index < candidate_count; ++index) {
+        const uint64_t payload_bits = bpal5_estimate_payload_bits(&candidates[index], width, height);
+        const double bpp = static_cast<double>(payload_bits) /
+            (static_cast<double>(width) * height);
+        bpal5_image candidate_image{};
+        bpal5_cuda_encode_stats candidate_stats{};
+
+        if (bpp < minimum_bpp || bpp > maximum_bpp) {
+            std::fprintf(stderr, "  %zu/%zu: %.3f bpp, outside range\n", index + 1u, candidate_count, bpp);
+            continue;
+        }
+        if (!bpal5_encode_rgb_cuda(
+                rgb,
+                width,
+                height,
+                &candidates[index],
+                device,
+                &candidate_image,
+                &candidate_stats,
+                error,
+                error_size)) {
+            bpal5_image_free(output);
+            return false;
+        }
+        const double mse = static_cast<double>(candidate_stats.final_error) /
+            (static_cast<double>(width) * height * 3.0);
+        const double rmse = std::sqrt(mse);
+        const double psnr = mse == 0.0
+            ? INFINITY
+            : 10.0 * std::log10((255.0 * 255.0) / mse);
+        std::fprintf(
+            stderr,
+            "  %zu/%zu: %.3f bpp, block %u, local %u, global %u, RGB%u, "
+            "RMSE %.6f, PSNR %.4f dB\n",
+            index + 1u,
+            candidate_count,
+            bpp,
+            candidates[index].block_size,
+            candidates[index].local_color_count,
+            candidates[index].global_color_count,
+            candidates[index].palette_color_bits == 16u ? 565u : 888u,
+            rmse,
+            psnr
+        );
+        bool better = !found || candidate_stats.final_error < best_error;
+        if (!better && candidate_stats.final_error == best_error) {
+            const double distance = std::fabs(bpp - target_bpp);
+            const double best_distance = std::fabs(best_bpp - target_bpp);
+            better = distance < best_distance ||
+                (distance == best_distance && payload_bits < best_payload_bits);
+        }
+        if (better) {
+            bpal5_image_free(output);
+            *output = candidate_image;
+            candidate_image = {};
+            *options = candidates[index];
+            *output_stats = candidate_stats;
+            best_error = candidate_stats.final_error;
+            best_payload_bits = payload_bits;
+            best_bpp = bpp;
+            found = true;
+        }
+        bpal5_image_free(&candidate_image);
+    }
+    if (!found) {
+        std::snprintf(
+            error,
+            error_size,
+            "No settings produced %.3f..%.3f bpp",
+            minimum_bpp,
+            maximum_bpp
+        );
+        return false;
+    }
+    const double best_mse = static_cast<double>(best_error) /
+        (static_cast<double>(width) * height * 3.0);
+    std::fprintf(
+        stderr,
+        "Selected %.3f bpp with RMSE %.6f and PSNR %.4f dB\n",
+        best_bpp,
+        std::sqrt(best_mse),
+        best_mse == 0.0 ? INFINITY : 10.0 * std::log10((255.0 * 255.0) / best_mse)
+    );
+    return true;
+}
+
 }  // namespace
 
 int main(int argc, char **argv) {
@@ -80,6 +206,8 @@ int main(int argc, char **argv) {
     uint32_t height = 0u;
     uint32_t device = 0u;
     char error[512];
+    const char *preset_name = nullptr;
+    bool find_settings = false;
     int result = 1;
 
     if (argc == 2 && std::strcmp(argv[1], "--version") == 0) {
@@ -101,6 +229,7 @@ int main(int argc, char **argv) {
                 std::fprintf(stderr, "Invalid value for --preset; expected 1.5, 2, 2.5, 3, 4, 5, 6, or 8\n");
                 return 2;
             }
+            preset_name = argv[argument];
         }
     }
 
@@ -109,6 +238,10 @@ int main(int argc, char **argv) {
         uint32_t *target = nullptr;
         if (std::strcmp(name, "--preset") == 0) {
             ++argument;
+            continue;
+        }
+        if (std::strcmp(name, "--find-settings") == 0) {
+            find_settings = true;
             continue;
         }
         if (std::strcmp(name, "--rgb565") == 0) {
@@ -147,12 +280,28 @@ int main(int argc, char **argv) {
         std::fprintf(stderr, "Invalid CUDA device ordinal\n");
         return 2;
     }
+    if (find_settings && preset_name == nullptr) {
+        std::fprintf(stderr, "--find-settings requires --preset BPP\n");
+        return 2;
+    }
 
     if (!bpal5_image_read_rgb(argv[1], &rgb, &width, &height, error, sizeof(error))) {
         std::fprintf(stderr, "bpal5cudaenc: %s\n", error);
         goto cleanup;
     }
-    if (!bpal5_encode_rgb_cuda(
+    if (find_settings
+        ? !find_best_settings(
+            rgb,
+            width,
+            height,
+            preset_name,
+            &options,
+            static_cast<int>(device),
+            &image,
+            &stats,
+            error,
+            sizeof(error))
+        : !bpal5_encode_rgb_cuda(
             rgb,
             width,
             height,
@@ -172,7 +321,7 @@ int main(int argc, char **argv) {
 
     std::printf(
         "Encoded %ux%u image to BPAL v5: block %u, local %u, %u x %u shared colors, "
-        "RGB%u, CUDA refinements %u/%u, MSE %.6f, CPU init %.3f ms "
+        "RGB%u, CUDA refinements %u/%u, MSE %.6f, RMSE %.6f, PSNR %.4f dB, CPU init %.3f ms "
         "(clusters %.3f, samples %.3f), CUDA setup %.3f ms, GPU %.3f ms "
         "(palettes %.3f, initial blocks %.3f, refine %.3f), %s\n",
         width,
@@ -185,6 +334,11 @@ int main(int argc, char **argv) {
         stats.accepted_refinement_passes,
         stats.requested_refinement_passes,
         static_cast<double>(stats.final_error) / (static_cast<double>(width) * height * 3.0),
+        std::sqrt(static_cast<double>(stats.final_error) / (static_cast<double>(width) * height * 3.0)),
+        stats.final_error == 0u
+            ? INFINITY
+            : 10.0 * std::log10((255.0 * 255.0) /
+                (static_cast<double>(stats.final_error) / (static_cast<double>(width) * height * 3.0))),
         stats.cpu_initialization_milliseconds,
         stats.cpu_block_clustering_milliseconds,
         stats.cpu_sample_grouping_milliseconds,
