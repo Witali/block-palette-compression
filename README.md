@@ -73,7 +73,7 @@ Detailed documentation:
   ([Russian](./BLOCK_PALETTE_README_ru.md));
 - [BPAL v5 file format](./BLOCK_PALETTE_FORMAT.md)
   ([Russian](./BLOCK_PALETTE_FORMAT_ru.md));
-- [standalone BPAL v5 C/SIMD encoder and decoder](./native/bpal5_simd/README.md);
+- [standalone BPAL v5 CPU/SIMD and CUDA tools](./native/bpal5_simd/README.md);
 - [reproducible BPAL/BC/ASTC texture codec benchmark](./benchmark/README.md).
 
 ## Setup

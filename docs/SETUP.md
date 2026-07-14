@@ -103,3 +103,23 @@ nvcc -std=c++17 -arch=native tools\cuda-smoke-test.cu -o cuda-smoke-test.exe
 ```
 
 A successful run prints the detected NVIDIA GPU and `value=42`.
+
+## Build the CUDA texture compressor
+
+Run CMake from an x64 Visual Studio Developer PowerShell after setup:
+
+```powershell
+$cuda = (Resolve-Path tools\cuda\toolkit\v13.3).Path
+$env:PATH = "$cuda\bin;$env:PATH"
+cmake -S native\bpal5_simd -B native\bpal5_simd\build-cuda -G Ninja `
+  -DCMAKE_BUILD_TYPE=Release `
+  -DCMAKE_CUDA_COMPILER="$cuda\bin\nvcc.exe" `
+  -DCMAKE_CUDA_ARCHITECTURES=native
+cmake --build native\bpal5_simd\build-cuda
+ctest --test-dir native\bpal5_simd\build-cuda --output-on-failure
+```
+
+The resulting `bpal5cudaenc` program reads binary RGB PPM (`P6`) images and
+writes BPAL v5 textures. See the
+[native command-line tools guide](../native/bpal5_simd/README.md) for all
+encoder settings, presets, CUDA pipeline details, and benchmarking.
