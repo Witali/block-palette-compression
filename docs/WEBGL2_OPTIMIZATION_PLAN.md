@@ -37,9 +37,9 @@ version.
    large blocks and palettes. Run all presets from 1.5 through 8 before final
    acceptance.
 
-Wall-clock time is the primary metric. When
-`EXT_disjoint_timer_query_webgl2` is available, GPU time is also recorded to
-separate shader work from JavaScript, texture upload, and readback overhead.
+Wall-clock time is the primary metric. A future extension of the harness can
+use `EXT_disjoint_timer_query_webgl2` to separate shader work from JavaScript,
+texture upload, and readback overhead.
 
 ## Baseline and instrumentation
 
@@ -143,7 +143,81 @@ WASM SIMD/threads implementation can be evaluated separately.
 
 | Experiment | Reference median | Candidate median | Change | Quality/output | Decision |
 | --- | ---: | ---: | ---: | --- | --- |
-| Baseline preset 5 | Pending | - | - | Pending | Pending |
+| Specialize the global-assignment shader loop | >180,000 ms timeout (preset 1.5 first run) | 147.2 ms first run | Removed the compilation stall | Identical hashes, MSE, and PSNR | Accepted |
+| Cache greedy-selection candidate distances | 5,145.5 ms | 4,500.1 ms | 12.5% faster | Identical hashes, MSE, and PSNR | Accepted |
+| Adaptively cache refinement distances for 8+ selected colors | 4,500.1 ms | 2,978.8 ms | 33.8% faster | Identical hashes, MSE, and PSNR | Accepted |
+| Collect block counts and color sums in one pass | 4,500.1 ms | 4,567.5 ms | 1.5% slower | Identical output | Rejected and reverted |
+| Cache nearest and second-nearest selected colors | 2,978.8 ms | 2,971.6 ms | 0.24% faster, inside noise | Identical output | Rejected and reverted |
+| Reuse the first selection-distance matrix in refinement | 2,978.8 ms | 3,174.8 ms | 6.6% slower | Identical output | Rejected and reverted |
+| Retain render targets and readback buffers during a job | 2,978.8 ms | 3,342.8 ms | 12.2% slower | Identical output | Rejected and reverted |
+| Store distance matrices in candidate-major order | 2,978.8 ms | 2,994.7 ms | 0.5% slower | Identical output | Rejected and reverted |
+| Upload indices through `R16UI` textures | 80.6 ms / 1,076.8 ms (presets 1.5 / 8) | 84.6 ms / 1,083.9 ms | 5.0% / 0.7% slower in the confirming A/B session | Identical output | Rejected and reverted |
+| Read assignments and indices from integer render targets | 68.3 ms / 3,060.4 ms (presets 1.5 / 5) | 82.9 ms / 3,181.4 ms | 21.4% / 4.0% slower | Identical output | Rejected and reverted |
+
+The shader-specialization result is reported separately because the original
+4096-iteration loop did not finish compiling within the timeout for the
+smallest preset. Later experiments use the most recent accepted implementation
+as their reference, so their percentages should not be added together.
+
+## Final multi-preset validation
+
+The final measurements used `assets/stone-texture-wic.jpg`, resized to 128 x 85,
+Chrome 150, and ANGLE D3D11 on an NVIDIA GeForce RTX 5060 Ti. Preset 5 used two
+warm-up runs and 11 measured runs. The other presets used one warm-up and five
+measured runs. Times are medians in milliseconds.
+
+| Preset | Total | Build shared palettes | Assign pixels | Build block palettes | Encode pixels | Refinement | MSE | PSNR (dB) | Encoded hash |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| 1.5 | 86.5 | 23.5 | 7.1 | 11.2 | 6.9 | 24.7 | 119.4724 | 27.3581 | `ab0eabdc` |
+| 2 | 371.0 | 223.9 | 7.4 | 34.3 | 6.7 | 86.7 | 103.4061 | 27.9853 | `0c960111` |
+| 2.5 | 325.9 | 83.1 | 7.2 | 52.6 | 6.7 | 155.4 | 47.8600 | 31.3311 | `4a5f33bd` |
+| 3 | 865.0 | 238.4 | 9.4 | 111.9 | 7.1 | 472.1 | 47.2888 | 31.3832 | `e1cba0dd` |
+| 4 | 649.4 | 206.7 | 6.8 | 97.8 | 6.6 | 325.0 | 15.2623 | 36.2946 | `dcdccc00` |
+| 5 | 3,200.1 | 282.4 | 9.6 | 728.4 | 8.0 | 2,144.5 | 10.2181 | 38.0371 | `76595b7a` |
+| 6 | 1,229.7 | 193.4 | 7.2 | 216.9 | 7.2 | 786.1 | 5.2409 | 40.9367 | `bc721d17` |
+| 8 | 1,080.9 | 317.7 | 11.1 | 136.9 | 7.9 | 569.7 | 3.5390 | 42.6420 | `78f2ed84` |
+
+Every measured run within each preset produced the same encoded-state hash,
+decoded-pixel hash, MSE, PSNR, payload size, and selected algorithm. The final
+preset 5 median is 37.8% lower than the original 5,145.5 ms reference. Its
+block-palette construction fell from 1,111.1 to 728.4 ms, and refinement fell
+from 3,746.3 to 2,144.5 ms.
+
+## Reproducing the benchmark
+
+From PowerShell in the repository root:
+
+```powershell
+$env:PORT=8127
+npm start
+```
+
+Then open, for example:
+
+```text
+http://127.0.0.1:8127/tools/webgl2-compression-benchmark.html?preset=5&runs=11&warmup=2&side=128&refinement=4
+```
+
+Valid preset values are `1.5`, `2`, `2.5`, `3`, `4`, `5`, `6`, and `8`.
+The page prints a JSON report with environment data, phase statistics, output
+hashes, MSE, PSNR, payload size, and every measured run.
+
+## Conclusion
+
+The retained work addresses the actual dominant path rather than maximizing
+GPU usage for its own sake. Shader specialization prevents pathological driver
+compilation, while the two distance caches transfer the most effective
+SIMD/CUDA reuse principle to the JavaScript block selector. Preset 5 is now
+about 37.8% faster with byte-identical encoded state and decoded pixels.
+
+The final preset 5 profile still spends about 89.8% of total time in block
+palette construction and refinement. Global GPU assignment plus block encoding
+take only 17.6 ms, or about 0.6%. Therefore further shader micro-optimization
+cannot meet the 2% whole-job acceptance threshold. The next material project is
+GPU-resident or parallel block-palette selection, but it requires deterministic
+multi-pass reductions that WebGL2 does not provide directly. A CPU worker pool
+or a later WebGPU compute implementation should be evaluated before adding that
+complexity to this WebGL2 path.
 
 ## Completion criteria
 
