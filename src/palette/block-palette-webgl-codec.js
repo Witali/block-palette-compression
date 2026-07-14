@@ -65,8 +65,8 @@
 
     uniform sampler2D u_source;
     uniform sampler2D u_palette;
-    uniform highp usampler2D u_blockSelectors;
-    uniform highp usampler2D u_activePaletteCounts;
+    uniform sampler2D u_blockSelectors;
+    uniform sampler2D u_activePaletteCounts;
     uniform int u_blockSize;
     uniform int u_blocksX;
     uniform int u_globalColorCount;
@@ -83,7 +83,8 @@
         linearIndex % u_blockSelectorWidth,
         linearIndex / u_blockSelectorWidth
       );
-      return int(texelFetch(u_blockSelectors, coordinate, 0).r);
+      ivec4 encoded = ivec4(round(texelFetch(u_blockSelectors, coordinate, 0) * 255.0));
+      return encoded.r | (encoded.g << 8);
     }
 
     int readActivePaletteCount(int linearIndex) {
@@ -91,7 +92,8 @@
         linearIndex % u_activePaletteCountWidth,
         linearIndex / u_activePaletteCountWidth
       );
-      return int(texelFetch(u_activePaletteCounts, coordinate, 0).r);
+      ivec4 encoded = ivec4(round(texelFetch(u_activePaletteCounts, coordinate, 0) * 255.0));
+      return encoded.r | (encoded.g << 8);
     }
 
     vec3 readPaletteColor(int linearIndex) {
@@ -160,8 +162,8 @@
 
     uniform sampler2D u_source;
     uniform sampler2D u_palette;
-    uniform highp usampler2D u_blockPalettes;
-    uniform highp usampler2D u_blockSelectors;
+    uniform sampler2D u_blockPalettes;
+    uniform sampler2D u_blockSelectors;
     uniform int u_blockSize;
     uniform int u_blocksX;
     uniform int u_localColorCount;
@@ -190,7 +192,8 @@
         linearIndex % u_blockPaletteWidth,
         linearIndex / u_blockPaletteWidth
       );
-      return int(texelFetch(u_blockPalettes, coordinate, 0).r);
+      ivec4 encoded = ivec4(round(texelFetch(u_blockPalettes, coordinate, 0) * 255.0));
+      return encoded.r | (encoded.g << 8);
     }
 
     int readPaletteIndex(int blockIndex) {
@@ -198,7 +201,8 @@
         blockIndex % u_blockSelectorWidth,
         blockIndex / u_blockSelectorWidth
       );
-      return int(texelFetch(u_blockSelectors, coordinate, 0).r);
+      ivec4 encoded = ivec4(round(texelFetch(u_blockSelectors, coordinate, 0) * 255.0));
+      return encoded.r | (encoded.g << 8);
     }
 
     vec3 readPaletteColor(int linearIndex) {
@@ -678,40 +682,19 @@
   }
 
   function createIndexTexture(gl, maximumTextureSize, indices) {
-    const width = Math.min(maximumTextureSize, 2048, Math.max(1, indices.length));
-    const height = Math.max(1, Math.ceil(indices.length / width));
+    const packed = createPackedTextureData(indices.length, maximumTextureSize);
 
-    if (height > maximumTextureSize) {
-      throw new RangeError("Packed data exceeds WebGL2 texture capacity");
+    for (let index = 0; index < indices.length; index += 1) {
+      const offset = index * 4;
+
+      packed.data[offset] = indices[index] & 255;
+      packed.data[offset + 1] = indices[index] >> 8 & 255;
+      packed.data[offset + 3] = 255;
     }
 
-    const data = new Uint16Array(width * height);
-    const texture = gl.createTexture();
-
-    data.set(indices);
-    gl.bindTexture(gl.TEXTURE_2D, texture);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 2);
-    gl.texImage2D(
-      gl.TEXTURE_2D,
-      0,
-      gl.R16UI,
-      width,
-      height,
-      0,
-      gl.RED_INTEGER,
-      gl.UNSIGNED_SHORT,
-      data
-    );
-
     return {
-      width,
-      height,
-      data,
-      texture,
+      ...packed,
+      texture: createTexture(gl, packed.width, packed.height, packed.data),
     };
   }
 
