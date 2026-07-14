@@ -2,7 +2,7 @@
 
 importScripts("./palette-quantizer.js?v=k-medoids-default-1");
 importScripts("./block-palette-codec.js?v=k-medoids-distance-cache-1");
-importScripts("./block-palette-optimizer.js?v=k-medoids-default-1");
+importScripts("./block-palette-optimizer.js?v=target-bpp-quality-1");
 
 self.addEventListener("message", (event) => {
   const { pixels, width, height, options } = event.data;

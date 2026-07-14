@@ -63,6 +63,47 @@ static int test_quality_presets(void) {
             return fail("invalid quality preset was accepted or changed settings");
         }
     }
+    {
+        double target;
+        double minimum;
+        double maximum;
+
+        if (!bpal5_quality_preset_range("3", &target, &minimum, &maximum) ||
+            target != 3.0 || minimum != 2.75 || maximum != 3.5 ||
+            !bpal5_quality_preset_range("1.5", &target, &minimum, &maximum) ||
+            minimum != 1.25 || maximum != 1.75 ||
+            !bpal5_quality_preset_range("8", &target, &minimum, &maximum) ||
+            minimum != 7.0 || maximum != 9.0 ||
+            bpal5_quality_preset_range("7", &target, &minimum, &maximum)) {
+            return fail("quality preset bpp range mismatch");
+        }
+    }
+    return 0;
+}
+
+static int test_find_settings_candidates(void) {
+    bpal5_encode_options baseline;
+    bpal5_encode_options candidates[BPAL5_FIND_SETTINGS_MAX_CANDIDATES];
+    size_t count;
+
+    bpal5_default_encode_options(&baseline);
+    count = bpal5_find_settings_candidates(
+        &baseline,
+        candidates,
+        BPAL5_FIND_SETTINGS_MAX_CANDIDATES
+    );
+    if (count != BPAL5_FIND_SETTINGS_MAX_CANDIDATES ||
+        memcmp(&baseline, &candidates[0], sizeof(baseline)) != 0) {
+        return fail("settings search candidates mismatch");
+    }
+    baseline.block_size = 2u;
+    baseline.local_color_count = 2u;
+    baseline.global_color_count = 8u;
+    baseline.palette_count = 1u;
+    baseline.palette_color_bits = 24u;
+    if (bpal5_estimate_payload_bits(&baseline, 16u, 8u) != 512u) {
+        return fail("settings search bpp estimate mismatch");
+    }
     return 0;
 }
 
@@ -72,6 +113,7 @@ int main(void) {
     const size_t pixel_count = (size_t)width * height;
     uint8_t *source = (uint8_t *)malloc(pixel_count * 3u);
     bpal5_encode_options options;
+    bpal5_encode_stats stats;
     bpal5_image encoded;
     bpal5_image parsed;
     uint8_t *bytes = NULL;
@@ -87,11 +129,15 @@ int main(void) {
     if (test_quality_presets() != 0) {
         return 1;
     }
+    if (test_find_settings_candidates() != 0) {
+        return 1;
+    }
     if (source == NULL) {
         return fail("out of memory");
     }
     memset(&encoded, 0, sizeof(encoded));
     memset(&parsed, 0, sizeof(parsed));
+    memset(&stats, 0, sizeof(stats));
     for (pixel = 0; pixel < pixel_count; ++pixel) {
         const uint32_t x = (uint32_t)(pixel % width);
         const uint32_t y = (uint32_t)(pixel / width);
@@ -108,7 +154,15 @@ int main(void) {
     options.kmeans_iterations = 4u;
     options.refinement_passes = 2u;
 
-    if (!bpal5_encode_rgb(source, width, height, &options, &encoded, error, sizeof(error))) {
+    if (!bpal5_encode_rgb_with_stats(
+            source,
+            width,
+            height,
+            &options,
+            &encoded,
+            &stats,
+            error,
+            sizeof(error))) {
         fprintf(stderr, "%s\n", error);
         goto cleanup;
     }
@@ -137,6 +191,21 @@ int main(void) {
     if (scalar_size != pixel_count * 4u || simd_size != scalar_size || memcmp(scalar, simd, scalar_size) != 0) {
         result = fail("scalar and SIMD decode results differ");
         goto cleanup;
+    }
+    {
+        uint64_t decoded_error = 0u;
+        for (pixel = 0; pixel < pixel_count; ++pixel) {
+            size_t channel;
+            for (channel = 0u; channel < 3u; ++channel) {
+                const int difference = (int)source[pixel * 3u + channel] -
+                    (int)scalar[pixel * 4u + channel];
+                decoded_error += (uint64_t)(difference * difference);
+            }
+        }
+        if (stats.final_error != decoded_error || stats.initial_error < stats.final_error) {
+            result = fail("CPU encoder error statistics mismatch");
+            goto cleanup;
+        }
     }
 
     printf("roundtrip ok: %zu bytes, backend %s\n", byte_count, bpal5_simd_backend(1));

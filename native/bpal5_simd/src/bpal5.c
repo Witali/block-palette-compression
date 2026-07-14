@@ -30,21 +30,52 @@ typedef struct bit_writer {
 
 typedef struct encode_preset {
     const char *name;
+    double bits_per_pixel;
     uint32_t block_size;
     uint32_t local_color_count;
     uint32_t global_color_count;
     uint32_t palette_count;
 } encode_preset;
 
+typedef struct search_profile {
+    uint32_t block_size;
+    uint32_t local_color_count;
+    uint32_t global_color_count;
+    uint32_t palette_color_bits;
+} search_profile;
+
 static const encode_preset QUALITY_PRESETS[] = {
-    { "1.5", 4u, 2u, 8u, 2u },
-    { "2", 4u, 2u, 128u, 2u },
-    { "2.5", 8u, 4u, 64u, 32u },
-    { "3", 8u, 4u, 256u, 64u },
-    { "4", 8u, 8u, 128u, 16u },
-    { "5", 16u, 16u, 256u, 64u },
-    { "6", 8u, 16u, 128u, 32u },
-    { "8", 4u, 8u, 256u, 64u },
+    { "1.5", 1.5, 4u, 2u, 8u, 2u },
+    { "2", 2.0, 4u, 2u, 128u, 2u },
+    { "2.5", 2.5, 8u, 4u, 64u, 32u },
+    { "3", 3.0, 8u, 4u, 256u, 64u },
+    { "4", 4.0, 8u, 8u, 128u, 16u },
+    { "5", 5.0, 16u, 16u, 256u, 64u },
+    { "6", 6.0, 8u, 16u, 128u, 32u },
+    { "8", 8.0, 4u, 8u, 256u, 64u },
+};
+
+static const search_profile FIND_SETTINGS_PROFILES[] = {
+    { 4u, 16u, 4096u, 24u },
+    { 4u, 16u, 1024u, 24u },
+    { 4u, 8u, 1024u, 24u },
+    { 8u, 16u, 1024u, 24u },
+    { 8u, 8u, 256u, 24u },
+    { 8u, 8u, 256u, 16u },
+    { 8u, 4u, 256u, 16u },
+    { 16u, 16u, 256u, 24u },
+    { 16u, 16u, 256u, 16u },
+    { 16u, 8u, 128u, 16u },
+    { 16u, 4u, 128u, 16u },
+    { 16u, 2u, 64u, 16u },
+    { 32u, 16u, 128u, 16u },
+    { 32u, 8u, 64u, 16u },
+    { 32u, 4u, 64u, 16u },
+    { 32u, 2u, 32u, 16u },
+    { 64u, 16u, 64u, 16u },
+    { 64u, 8u, 32u, 16u },
+    { 64u, 4u, 16u, 16u },
+    { 64u, 2u, 8u, 16u },
 };
 
 static void set_error(char *error, size_t error_size, const char *message) {
@@ -392,6 +423,108 @@ int bpal5_apply_quality_preset(const char *name, bpal5_encode_options *options) 
         }
     }
     return 0;
+}
+
+int bpal5_quality_preset_range(
+    const char *name,
+    double *target_bits_per_pixel,
+    double *minimum_bits_per_pixel,
+    double *maximum_bits_per_pixel
+) {
+    const size_t preset_count = sizeof(QUALITY_PRESETS) / sizeof(QUALITY_PRESETS[0]);
+    size_t index;
+
+    if (name == NULL || target_bits_per_pixel == NULL ||
+        minimum_bits_per_pixel == NULL || maximum_bits_per_pixel == NULL) {
+        return 0;
+    }
+    for (index = 0; index < preset_count; ++index) {
+        const encode_preset *preset = &QUALITY_PRESETS[index];
+        double previous;
+        double next;
+
+        if (strcmp(name, preset->name) != 0) {
+            continue;
+        }
+        previous = index > 0u
+            ? QUALITY_PRESETS[index - 1u].bits_per_pixel
+            : preset->bits_per_pixel - (QUALITY_PRESETS[index + 1u].bits_per_pixel - preset->bits_per_pixel);
+        next = index + 1u < preset_count
+            ? QUALITY_PRESETS[index + 1u].bits_per_pixel
+            : preset->bits_per_pixel + (preset->bits_per_pixel - QUALITY_PRESETS[index - 1u].bits_per_pixel);
+        *target_bits_per_pixel = preset->bits_per_pixel;
+        *minimum_bits_per_pixel = (previous + preset->bits_per_pixel) / 2.0;
+        *maximum_bits_per_pixel = (next + preset->bits_per_pixel) / 2.0;
+        return 1;
+    }
+    return 0;
+}
+
+size_t bpal5_find_settings_candidates(
+    const bpal5_encode_options *baseline,
+    bpal5_encode_options *candidates,
+    size_t capacity
+) {
+    const size_t profile_count = sizeof(FIND_SETTINGS_PROFILES) / sizeof(FIND_SETTINGS_PROFILES[0]);
+    size_t count = 0u;
+    size_t profile_index;
+
+    if (baseline == NULL || candidates == NULL || capacity == 0u) {
+        return 0u;
+    }
+    candidates[count++] = *baseline;
+    for (profile_index = 0u; profile_index < profile_count && count < capacity; ++profile_index) {
+        const search_profile *profile = &FIND_SETTINGS_PROFILES[profile_index];
+        bpal5_encode_options candidate = *baseline;
+        size_t candidate_index;
+        int duplicate = 0;
+
+        candidate.block_size = profile->block_size;
+        candidate.local_color_count = profile->local_color_count;
+        candidate.global_color_count = profile->global_color_count;
+        candidate.palette_color_bits = profile->palette_color_bits;
+        for (candidate_index = 0u; candidate_index < count; ++candidate_index) {
+            const bpal5_encode_options *existing = &candidates[candidate_index];
+            if (candidate.block_size == existing->block_size &&
+                candidate.local_color_count == existing->local_color_count &&
+                candidate.global_color_count == existing->global_color_count &&
+                candidate.palette_color_bits == existing->palette_color_bits) {
+                duplicate = 1;
+                break;
+            }
+        }
+        if (!duplicate) {
+            candidates[count++] = candidate;
+        }
+    }
+    return count;
+}
+
+uint64_t bpal5_estimate_payload_bits(
+    const bpal5_encode_options *options,
+    uint32_t width,
+    uint32_t height
+) {
+    uint64_t blocks_x;
+    uint64_t blocks_y;
+    uint64_t block_count;
+    uint64_t pixel_count;
+
+    if (options == NULL || width == 0u || height == 0u ||
+        !is_power_of_two(options->block_size) ||
+        !is_power_of_two(options->local_color_count) ||
+        !is_power_of_two(options->global_color_count) ||
+        !is_power_of_two(options->palette_count)) {
+        return 0u;
+    }
+    blocks_x = ((uint64_t)width + options->block_size - 1u) / options->block_size;
+    blocks_y = ((uint64_t)height + options->block_size - 1u) / options->block_size;
+    block_count = blocks_x * blocks_y;
+    pixel_count = (uint64_t)width * height;
+    return (uint64_t)options->palette_count * options->global_color_count * options->palette_color_bits +
+        block_count * integer_log2(options->palette_count) +
+        block_count * options->local_color_count * integer_log2(options->global_color_count) +
+        pixel_count * integer_log2(options->local_color_count);
 }
 
 void bpal5_image_free(bpal5_image *image) {
@@ -1638,6 +1771,7 @@ int bpal5_encode_rgb_with_stats(
         return 0;
     }
     if (stats != NULL) {
+        stats->initial_error = current_error;
         stats->block_encoding_milliseconds =
             (double)(clock() - stage_started) * 1000.0 / CLOCKS_PER_SEC;
     }
@@ -1702,6 +1836,7 @@ int bpal5_encode_rgb_with_stats(
         free(candidate_pixels);
     }
     if (stats != NULL) {
+        stats->final_error = current_error;
         stats->refinement_milliseconds =
             (double)(clock() - stage_started) * 1000.0 / CLOCKS_PER_SEC;
     }

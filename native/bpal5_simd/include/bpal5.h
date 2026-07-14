@@ -10,6 +10,7 @@ extern "C" {
 
 #define BPAL5_VERSION 5u
 #define BPAL5_HEADER_BYTES 14u
+#define BPAL5_FIND_SETTINGS_MAX_CANDIDATES 21u
 
 typedef struct bpal5_image {
     uint32_t width;
@@ -44,6 +45,8 @@ typedef struct bpal5_encode_options {
 } bpal5_encode_options;
 
 typedef struct bpal5_encode_stats {
+    uint64_t initial_error;
+    uint64_t final_error;
     double block_clustering_milliseconds;
     double palette_building_milliseconds;
     double block_encoding_milliseconds;
@@ -52,6 +55,22 @@ typedef struct bpal5_encode_stats {
 
 void bpal5_default_encode_options(bpal5_encode_options *options);
 int bpal5_apply_quality_preset(const char *name, bpal5_encode_options *options);
+int bpal5_quality_preset_range(
+    const char *name,
+    double *target_bits_per_pixel,
+    double *minimum_bits_per_pixel,
+    double *maximum_bits_per_pixel
+);
+size_t bpal5_find_settings_candidates(
+    const bpal5_encode_options *baseline,
+    bpal5_encode_options *candidates,
+    size_t capacity
+);
+uint64_t bpal5_estimate_payload_bits(
+    const bpal5_encode_options *options,
+    uint32_t width,
+    uint32_t height
+);
 int bpal5_cpu_has_avx2(void);
 const char *bpal5_simd_backend(int use_simd);
 

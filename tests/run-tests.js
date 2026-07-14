@@ -15,6 +15,7 @@ async function runTests() {
   require("./bpal-texture-decoder.test.js");
   require("./block-palette-optimizer.test.js");
   require("./block-palette-webgl-codec.test.js");
+  require("./native-cli-find-settings.test.js");
   await require("./pwa.test.js");
 }
 

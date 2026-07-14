@@ -15,6 +15,7 @@
   "use strict";
 
   const BPAL_HEADER_BYTES = 14;
+  const DEFAULT_BITS_PER_PIXEL_TARGETS = [1.5, 2, 2.5, 3, 4, 5, 6, 8];
   const DEFAULT_PROFILES = [
     { blockSize: 4, localColorCount: 16, globalColorCount: 4096, paletteColorBits: 24 },
     { blockSize: 4, localColorCount: 16, globalColorCount: 1024, paletteColorBits: 24 },
@@ -46,7 +47,10 @@
     onProgress
   ) {
     const searchOptions = options || {};
-    const profiles = normalizeProfiles(searchOptions.profiles || DEFAULT_PROFILES);
+    const requestedProfiles = searchOptions.profiles || DEFAULT_PROFILES;
+    const profiles = normalizeProfiles(searchOptions.baselineProfile
+      ? [searchOptions.baselineProfile, ...requestedProfiles]
+      : requestedProfiles);
     const commonSettings = {
       colorSpace: searchOptions.colorSpace || "oklab",
       clusteringMethod: searchOptions.clusteringMethod || "k-medoids",
@@ -58,6 +62,8 @@
       paletteCount: Number(searchOptions.paletteCount || 1),
       paletteMode: "explicit",
     };
+    const storageWidth = normalizeStorageDimension(searchOptions.storageWidth, width);
+    const storageHeight = normalizeStorageDimension(searchOptions.storageHeight, height);
     const candidates = [];
 
     for (let index = 0; index < profiles.length; index += 1) {
@@ -68,13 +74,20 @@
         height,
         settings
       );
+      const storage = calculateStorage(
+        profiles[index],
+        commonSettings.paletteCount,
+        storageWidth,
+        storageHeight
+      );
       const candidate = {
         settings: profiles[index],
         rmse: Math.sqrt(result.meanSquaredError),
-        payloadBytes: result.storage.totalBytes,
-        fileBytes: result.storage.totalBytes + BPAL_HEADER_BYTES,
-        bitsPerPixel: result.storage.bitsPerPixel,
-        compressionRatio: result.storage.compressionRatio,
+        psnr: calculatePsnr(result.meanSquaredError),
+        payloadBytes: storage.totalBytes,
+        fileBytes: storage.totalBytes + BPAL_HEADER_BYTES,
+        bitsPerPixel: storage.bitsPerPixel,
+        compressionRatio: storage.compressionRatio,
       };
 
       candidates.push(candidate);
@@ -89,14 +102,148 @@
     }
 
     const frontier = paretoFrontier(candidates);
-    const selected = selectBalancedCandidate(frontier);
+    const targetBitsPerPixel = normalizeTargetBitsPerPixel(
+      searchOptions.targetBitsPerPixel
+    );
+    const bitsPerPixelRange = targetBitsPerPixel === null
+      ? null
+      : calculateBitsPerPixelRange(
+        targetBitsPerPixel,
+        searchOptions.bitsPerPixelTargets || DEFAULT_BITS_PER_PIXEL_TARGETS
+      );
+    const matchingCandidates = bitsPerPixelRange === null
+      ? frontier
+      : candidates.filter((candidate) => (
+        candidate.bitsPerPixel >= bitsPerPixelRange.minimum &&
+        candidate.bitsPerPixel <= bitsPerPixelRange.maximum
+      ));
+    const selected = bitsPerPixelRange === null
+      ? selectBalancedCandidate(frontier)
+      : selectHighestQualityCandidate(matchingCandidates, targetBitsPerPixel);
 
     return {
       settings: selected.settings,
       selected,
       frontier,
       candidates,
+      matchingCandidates,
+      targetBitsPerPixel,
+      bitsPerPixelRange,
     };
+  }
+
+  function calculateBitsPerPixelRange(
+    targetBitsPerPixel,
+    targets = DEFAULT_BITS_PER_PIXEL_TARGETS
+  ) {
+    const target = normalizeTargetBitsPerPixel(targetBitsPerPixel);
+
+    if (target === null) {
+      throw new RangeError("Target bits per pixel must be a positive finite number");
+    }
+
+    const normalizedTargets = Array.from(new Set(targets.map(Number)))
+      .filter((value) => Number.isFinite(value) && value > 0 && value !== target)
+      .sort((left, right) => left - right);
+    const previousTarget = normalizedTargets
+      .slice()
+      .reverse()
+      .find((value) => value < target);
+    const nextTarget = normalizedTargets.find((value) => value > target);
+
+    if (previousTarget === undefined && nextTarget === undefined) {
+      throw new RangeError("At least one adjacent bits-per-pixel target is required");
+    }
+
+    const previous = previousTarget === undefined
+      ? target - (nextTarget - target)
+      : previousTarget;
+    const next = nextTarget === undefined
+      ? target + (target - previousTarget)
+      : nextTarget;
+
+    return {
+      minimum: Math.max(0, (previous + target) / 2),
+      maximum: (next + target) / 2,
+    };
+  }
+
+  function selectHighestQualityCandidate(candidates, targetBitsPerPixel) {
+    if (candidates.length === 0) {
+      throw new RangeError("No block-palette optimization candidates in the target bpp range");
+    }
+
+    return candidates.reduce((selected, candidate) => {
+      const errorDifference = candidate.rmse - selected.rmse;
+
+      if (errorDifference < 0) {
+        return candidate;
+      }
+
+      if (errorDifference > 0) {
+        return selected;
+      }
+
+      const candidateDistance = Math.abs(candidate.bitsPerPixel - targetBitsPerPixel);
+      const selectedDistance = Math.abs(selected.bitsPerPixel - targetBitsPerPixel);
+
+      if (candidateDistance !== selectedDistance) {
+        return candidateDistance < selectedDistance ? candidate : selected;
+      }
+
+      return candidate.fileBytes < selected.fileBytes ? candidate : selected;
+    });
+  }
+
+  function calculatePsnr(meanSquaredError) {
+    return meanSquaredError === 0
+      ? Infinity
+      : 10 * Math.log10((255 * 255) / meanSquaredError);
+  }
+
+  function calculateStorage(profile, paletteCount, width, height) {
+    const blocksX = Math.ceil(width / profile.blockSize);
+    const blocksY = Math.ceil(height / profile.blockSize);
+    const blockCount = blocksX * blocksY;
+    const globalPaletteBits = paletteCount * profile.globalColorCount * profile.paletteColorBits;
+    const blockPaletteSelectorBits = blockCount * Math.log2(paletteCount);
+    const blockPaletteBits = blockCount * profile.localColorCount * Math.log2(profile.globalColorCount);
+    const pixelDataBits = width * height * Math.log2(profile.localColorCount);
+    const payloadBits = globalPaletteBits + blockPaletteSelectorBits + blockPaletteBits + pixelDataBits;
+
+    return {
+      totalBytes: Math.ceil(payloadBits / 8),
+      bitsPerPixel: payloadBits / (width * height),
+      compressionRatio: width * height * 24 / payloadBits,
+    };
+  }
+
+  function normalizeStorageDimension(value, fallback) {
+    if (value === undefined || value === null) {
+      return fallback;
+    }
+
+    const normalized = Number(value);
+
+    if (!Number.isInteger(normalized) || normalized <= 0) {
+      throw new RangeError("Storage dimensions must be positive integers");
+    }
+
+    return normalized;
+  }
+
+  function normalizeTargetBitsPerPixel(value) {
+    if (value === undefined || value === null || value === "") {
+      return null;
+    }
+
+    const normalized = Number(value);
+
+    if (!Number.isFinite(normalized) || normalized <= 0) {
+      throw new RangeError("Target bits per pixel must be a positive finite number");
+    }
+
+    return normalized;
   }
 
   function paretoFrontier(candidates) {
@@ -173,9 +320,12 @@
   }
 
   return {
+    DEFAULT_BITS_PER_PIXEL_TARGETS,
     DEFAULT_PROFILES,
+    calculateBitsPerPixelRange,
     findBalancedBlockPaletteSettings,
     paretoFrontier,
     selectBalancedCandidate,
+    selectHighestQualityCandidate,
   };
 });

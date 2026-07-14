@@ -75,6 +75,13 @@ Encode with CUDA refinement:
 bpal5cudaenc input.png output.bpal --preset 3 --device 0
 ```
 
+Search the preset's bpp range and keep the highest-quality result:
+
+```sh
+bpal5enc input.jpg output.bpal --preset 3 --find-settings
+bpal5cudaenc input.png output.bpal --preset 3 --find-settings --device 0
+```
+
 Decode it:
 
 ```sh
@@ -88,6 +95,9 @@ Encoder options:
 
 - `--preset BPP`: apply the researched quality settings for target bpp `1.5`,
   `2`, `2.5`, `3`, `4`, `5`, `6`, or `8`;
+- `--find-settings`: test the shared search profiles inside the selected
+  preset's bpp range and keep the result with minimum RGB RMSE (equivalently,
+  maximum PSNR); this option requires `--preset`;
 - `--block N`: block width and height, power of two from 2 to 64;
 - `--local N`: colours in each block palette, power of two from 2 to 16;
 - `--global N`: colours in each global palette, power of two from 2 to 4096;
@@ -104,20 +114,36 @@ compiler provides OpenMP. Without OpenMP, the CPU encoder uses one worker.
 `--no-simd` is retained for command-line compatibility; current CUDA palette
 initialization no longer calls the CPU nearest-colour SIMD backend.
 
+Settings search uses the same profiles and midpoint ranges as the web tool.
+The range for a preset is bounded by `(previous + current) / 2` and
+`(current + next) / 2`; the missing neighbour at either end is extrapolated.
+Only profiles whose calculated full-image payload bpp is inside that range
+are encoded. The current command-line settings are included as the baseline
+candidate. Ties in RMSE are resolved by distance from the target bpp and then
+by smaller payload size. Search progress reports bpp, RMSE, and PSNR for every
+eligible candidate. Candidate encodes reuse the same process, including its
+initialized CUDA runtime and driver caches.
+
+`--palettes`, `--iterations`, `--refine`, `--threads`, and `--no-simd` remain
+common to all search candidates. Structural options (`--block`, `--local`,
+`--global`, and `--rgb565`) customize the baseline candidate; the remaining
+candidates deliberately vary those fields. Without `--find-settings`, all
+explicit options continue to override the preset normally.
+
 Presets select RGB888, four refinement passes, and the following BPAL
 structure. Explicit encoder options override the selected preset regardless of
 their position on the command line.
 
-| Preset | Block | Local colors | Shared colors | Palettes |
-| ---: | ---: | ---: | ---: | ---: |
-| 1.5 | 4 | 2 | 8 | 2 |
-| 2 | 4 | 2 | 128 | 2 |
-| 2.5 | 8 | 4 | 64 | 32 |
-| 3 | 8 | 4 | 256 | 64 |
-| 4 | 8 | 8 | 128 | 16 |
-| 5 | 16 | 16 | 256 | 64 |
-| 6 | 8 | 16 | 128 | 32 |
-| 8 | 4 | 8 | 256 | 64 |
+| Preset | Search range (bpp) | Block | Local colors | Shared colors | Palettes |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 1.5 | 1.25–1.75 | 4 | 2 | 8 | 2 |
+| 2 | 1.75–2.25 | 4 | 2 | 128 | 2 |
+| 2.5 | 2.25–2.75 | 8 | 4 | 64 | 32 |
+| 3 | 2.75–3.50 | 8 | 4 | 256 | 64 |
+| 4 | 3.50–4.50 | 8 | 8 | 128 | 16 |
+| 5 | 4.50–5.50 | 16 | 16 | 256 | 64 |
+| 6 | 5.50–7.00 | 8 | 16 | 128 | 32 |
+| 8 | 7.00–9.00 | 4 | 8 | 256 | 64 |
 
 The encoder clusters blocks by their RGB mean and standard deviation, builds a
 separate global palette for each cluster, chooses a compact palette for every

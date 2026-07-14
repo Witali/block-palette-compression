@@ -132,6 +132,9 @@ const QUALITY_PRESETS = Object.freeze({
   "6": { blockSize: 8, localColorCount: 16, globalColorCount: 128, paletteCount: 32 },
   "8": { blockSize: 4, localColorCount: 8, globalColorCount: 256, paletteCount: 64 },
 });
+const QUALITY_PRESET_BITS_PER_PIXEL = Object.freeze(
+  Object.keys(QUALITY_PRESETS).map(Number).sort((left, right) => left - right)
+);
 
 controls.addEventListener("submit", (event) => {
   event.preventDefault();
@@ -1192,6 +1195,8 @@ function optimizeSettings() {
     return;
   }
 
+  const targetBitsPerPixel = getOptimizationTargetBitsPerPixel();
+
   stopWorker();
   stopOptimizer();
   setBusy(true);
@@ -1201,11 +1206,11 @@ function optimizeSettings() {
     stage: "searching-settings",
     progress: 0,
     completed: 0,
-    total: 20,
+    total: 21,
   });
 
   const preview = createOptimizationPreview();
-  const worker = new Worker("./src/palette/block-palette-optimizer-worker.js?v=k-medoids-distance-cache-1");
+  const worker = new Worker("./src/palette/block-palette-optimizer-worker.js?v=target-bpp-quality-1");
 
   state.optimizerWorker = worker;
 
@@ -1226,6 +1231,7 @@ function optimizeSettings() {
         search: {
           size: candidate.fileBytes,
           rmse: candidate.rmse,
+          bpp: candidate.bitsPerPixel,
         },
       });
       setStatus(
@@ -1233,6 +1239,7 @@ function optimizeSettings() {
           completed,
           total,
           size: formatBytes(candidate.fileBytes),
+          bpp: candidate.bitsPerPixel.toFixed(2),
           rmse: candidate.rmse.toFixed(2),
         }),
         "busy"
@@ -1247,7 +1254,12 @@ function optimizeSettings() {
     }
 
     if (event.data.type === "result") {
-      const { settings, selected, frontier } = event.data.result;
+      const {
+        settings,
+        selected,
+        matchingCandidates,
+        bitsPerPixelRange,
+      } = event.data.result;
 
       blockSizeSelect.value = String(settings.blockSize);
       localColorCountSelect.value = String(settings.localColorCount);
@@ -1259,9 +1271,13 @@ function optimizeSettings() {
       setBusy(false);
       setStatus(
         t("block.optimizeFound", {
-          count: formatInteger(frontier.length),
+          count: formatInteger(matchingCandidates.length),
+          minimum: bitsPerPixelRange.minimum.toFixed(2),
+          maximum: bitsPerPixelRange.maximum.toFixed(2),
+          bpp: selected.bitsPerPixel.toFixed(2),
           size: formatBytes(selected.fileBytes),
           rmse: selected.rmse.toFixed(2),
+          psnr: selected.psnr === Infinity ? "∞" : selected.psnr.toFixed(2),
         }),
         "busy"
       );
@@ -1288,8 +1304,34 @@ function optimizeSettings() {
       refinementPasses: Number(refinementPassesSelect.value),
       paletteCount: Number(paletteCountSelect.value),
       paletteMode: "explicit",
+      targetBitsPerPixel,
+      bitsPerPixelTargets: QUALITY_PRESET_BITS_PER_PIXEL,
+      storageWidth: state.sourceImageData.width,
+      storageHeight: state.sourceImageData.height,
+      baselineProfile: {
+        blockSize: Number(blockSizeSelect.value),
+        localColorCount: Number(localColorCountSelect.value),
+        globalColorCount: Number(globalColorCountSelect.value),
+        paletteColorBits: Number(paletteColorBitsSelect.value),
+      },
     },
   }, [preview.data.buffer]);
+}
+
+function getOptimizationTargetBitsPerPixel() {
+  const presetBitsPerPixel = Number(qualityPresetSelect.value);
+
+  if (Number.isFinite(presetBitsPerPixel) && presetBitsPerPixel > 0) {
+    return presetBitsPerPixel;
+  }
+
+  const currentBitsPerPixel = state.result && state.result.storage.bitsPerPixel;
+
+  if (Number.isFinite(currentBitsPerPixel) && currentBitsPerPixel > 0) {
+    return currentBitsPerPixel;
+  }
+
+  throw new RangeError("Current bits per pixel are not available");
 }
 
 function createOptimizationPreview() {
@@ -1367,6 +1409,7 @@ function renderProgress(progress) {
       completed: formatInteger(progress.completed),
       total: formatInteger(progress.total),
       size: formatBytes(progress.search.size),
+      bpp: progress.search.bpp.toFixed(2),
       rmse: progress.search.rmse.toFixed(2),
     });
   } else if (Number.isFinite(progress.iteration) && Number.isFinite(progress.totalIterations)) {
