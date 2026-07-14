@@ -127,7 +127,8 @@ test("shows RGB PSNR for the reconstructed image", () => {
 
 test("pans both compression previews by dragging", () => {
   assert.match(source, /for \(const viewport of \[sourceViewport, resultViewport\]\)/);
-  assert.match(source, /viewport\.addEventListener\("pointerdown", startViewportDrag\)/);
+  assert.match(source, /viewport\.addEventListener\("pointerdown", startViewportPointer\)/);
+  assert.match(source, /function startViewportPointer\(event\)[\s\S]*?startViewportDrag\(event\)/);
   assert.match(source, /drag\.viewport\.scrollLeft = drag\.scrollLeft - deltaX/);
   assert.match(source, /drag\.viewport\.scrollTop = drag\.scrollTop - deltaY/);
   assert.match(source, /synchronizeScroll\(/);
@@ -137,6 +138,41 @@ test("pans both compression previews by dragging", () => {
   assert.match(source, /viewport === resultViewport && isPointerInsideResultCanvas\(event\)/);
   assert.match(source, /selectBlockFromPointer\(event\)/);
   assert.doesNotMatch(source, /resultCanvas\.addEventListener\("click"/);
+});
+
+test("offers the viewer zoom controls for both compression previews", () => {
+  assert.match(html, /id="zoom-out"[^>]*disabled/);
+  assert.match(html, /id="zoom-in"[^>]*disabled/);
+  assert.match(html, /id="actual-size"[^>]*aria-pressed="false"[^>]*disabled/);
+  assert.match(html, /id="fit-image"[^>]*aria-pressed="true"[^>]*disabled/);
+  assert.match(source, /viewMode: "fit"/);
+  assert.match(source, /zoomOutButton\.addEventListener\("click", \(\) => setZoom\(state\.zoom \/ ZOOM_FACTOR\)\)/);
+  assert.match(source, /zoomInButton\.addEventListener\("click", \(\) => setZoom\(state\.zoom \* ZOOM_FACTOR\)\)/);
+  assert.match(source, /actualSizeButton\.addEventListener\("click", showActualSize\)/);
+  assert.match(source, /fitImageButton\.addEventListener\("click", fitImage\)/);
+  assert.match(source, /setViewMode\("actual"\)/);
+  assert.match(source, /setViewMode\("fit"\)/);
+  assert.match(source, /setViewMode\("custom"\)/);
+  assert.match(source, /state\.imageWidth \* state\.zoom/);
+  assert.doesNotMatch(source, /displayBaseScale/);
+  assert.match(css, /#actual-size\[aria-pressed="true"\]/);
+  assert.match(css, /#fit-image\[aria-pressed="true"\]/);
+});
+
+test("pinch-zooms either compression preview on touch devices", () => {
+  assert.match(css, /\.canvas-viewport \{[\s\S]*?touch-action: none;/);
+  assert.match(source, /touches: new Map\(\)/);
+  assert.match(source, /pinch: null/);
+  assert.match(source, /viewport\.addEventListener\("pointerdown", startViewportPointer\)/);
+  assert.match(source, /if \(event\.pointerType === "touch"\) \{\s*startViewportTouch\(event\)/);
+  assert.match(source, /startViewportPinch\(viewport\)/);
+  assert.match(source, /state\.pinch\.startZoom \* distance \/ state\.pinch\.startDistance/);
+  assert.match(
+    source,
+    /setZoom\(nextZoom, state\.pinch\.viewport, center\.x, center\.y, false, \{/
+  );
+  assert.match(source, /function getTouchDistance\(first, second\)/);
+  assert.match(source, /function getTouchCenter\(first, second\)/);
 });
 
 test("highlights the selected block even when the grid is hidden", () => {
