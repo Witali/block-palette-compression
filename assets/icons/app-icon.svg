@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Block Palette Compression</title>
+  <rect width="512" height="512" rx="112" fill="#101318"/>
+  <rect x="76" y="76" width="360" height="360" rx="68" fill="#171c23" stroke="#29313b" stroke-width="12"/>
+  <g stroke="#101318" stroke-width="10">
+    <rect x="120" y="120" width="82" height="82" rx="16" fill="#4a91ee"/>
+    <rect x="215" y="120" width="82" height="82" rx="16" fill="#71d0a1"/>
+    <rect x="310" y="120" width="82" height="82" rx="16" fill="#f6c85f"/>
+    <rect x="120" y="215" width="82" height="82" rx="16" fill="#ef6a6a"/>
+    <rect x="215" y="215" width="82" height="82" rx="16" fill="#eef2f5"/>
+    <rect x="310" y="215" width="82" height="82" rx="16" fill="#a987e8"/>
+    <rect x="120" y="310" width="82" height="82" rx="16" fill="#f6c85f"/>
+    <rect x="215" y="310" width="82" height="82" rx="16" fill="#4a91ee"/>
+    <rect x="310" y="310" width="82" height="82" rx="16" fill="#71d0a1"/>
+  </g>
+</svg>

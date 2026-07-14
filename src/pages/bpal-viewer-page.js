@@ -56,6 +56,7 @@ const state = {
   stageOffsetX: STAGE_MARGIN,
   stageOffsetY: STAGE_MARGIN,
 };
+let fileLaunchReceived = false;
 
 window.addEventListener("languagechange", () => {
   if (state.fileDescription) {
@@ -193,21 +194,73 @@ window.addEventListener("resize", () => {
   }
 });
 
+registerFileLaunchHandler();
 initializeBundledExamples();
 
+function registerFileLaunchHandler() {
+  if (!("launchQueue" in window)) {
+    return;
+  }
+
+  window.launchQueue.setConsumer(async (launchParams) => {
+    const [fileHandle] = launchParams.files || [];
+
+    if (!fileHandle) {
+      return;
+    }
+
+    fileLaunchReceived = true;
+    const launchId = ++state.loadId;
+
+    setLoading(true);
+
+    try {
+      const file = await fileHandle.getFile();
+
+      if (launchId === state.loadId) {
+        await loadFile(file);
+      }
+    } catch (error) {
+      if (launchId === state.loadId) {
+        console.error("Could not open the file passed by the operating system.", error);
+        setStatus(error && error.message ? error.message : String(error), true);
+      }
+    } finally {
+      if (launchId === state.loadId) {
+        setLoading(false);
+      }
+    }
+  });
+}
+
 async function initializeBundledExamples() {
+  if (fileLaunchReceived) {
+    return;
+  }
+
+  const initializationId = ++state.loadId;
+
   setLoading(true);
 
   try {
     const manifest = await window.BpalExampleCatalog.loadManifest();
+
+    if (fileLaunchReceived || initializationId !== state.loadId) {
+      return;
+    }
+
     const example = window.BpalExampleCatalog.populateSelect(exampleSelect, manifest);
 
     await loadBundledBlockPalette(example.url, example.name);
   } catch (error) {
-    console.error("Could not load the bundled BPAL manifest.", error);
-    setStatus(error && error.message ? error.message : String(error), true);
+    if (initializationId === state.loadId) {
+      console.error("Could not load the bundled BPAL manifest.", error);
+      setStatus(error && error.message ? error.message : String(error), true);
+    }
   } finally {
-    setLoading(false);
+    if (initializationId === state.loadId) {
+      setLoading(false);
+    }
   }
 }
 
