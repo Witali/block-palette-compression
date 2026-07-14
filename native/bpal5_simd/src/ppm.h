@@ -4,6 +4,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 int bpal5_ppm_read(
     const char *path,
     uint8_t **rgb,
@@ -30,5 +34,9 @@ int bpal5_ppm_write_rgba(
     char *error,
     size_t error_size
 );
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
