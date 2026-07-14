@@ -75,6 +75,23 @@ python benchmark/profile_search/score.py --jobs 8
 The final machine-readable report is written to
 `benchmark/work/bpal-profile-search/full/report.json`.
 
+## K-means versus source-snapped K-medoids
+
+The centroid comparison uses the optimized 1.5, 2, 2.5, and 3 bpp profiles to
+measure the quality and cost of constraining every palette center to an actual
+source color. It defaults to eight concurrent Node.js processes:
+
+```powershell
+node benchmark/profile_search/compare_centers.js --jobs 8
+node benchmark/profile_search/compare_centers.js --targets 1.5,2 --jobs 8
+```
+
+The script reports RGB MSE/PSNR, mean RGB bias, the share of active palette
+entries found exactly in the source image, and elapsed time. The machine-readable
+result is written to `benchmark/work/centroid-comparison/report.json`; the
+methodology and reference results are documented in the
+[centroid comparison report](../results/bpal-centroid-comparison.md).
+
 ## Lightweight validation
 
 The scripts can be checked without running the expensive benchmark:
@@ -83,5 +100,6 @@ The scripts can be checked without running the expensive benchmark:
 node --check benchmark/profile_search/search.js
 node --check benchmark/profile_search/extended.js
 node --check benchmark/profile_search/full.js
+node --check benchmark/profile_search/compare_centers.js
 python -m py_compile benchmark/profile_search/score.py
 ```
