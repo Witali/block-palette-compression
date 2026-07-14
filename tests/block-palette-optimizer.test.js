@@ -140,6 +140,28 @@ test("limits target-bpp optimization to the midpoint range", () => {
   );
 });
 
+test("keeps the selected palette color format for every search candidate", () => {
+  const source = new Uint8ClampedArray([
+    0, 0, 0, 255, 85, 85, 85, 255,
+    170, 170, 170, 255, 255, 255, 255, 255,
+  ]);
+  const optimized = findBalancedBlockPaletteSettings(source, 2, 2, {
+    profiles: [
+      { blockSize: 2, localColorCount: 2, globalColorCount: 8, paletteColorBits: 16 },
+      { blockSize: 2, localColorCount: 2, globalColorCount: 8, paletteColorBits: 24 },
+    ],
+    paletteColorBits: 24,
+    colorSpace: "rgb",
+    clusteringMethod: "k-medians",
+  });
+
+  assert.equal(optimized.candidates.length, 1);
+  assert.equal(optimized.settings.paletteColorBits, 24);
+  assert.ok(optimized.candidates.every((candidate) => (
+    candidate.settings.paletteColorBits === 24
+  )));
+});
+
 test("measures candidate bpp for the full image while evaluating preview quality", () => {
   const source = new Uint8ClampedArray([
     0, 0, 0, 255, 85, 85, 85, 255,

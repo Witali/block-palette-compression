@@ -68,7 +68,8 @@ static int find_best_settings(
     }
     fprintf(
         stderr,
-        "Finding settings for preset %s in %.3f..%.3f bpp (%zu candidates)\n",
+        "Finding settings for target %.3f bpp (preset %s), allowed range %.3f..%.3f bpp (%zu candidates)\n",
+        target_bpp,
         preset_name,
         minimum_bpp,
         maximum_bpp,
@@ -151,8 +152,9 @@ static int find_best_settings(
     }
     fprintf(
         stderr,
-        "Selected %.3f bpp with RMSE %.6f and PSNR %.4f dB\n",
+        "Selected %.3f bpp for target %.3f bpp with RMSE %.6f and PSNR %.4f dB\n",
         best_bpp,
+        target_bpp,
         sqrt((double)best_error / ((double)width * height * 3.0)),
         best_error == 0u
             ? INFINITY

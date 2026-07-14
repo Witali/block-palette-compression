@@ -1201,16 +1201,19 @@ function optimizeSettings() {
   stopOptimizer();
   setBusy(true);
   optimizeButton.textContent = t("block.optimizeInitial");
-  setStatus(t("block.optimizePreparing"), "busy");
+  setStatus(t("block.optimizePreparing", {
+    target: targetBitsPerPixel.toFixed(2),
+  }), "busy");
   startProgress({
     stage: "searching-settings",
     progress: 0,
     completed: 0,
-    total: 21,
+    total: 19,
+    targetBitsPerPixel,
   });
 
   const preview = createOptimizationPreview();
-  const worker = new Worker("./src/palette/block-palette-optimizer-worker.js?v=target-bpp-quality-1");
+  const worker = new Worker("./src/palette/block-palette-optimizer-worker.js?v=target-bpp-quality-2");
 
   state.optimizerWorker = worker;
 
@@ -1228,6 +1231,7 @@ function optimizeSettings() {
         progress: completed / total,
         completed,
         total,
+        targetBitsPerPixel,
         search: {
           size: candidate.fileBytes,
           rmse: candidate.rmse,
@@ -1238,6 +1242,7 @@ function optimizeSettings() {
         t("block.optimizeSearching", {
           completed,
           total,
+          target: targetBitsPerPixel.toFixed(2),
           size: formatBytes(candidate.fileBytes),
           bpp: candidate.bitsPerPixel.toFixed(2),
           rmse: candidate.rmse.toFixed(2),
@@ -1272,6 +1277,7 @@ function optimizeSettings() {
       setStatus(
         t("block.optimizeFound", {
           count: formatInteger(matchingCandidates.length),
+          target: targetBitsPerPixel.toFixed(2),
           minimum: bitsPerPixelRange.minimum.toFixed(2),
           maximum: bitsPerPixelRange.maximum.toFixed(2),
           bpp: selected.bitsPerPixel.toFixed(2),
@@ -1303,6 +1309,7 @@ function optimizeSettings() {
       diversity: getDiversity(),
       refinementPasses: Number(refinementPassesSelect.value),
       paletteCount: Number(paletteCountSelect.value),
+      paletteColorBits: Number(paletteColorBitsSelect.value),
       paletteMode: "explicit",
       targetBitsPerPixel,
       bitsPerPixelTargets: QUALITY_PRESET_BITS_PER_PIXEL,
@@ -1408,6 +1415,7 @@ function renderProgress(progress) {
     progressDetail.textContent = t("block.progressSearchDetail", {
       completed: formatInteger(progress.completed),
       total: formatInteger(progress.total),
+      target: progress.targetBitsPerPixel.toFixed(2),
       size: formatBytes(progress.search.size),
       bpp: progress.search.bpp.toFixed(2),
       rmse: progress.search.rmse.toFixed(2),
