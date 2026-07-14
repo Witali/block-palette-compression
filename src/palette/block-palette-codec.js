@@ -39,7 +39,7 @@
     const paletteColorBits = Number(options.paletteColorBits || 24);
     const paletteMode = options.paletteMode || "explicit";
     const colorSpace = options.colorSpace || "oklab";
-    const clusteringMethod = options.clusteringMethod || "k-means";
+    const clusteringMethod = options.clusteringMethod || "k-medoids";
     const dithering = options.dithering || "none";
     const diversity = options.diversity === undefined ? 0 : Number(options.diversity);
     const refinementPasses = options.refinementPasses === undefined

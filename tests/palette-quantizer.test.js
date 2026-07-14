@@ -75,10 +75,17 @@ test("supports Bayer 2x2, Bayer 4x4, and Floyd-Steinberg output dithering", () =
   }
 
   const source = pixels(values);
-  const plain = quantizeImage(source, 16, 4, 2, { dithering: "none" });
-  const pattern2 = quantizeImage(source, 16, 4, 2, { dithering: "pattern-2x2" });
-  const pattern = quantizeImage(source, 16, 4, 2, { dithering: "pattern" });
-  const floyd = quantizeImage(source, 16, 4, 2, { dithering: "floyd-steinberg" });
+  const settings = { clusteringMethod: "k-means" };
+  const plain = quantizeImage(source, 16, 4, 2, { ...settings, dithering: "none" });
+  const pattern2 = quantizeImage(source, 16, 4, 2, {
+    ...settings,
+    dithering: "pattern-2x2",
+  });
+  const pattern = quantizeImage(source, 16, 4, 2, { ...settings, dithering: "pattern" });
+  const floyd = quantizeImage(source, 16, 4, 2, {
+    ...settings,
+    dithering: "floyd-steinberg",
+  });
 
   assert.equal(pattern2.dithering, "pattern-2x2");
   assert.equal(pattern.dithering, "pattern");
@@ -92,16 +99,23 @@ test("supports Bayer 2x2, Bayer 4x4, and Floyd-Steinberg output dithering", () =
   assertUsesOnlyPaletteColors(floyd);
 });
 
-test("uses OKLab by default and supports explicit RGB clustering", () => {
+test("uses OKLab and K-medoids by default and supports explicit RGB clustering", () => {
   const source = pixels([
     [255, 0, 0, 255],
     [0, 255, 0, 255],
   ]);
   const defaultResult = quantizeImage(source, 2, 1, 1);
-  const oklab = quantizeImage(source, 2, 1, 1, { colorSpace: "oklab" });
-  const rgb = quantizeImage(source, 2, 1, 1, { colorSpace: "rgb" });
+  const oklab = quantizeImage(source, 2, 1, 1, {
+    colorSpace: "oklab",
+    clusteringMethod: "k-means",
+  });
+  const rgb = quantizeImage(source, 2, 1, 1, {
+    colorSpace: "rgb",
+    clusteringMethod: "k-means",
+  });
 
   assert.equal(defaultResult.colorSpace, "oklab");
+  assert.equal(defaultResult.clusteringMethod, "k-medoids");
   assert.equal(oklab.colorSpace, "oklab");
   assert.equal(rgb.colorSpace, "rgb");
   assert.equal(rgb.palette[0].hex, "#808000");

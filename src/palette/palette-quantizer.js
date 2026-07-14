@@ -41,7 +41,7 @@
       : DEFAULT_MAX_ITERATIONS;
     const dithering = settings.dithering || "none";
     const colorSpace = settings.colorSpace || "oklab";
-    const clusteringMethod = settings.clusteringMethod || "k-means";
+    const clusteringMethod = settings.clusteringMethod || "k-medoids";
     const diversity = settings.diversity === undefined ? 0 : Number(settings.diversity);
     const onProgress = typeof settings.onProgress === "function"
       ? settings.onProgress

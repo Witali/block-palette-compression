@@ -236,7 +236,7 @@ function applyQualityPreset() {
   paletteCountSelect.value = String(preset.paletteCount);
   paletteColorBitsSelect.value = "24";
   colorSpaceSelect.value = "rgb";
-  clusteringMethodSelect.value = "k-means";
+  clusteringMethodSelect.value = "k-medoids";
   algorithmSelect.value = "cpu";
   diversityInput.value = "0";
   ditheringSelect.value = "none";
@@ -302,8 +302,8 @@ function processImage() {
   const sourceCopy = new Uint8ClampedArray(state.sourceImageData.data);
   const processingId = ++state.processingId;
   const workerUrl = settings.algorithm === "webgl"
-    ? "./src/palette/block-palette-webgl-worker.js?v=k-medoids-1"
-    : "./src/palette/block-palette-worker.js?v=k-medoids-1";
+    ? "./src/palette/block-palette-webgl-worker.js?v=k-medoids-default-1"
+    : "./src/palette/block-palette-worker.js?v=k-medoids-default-1";
   const worker = new Worker(workerUrl);
 
   state.worker = worker;
@@ -921,7 +921,7 @@ function optimizeSettings() {
   });
 
   const preview = createOptimizationPreview();
-  const worker = new Worker("./src/palette/block-palette-optimizer-worker.js?v=k-medoids-1");
+  const worker = new Worker("./src/palette/block-palette-optimizer-worker.js?v=k-medoids-default-1");
 
   state.optimizerWorker = worker;
 

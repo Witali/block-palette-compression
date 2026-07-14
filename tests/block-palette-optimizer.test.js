@@ -34,8 +34,19 @@ test("searches profiles and returns a non-dominated balanced setting", () => {
     dithering: "none",
     diversity: 0,
   }, (entry) => progress.push(entry));
+  const explicitMedoids = findBalancedBlockPaletteSettings(source, 16, 16, {
+    profiles,
+    colorSpace: "rgb",
+    clusteringMethod: "k-medoids",
+    dithering: "none",
+    diversity: 0,
+  });
 
   assert.equal(result.candidates.length, profiles.length);
+  assert.deepEqual(
+    result.candidates.map((candidate) => candidate.rmse),
+    explicitMedoids.candidates.map((candidate) => candidate.rmse)
+  );
   assert.equal(progress.length, profiles.length);
   assert.deepEqual(progress.map((entry) => entry.completed), [1, 2, 3, 4]);
   assert.ok(result.frontier.includes(result.frontier.find((candidate) => (

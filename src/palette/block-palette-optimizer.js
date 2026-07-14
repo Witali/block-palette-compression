@@ -49,7 +49,7 @@
     const profiles = normalizeProfiles(searchOptions.profiles || DEFAULT_PROFILES);
     const commonSettings = {
       colorSpace: searchOptions.colorSpace || "oklab",
-      clusteringMethod: searchOptions.clusteringMethod || "k-means",
+      clusteringMethod: searchOptions.clusteringMethod || "k-medoids",
       dithering: searchOptions.dithering || "none",
       diversity: searchOptions.diversity === undefined ? 0 : searchOptions.diversity,
       refinementPasses: searchOptions.refinementPasses === undefined

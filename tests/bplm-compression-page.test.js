@@ -103,11 +103,13 @@ test("offers zero to four refinement passes and defaults to one", () => {
   assert.match(optimizerSource, /refinementPasses: searchOptions\.refinementPasses === undefined/);
 });
 
-test("offers source-snapped K-medoids as an optional clustering method", () => {
+test("uses source-snapped K-medoids as the default clustering method", () => {
   assert.match(
     html,
-    /<option value="k-medoids" data-i18n="block\.kmedoids">K-medoids · source colors<\/option>/
+    /<option value="k-medoids" selected data-i18n="block\.kmedoids">K-medoids · source colors<\/option>/
   );
+  assert.doesNotMatch(html, /<option value="k-means" selected/);
+  assert.match(source, /clusteringMethodSelect\.value = "k-medoids"/);
   assert.match(source, /if \(value === "k-medoids"\) \{\s*return t\("block\.kmedoids"\);/);
 });
 

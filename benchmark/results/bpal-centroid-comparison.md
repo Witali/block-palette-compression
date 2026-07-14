@@ -12,16 +12,17 @@ The added **K-medoids · source colors** mode keeps the density-aware weighted
 center but snaps it to the nearest real source color assigned to the cluster.
 The same constraint is applied during iterative refinement. This removes
 synthetic averaged palette colors and can reduce visible hue substitution at
-very low bit rates. It does not minimize squared error as well as K-means, so it
-is an optional clustering method rather than the new default.
+very low bit rates. It does not minimize squared error as well as K-means. The
+project nevertheless uses K-medoids by default to prioritize source-color
+fidelity; K-means remains available when minimum squared error is preferred.
 
 On the eight-image test corpus, K-medoids made 100% of active palette entries
 exact source colors at every tested rate. The PSNR cost was 0.011 dB at 1.5 bpp
 and increased gradually to 0.084 dB at 3 bpp. Mean whole-image RGB bias improved
 at 1.5 bpp but was slightly worse at the other rates. Consequently, K-medoids is
-recommended when faithful dominant hues matter more than the lowest MSE;
-weighted K-means remains preferable for gradients, PSNR, and the general
-quality presets.
+recommended when faithful dominant hues matter more than the lowest MSE and is
+now the project default. Weighted K-means remains preferable for gradients and
+PSNR and can still be selected explicitly.
 
 ## Results
 

@@ -16,7 +16,7 @@ test("uses quality-oriented explicit-palette defaults", () => {
   assert.equal(result.localColorCount, 8);
   assert.equal(result.paletteMode, "explicit");
   assert.equal(result.globalColorCount, 256);
-  assert.equal(result.clusteringMethod, "k-means");
+  assert.equal(result.clusteringMethod, "k-medoids");
   assert.equal(result.refinementPasses, 4);
 });
 
