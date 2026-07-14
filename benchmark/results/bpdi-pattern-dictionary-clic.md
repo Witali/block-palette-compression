@@ -7,34 +7,36 @@ Research date: July 14, 2026.
 An exact pattern dictionary can reduce BPAL files while preserving every
 decoded RGB value and retaining coordinate-level random access. Across all 42
 images in the local CLIC 2020 Professional Validation corpus and three BPAL
-presets, hybrid selection reduced the aggregate size by 4.53%. It selected
+presets, hybrid selection reduced the aggregate size by 4.82%. It selected
 BPDI only when the candidate was smaller and retained BPAL otherwise, so none
 of the 126 output files grew and the PSNR change was exactly 0.000 dB.
 
-BPDI v3 adds exact dictionary references under the eight square-block
-symmetries. Relative to BPDI v2, this reduced the same hybrid output by 52,714
-bytes (0.061%) and made one additional file smaller. The transform is stored
-only for transformed references, so ordinary dictionary tags do not grow.
+BPDI v3 adds canonical first-use palette remapping and exact dictionary
+references under the eight square-block symmetries. Relative to BPDI v2, the
+two changes reduced the same hybrid output by 319,532 bytes (0.371%) and made
+three additional files smaller. Transform references account for 52,714 bytes
+of that reduction on their own. The transform is stored only for transformed
+references, so ordinary dictionary tags do not grow.
 
 The experiment is most effective at 1.5 bpp, where pixel-index patterns occupy
 a large share of the file and use only two local symbols. The aggregate saving
-at this rate was 9.15%, with 30 of 42 images becoming smaller. The 2.5 and 4
-bpp profiles improved by 3.24% and 3.66% respectively.
+at this rate was 9.84%, with 31 of 42 images becoming smaller. The 2.5 and 4
+bpp profiles improved by 3.41% and 3.88% respectively.
 
 ## Aggregate results
 
 | Preset | Images | BPAL bytes | Best bytes | Change | Smaller files | Aggregate PSNR | PSNR change | Mean random access |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1.5 | 42 | 16,452,505 | 14,947,695 | -9.15% | 30 | 26.713 dB | 0.000 dB | 584,846 pixels/s |
-| 2.5 | 42 | 28,333,084 | 27,415,118 | -3.24% | 17 | 34.026 dB | 0.000 dB | 871,015 pixels/s |
-| 4 | 42 | 45,328,451 | 43,671,287 | -3.66% | 21 | 37.977 dB | 0.000 dB | 683,789 pixels/s |
-| **All** | **126** | **90,114,040** | **86,034,100** | **-4.53%** | **68** | — | **0.000 dB** | — |
+| 1.5 | 42 | 16,452,505 | 14,833,299 | -9.84% | 31 | 26.713 dB | 0.000 dB | 602,157 pixels/s |
+| 2.5 | 42 | 28,333,084 | 27,366,507 | -3.41% | 17 | 34.026 dB | 0.000 dB | 892,830 pixels/s |
+| 4 | 42 | 45,328,451 | 43,567,476 | -3.88% | 22 | 37.977 dB | 0.000 dB | 728,389 pixels/s |
+| **All** | **126** | **90,114,040** | **85,767,282** | **-4.82%** | **70** | — | **0.000 dB** | — |
 
 The largest individual reductions were:
 
-- 29.06% at 1.5 bpp for `jason-briscoe-149782.png`;
-- 22.39% at 2.5 bpp for `jason-briscoe-149782.png`;
-- 23.28% at 4 bpp for `jason-briscoe-149782.png`.
+- 29.40% at 1.5 bpp for `jason-briscoe-149782.png`;
+- 23.09% at 2.5 bpp for `jason-briscoe-149782.png`;
+- 24.04% at 4 bpp for `jason-briscoe-149782.png`.
 
 ## Methodology
 
@@ -61,9 +63,10 @@ The ignored machine-readable report is written to
 
 The experimental `BPDI` v3 format keeps the BPAL palette, per-block palette
 selectors, and local-to-shared palette tables. It replaces only the linear
-pixel-index stream. Local palette slots are first canonicalized by active use
-and reconstructed luminance so equivalent block patterns are more likely to
-use the same symbol numbering.
+pixel-index stream. Active local palette slots are canonicalized by the raster
+position of their first use, with reconstructed color used only as a stable
+tie-breaker for unused slots. Equivalent index patterns therefore receive the
+same symbol numbering even when their block palettes contain different colors.
 
 Every block selects its cheapest exact representation:
 

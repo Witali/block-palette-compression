@@ -836,6 +836,9 @@
         const blockOffset = blockIndex * metadata.localColorCount;
         const patternOffset = blockIndex * metadata.pixelsPerBlock;
         const usage = new Uint32Array(metadata.localColorCount);
+        const firstUse = new Uint32Array(metadata.localColorCount);
+
+        firstUse.fill(metadata.pixelsPerBlock);
 
         for (let localY = 0; localY < metadata.blockSize; localY += 1) {
           const y = blockY * metadata.blockSize + localY;
@@ -848,7 +851,11 @@
             const x = blockX * metadata.blockSize + localX;
 
             if (x < metadata.width) {
-              usage[metadata.pixelIndices[y * metadata.width + x]] += 1;
+              const localIndex = metadata.pixelIndices[y * metadata.width + x];
+              const localPosition = localY * metadata.blockSize + localX;
+
+              usage[localIndex] += 1;
+              firstUse[localIndex] = Math.min(firstUse[localIndex], localPosition);
             }
           }
         }
@@ -862,6 +869,7 @@
             oldIndex,
             globalIndex,
             usage: usage[oldIndex],
+            firstUse: firstUse[oldIndex],
             color,
             luma: 2126 * color.r + 7152 * color.g + 722 * color.b,
           };
@@ -869,6 +877,7 @@
 
         entries.sort((left, right) => (
           Number(right.usage > 0) - Number(left.usage > 0) ||
+          left.firstUse - right.firstUse ||
           left.luma - right.luma ||
           left.color.r - right.color.r ||
           left.color.g - right.color.g ||

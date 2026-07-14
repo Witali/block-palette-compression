@@ -239,12 +239,6 @@ function createRunPatternImage() {
     { r: 170, g: 170, b: 170 },
     { r: 255, g: 255, b: 255 },
   ];
-  const permutations = [
-    [0, 1, 2, 3], [0, 1, 3, 2], [0, 2, 1, 3], [0, 2, 3, 1],
-    [0, 3, 1, 2], [0, 3, 2, 1], [1, 0, 2, 3], [1, 0, 3, 2],
-    [1, 2, 0, 3], [1, 2, 3, 0], [1, 3, 0, 2], [1, 3, 2, 0],
-    [2, 0, 1, 3], [2, 0, 3, 1], [2, 1, 0, 3], [2, 1, 3, 0],
-  ];
   const blockPaletteIndices = new Uint16Array(blockCount * localColorCount);
   const pixelIndices = new Uint8Array(width * height);
 
@@ -257,7 +251,9 @@ function createRunPatternImage() {
       const x = block * blockSize + position % blockSize;
       const y = Math.floor(position / blockSize);
 
-      pixelIndices[y * width + x] = permutations[block][Math.floor(position / 4)];
+      pixelIndices[y * width + x] = block < 9
+        ? (position % blockSize + Math.floor(position / blockSize)) % 2
+        : Math.floor(position / blockSize);
     }
   }
 
@@ -280,10 +276,10 @@ function createTransformedPatternImage() {
   const width = blockSize * 2;
   const height = blockSize;
   const pattern = [
-    0, 1, 2, 3,
-    1, 3, 0, 2,
-    3, 2, 1, 0,
-    2, 0, 3, 1,
+    0, 1, 0, 0,
+    0, 1, 1, 0,
+    0, 0, 1, 0,
+    0, 0, 0, 0,
   ];
   const pixelIndices = new Uint8Array(width * height);
 
