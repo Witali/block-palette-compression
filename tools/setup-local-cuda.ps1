@@ -1,3 +1,28 @@
+<#
+.SYNOPSIS
+Downloads and extracts a minimal local CUDA developer toolchain for Windows.
+
+.DESCRIPTION
+Uses NVIDIA's redistributable manifest to download nvcc, CUDA CRT, CUDA
+Runtime, CCCL, and NVVM. Every archive is checked against the SHA-256 value in
+the manifest, then merged under tools/cuda/toolkit. No administrator rights or
+system-wide CUDA installation are required.
+
+.PARAMETER Release
+NVIDIA redistributable manifest release. The default is 13.3.1.
+
+.PARAMETER ToolkitVersion
+Local directory and environment-variable version. The default is 13.3.
+
+.PARAMETER NoUserEnvironment
+Do not persist CUDA_PATH or add the local CUDA bin directory to the user PATH.
+
+.EXAMPLE
+.\tools\setup-local-cuda.ps1
+
+.EXAMPLE
+.\tools\setup-local-cuda.ps1 -NoUserEnvironment
+#>
 [CmdletBinding()]
 param(
     [string]$Release = "13.3.1",
@@ -68,6 +93,35 @@ if (-not $NoUserEnvironment) {
     [Environment]::SetEnvironmentVariable("CUDA_PATH", $toolkitDirectory, "User")
     [Environment]::SetEnvironmentVariable("CUDA_PATH_V$($ToolkitVersion.Replace('.', '_'))", $toolkitDirectory, "User")
     [Environment]::SetEnvironmentVariable("Path", ($pathEntries -join ";"), "User")
+
+    if ($null -eq ("CudaEnvironmentBroadcast" -as [type])) {
+        Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+
+public static class CudaEnvironmentBroadcast {
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern IntPtr SendMessageTimeout(
+        IntPtr window,
+        uint message,
+        UIntPtr parameter,
+        string value,
+        uint flags,
+        uint timeout,
+        out UIntPtr result);
+}
+"@
+    }
+    $broadcastResult = [UIntPtr]::Zero
+    [void][CudaEnvironmentBroadcast]::SendMessageTimeout(
+        [IntPtr]0xffff,
+        0x001A,
+        [UIntPtr]::Zero,
+        "Environment",
+        2,
+        5000,
+        [ref]$broadcastResult
+    )
 }
 
 & $nvccPath --version

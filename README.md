@@ -68,12 +68,27 @@ The project contains:
 
 Detailed documentation:
 
+- [dependency setup](./docs/SETUP.md);
 - [codec and implementation](./BLOCK_PALETTE_README.md)
   ([Russian](./BLOCK_PALETTE_README_ru.md));
 - [BPAL v5 file format](./BLOCK_PALETTE_FORMAT.md)
   ([Russian](./BLOCK_PALETTE_FORMAT_ru.md));
 - [standalone BPAL v5 C/SIMD encoder and decoder](./native/bpal5_simd/README.md);
 - [reproducible BPAL/BC/ASTC texture codec benchmark](./benchmark/README.md).
+
+## Setup
+
+On Windows, the setup script checks Node.js and downloads a SHA-256-verified,
+project-local CUDA 13.3 developer toolchain without changing the NVIDIA display
+driver or requiring administrator rights:
+
+```powershell
+.\setup.ps1
+```
+
+Use `-SkipCuda` for browser-only development or `-NoUserEnvironment` to avoid
+persisting `CUDA_PATH` and `PATH`. See the [dependency setup guide](./docs/SETUP.md)
+for prerequisites, downloaded components, all parameters, and CUDA validation.
 
 ## Run
 
