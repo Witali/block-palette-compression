@@ -1,7 +1,7 @@
 "use strict";
 
 importScripts("../src/palette/palette-quantizer.js?v=progress-1");
-importScripts("../src/palette/block-palette-codec.js?v=block-distance-cache-2");
+importScripts("../src/palette/block-palette-codec.js?v=refinement-distance-cache-2");
 importScripts("../src/palette/block-palette-webgl-codec.js?v=shader-specialization-1");
 
 self.addEventListener("message", (event) => {

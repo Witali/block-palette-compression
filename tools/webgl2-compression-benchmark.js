@@ -124,7 +124,7 @@ async function loadImageData(url, maximumDimension) {
 
 function runCodec(imageData, codecSettings) {
   return new Promise((resolve, reject) => {
-    const worker = new Worker("./webgl2-compression-benchmark-worker.js?v=6");
+    const worker = new Worker("./webgl2-compression-benchmark-worker.js?v=9");
     const source = new Uint8ClampedArray(imageData.data);
 
     worker.addEventListener("message", (event) => {
