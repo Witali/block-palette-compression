@@ -127,7 +127,85 @@ static int test_find_settings_candidates(void) {
     if (bpal5_estimate_payload_bits(&baseline, 16u, 8u) != 576u) {
         return fail("direct block bpp estimate includes pixel indices");
     }
+    baseline.local_color_count = 2u;
+    baseline.channel_mode = BPAL5_CHANNEL_SCALAR;
+    if (bpal5_estimate_payload_bits(&baseline, 16u, 8u) != 384u) {
+        return fail("scalar palette bpp estimate mismatch");
+    }
     return 0;
+}
+
+static int test_specialized_channel_mode(uint32_t channel_mode, size_t expected_bytes) {
+    const uint32_t width = 8u;
+    const uint32_t height = 8u;
+    const size_t pixel_count = (size_t)width * height;
+    uint8_t source[8u * 8u * 3u];
+    bpal5_encode_options options;
+    bpal5_image encoded;
+    bpal5_image parsed;
+    uint8_t *bytes = NULL;
+    uint8_t *decoded = NULL;
+    size_t byte_count = 0u;
+    size_t decoded_size = 0u;
+    char error[512];
+    size_t pixel;
+    int result = 1;
+
+    memset(&encoded, 0, sizeof(encoded));
+    memset(&parsed, 0, sizeof(parsed));
+    for (pixel = 0u; pixel < pixel_count; ++pixel) {
+        const uint8_t red = (uint8_t)((pixel * 37u + 11u) & 255u);
+        source[pixel * 3u] = red;
+        source[pixel * 3u + 1u] = red;
+        source[pixel * 3u + 2u] = red;
+    }
+    bpal5_default_encode_options(&options);
+    options.block_size = 4u;
+    options.local_color_count = 4u;
+    options.global_color_count = 8u;
+    options.palette_count = 1u;
+    options.kmeans_iterations = 2u;
+    options.refinement_passes = 0u;
+    options.thread_count = 1u;
+    options.channel_mode = channel_mode;
+    options.palette_color_bits = 16u;
+    if (!bpal5_encode_rgb(source, width, height, &options, &encoded, error, sizeof(error)) ||
+        !bpal5_serialize(&encoded, &bytes, &byte_count, error, sizeof(error)) ||
+        !bpal5_parse(bytes, byte_count, &parsed, error, sizeof(error)) ||
+        !bpal5_decode_rgba(&parsed, 0, &decoded, &decoded_size, error, sizeof(error))) {
+        fprintf(stderr, "%s\n", error);
+        goto cleanup;
+    }
+    if (byte_count != expected_bytes || parsed.channel_mode != channel_mode ||
+        parsed.palette_color_bits != 24u ||
+        decoded_size != pixel_count * 4u) {
+        result = fail("specialized channel metadata or size mismatch");
+        goto cleanup;
+    }
+    for (pixel = 0u; pixel < pixel_count; ++pixel) {
+        uint32_t random_pixel = 0u;
+        const uint32_t x = (uint32_t)(pixel % width);
+        const uint32_t y = (uint32_t)(pixel / width);
+        if (!bpal5_decode_pixel_rgba(&parsed, x, y, &random_pixel, error, sizeof(error)) ||
+            memcmp(&random_pixel, decoded + pixel * 4u, 4u) != 0) {
+            result = fail("specialized O(1) pixel decode differs from full decode");
+            goto cleanup;
+        }
+        if (channel_mode == BPAL5_CHANNEL_SCALAR &&
+            (decoded[pixel * 4u] != decoded[pixel * 4u + 1u] ||
+             decoded[pixel * 4u] != decoded[pixel * 4u + 2u])) {
+            result = fail("scalar channel was not replicated");
+            goto cleanup;
+        }
+    }
+    result = 0;
+
+cleanup:
+    bpal5_free(bytes);
+    bpal5_free(decoded);
+    bpal5_image_free(&encoded);
+    bpal5_image_free(&parsed);
+    return result;
 }
 
 int main(void) {
@@ -153,6 +231,9 @@ int main(void) {
         return 1;
     }
     if (test_find_settings_candidates() != 0) {
+        return 1;
+    }
+    if (test_specialized_channel_mode(BPAL5_CHANNEL_SCALAR, 44u) != 0) {
         return 1;
     }
     if (source == NULL) {

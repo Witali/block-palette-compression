@@ -46,6 +46,7 @@
       paletteIndexBits: decoded.paletteIndexBits,
       paletteMode: decoded.paletteMode,
       paletteColorBits: decoded.paletteColorBits,
+      channelMode: decoded.channelMode,
       blocksX: decoded.blocksX,
       palette: decoded.palette,
       blockPaletteSelectors: decoded.blockPaletteSelectors,

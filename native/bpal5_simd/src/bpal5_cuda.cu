@@ -148,6 +148,16 @@ uint32_t pack_host_rgba(uint8_t red, uint8_t green, uint8_t blue) {
         0xff000000u;
 }
 
+void finalize_channel_palette(bpal5_image *image) {
+    const size_t entries = static_cast<size_t>(image->palette_count) * image->global_color_count;
+    for (size_t index = 0u; index < entries; ++index) {
+        const uint8_t red = static_cast<uint8_t>(image->palette_rgba[index] & 255u);
+        if (image->channel_mode == BPAL5_CHANNEL_SCALAR) {
+            image->palette_rgba[index] = pack_host_rgba(red, red, red);
+        }
+    }
+}
+
 bool collect_palette_samples(
     const uint8_t *rgb,
     const bpal5_image &image,
@@ -750,6 +760,8 @@ extern "C" int bpal5_encode_rgb_cuda(
     uint32_t pass = 0u;
     int success = 0;
     float event_milliseconds = 0.0f;
+    const uint8_t *source_rgb = rgb;
+    std::vector<uint8_t> channel_source;
 
 #define BPAL5_CUDA_CHECK(call, operation) \
     do { \
@@ -772,6 +784,23 @@ extern "C" int bpal5_encode_rgb_cuda(
         options = *options_input;
     }
 
+    if (options.channel_mode == BPAL5_CHANNEL_SCALAR) {
+        const size_t source_pixels = static_cast<size_t>(width) * height;
+        try {
+            channel_source.resize(source_pixels * 3u);
+        } catch (const std::bad_alloc &) {
+            set_message(error, error_size, "Out of memory preparing CUDA BPAL channel mode");
+            return 0;
+        }
+        for (size_t pixel = 0u; pixel < source_pixels; ++pixel) {
+            const uint8_t red = rgb[pixel * 3u];
+            channel_source[pixel * 3u] = red;
+            channel_source[pixel * 3u + 1u] = red;
+            channel_source[pixel * 3u + 2u] = red;
+        }
+        source_rgb = channel_source.data();
+    }
+
     result_stats->requested_refinement_passes = options.refinement_passes;
 
     try {
@@ -782,7 +811,7 @@ extern "C" int bpal5_encode_rgb_cuda(
 
     cpu_start = std::chrono::steady_clock::now();
     if (!bpal5_prepare_rgb_image_internal(
-            rgb,
+            source_rgb,
             width,
             height,
             &options,
@@ -793,7 +822,7 @@ extern "C" int bpal5_encode_rgb_cuda(
         goto cleanup;
     }
     sample_start = std::chrono::steady_clock::now();
-    if (!collect_palette_samples(rgb, image, &samples, error, error_size)) {
+    if (!collect_palette_samples(source_rgb, image, &samples, error, error_size)) {
         goto cleanup;
     }
     sample_end = std::chrono::steady_clock::now();
@@ -859,7 +888,7 @@ extern "C" int bpal5_encode_rgb_cuda(
     BPAL5_CUDA_CHECK(cudaMalloc(&buffers.sample_counts, image.palette_count * sizeof(uint32_t)), "Cannot allocate CUDA palette sample counts");
     BPAL5_CUDA_CHECK(cudaMalloc(&buffers.nearest_sample_distances, samples.colors.size() * sizeof(uint32_t)), "Cannot allocate CUDA palette sample distances");
 
-    BPAL5_CUDA_CHECK(cudaMemcpy(buffers.rgb_bytes, rgb, pixel_count * 3u, cudaMemcpyHostToDevice), "Cannot upload source image to CUDA");
+    BPAL5_CUDA_CHECK(cudaMemcpy(buffers.rgb_bytes, source_rgb, pixel_count * 3u, cudaMemcpyHostToDevice), "Cannot upload source image to CUDA");
     BPAL5_CUDA_CHECK(cudaMemcpy(buffers.selectors, image.block_palette_selectors, image.block_count, cudaMemcpyHostToDevice), "Cannot upload palette selectors to CUDA");
     BPAL5_CUDA_CHECK(cudaMemcpy(buffers.samples, samples.colors.data(), samples.colors.size() * sizeof(uint32_t), cudaMemcpyHostToDevice), "Cannot upload CUDA palette samples");
     BPAL5_CUDA_CHECK(cudaMemcpy(buffers.sample_offsets, samples.offsets.data(), image.palette_count * sizeof(uint32_t), cudaMemcpyHostToDevice), "Cannot upload CUDA palette sample offsets");
@@ -1034,6 +1063,8 @@ extern "C" int bpal5_encode_rgb_cuda(
     BPAL5_CUDA_CHECK(cudaEventElapsedTime(&event_milliseconds, initial_finished, refinement_finished), "Cannot measure CUDA refinement");
     result_stats->gpu_refinement_milliseconds = event_milliseconds;
     result_stats->final_error = current_error;
+
+    finalize_channel_palette(&image);
 
     *output = image;
     std::memset(&image, 0, sizeof(image));

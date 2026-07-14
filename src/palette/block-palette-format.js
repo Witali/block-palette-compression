@@ -18,6 +18,7 @@
   const BIT_FIELD_HEADER_BITS = 80;
   const HEADER_BYTES = MAGIC_BYTES + BIT_FIELD_HEADER_BITS / 8;
   const MAX_DIMENSION = 1 << 24;
+  const CHANNEL_MODE_CODES = { rgb: 0, scalar: 1 };
 
   function encodeBlockPaletteFile(image) {
     const metadata = validateImage(image);
@@ -39,7 +40,8 @@
     writer.write(metadata.paletteMode === "vector" ? metadata.paletteVectorCount - 1 : 0, 9);
     writer.write(metadata.vectorColorSpace === "oklab" ? 1 : 0, 1);
     writer.write(metadata.paletteIndexBits, 3);
-    writer.write(0, 4);
+    writer.write(CHANNEL_MODE_CODES[metadata.channelMode], 2);
+    writer.write(0, 2);
 
     const storedColors = metadata.paletteMode === "vector"
       ? metadata.paletteVectors.flatMap((vector) => [vector.start, vector.end])
@@ -47,7 +49,9 @@
 
     for (const color of storedColors) {
 
-      if (metadata.paletteColorBits === 16) {
+      if (metadata.channelMode === "scalar") {
+        writer.write(color.r, 8);
+      } else if (metadata.paletteColorBits === 16) {
         writer.write(packRgb565(color), 16);
       } else {
         writer.write(color.r, 8);
@@ -117,7 +121,11 @@
       ? "oklab"
       : "rgb";
     const paletteIndexBits = reader.read(3);
-    const reserved = reader.read(4);
+    const channelModeCode = reader.read(2);
+    const reserved = reader.read(2);
+    const channelMode = Object.keys(CHANNEL_MODE_CODES).find(
+      (name) => CHANNEL_MODE_CODES[name] === channelModeCode
+    );
     const paletteVectorCount = paletteMode === "vector" ? storedVectorCount : 0;
     const paletteCount = 2 ** paletteIndexBits;
     const blockSize = 2 ** blockSizeExponent;
@@ -127,6 +135,7 @@
     if (reserved !== 0) {
       throw new RangeError(`Unsupported BPAL v${version} flags`);
     }
+    validateChannelMode(channelMode, paletteMode);
 
     validateMetadata({
       width,
@@ -155,7 +164,8 @@
       paletteMode,
       paletteVectorCount,
       BIT_FIELD_HEADER_BITS,
-      directPixelColors
+      directPixelColors,
+      channelMode
     );
 
     if (bytes.length !== layout.totalBytes) {
@@ -180,7 +190,7 @@
       palette = new Array(paletteCount * globalColorCount);
 
       for (let index = 0; index < palette.length; index += 1) {
-        palette[index] = readColor(reader, paletteColorBits);
+        palette[index] = readStoredColor(reader, paletteColorBits, channelMode);
       }
     }
 
@@ -232,6 +242,7 @@
       globalColorCount,
       paletteCount,
       paletteColorBits,
+      channelMode,
       paletteMode,
       vectorColorSpace,
       paletteVectorCount,
@@ -265,7 +276,8 @@
       image.paletteMode || "explicit",
       image.paletteVectorCount || 0,
       BIT_FIELD_HEADER_BITS,
-      image.localColorCount === image.blockSize * image.blockSize
+      image.localColorCount === image.blockSize * image.blockSize,
+      image.channelMode || "rgb"
     );
   }
 
@@ -280,7 +292,8 @@
     paletteMode,
     paletteVectorCount,
     bitFieldHeaderBits,
-    directPixelColors
+    directPixelColors,
+    channelMode
   ) {
     const localIndexBits = Math.log2(localColorCount);
     const globalIndexBits = Math.log2(globalColorCount);
@@ -288,7 +301,10 @@
     const storedColorCount = paletteMode === "vector"
       ? paletteVectorCount * 2
       : paletteCount * globalColorCount;
-    const globalPaletteBits = storedColorCount * paletteColorBits;
+    const storedColorBits = channelMode === "scalar"
+      ? 8
+      : paletteColorBits;
+    const globalPaletteBits = storedColorCount * storedColorBits;
     const blockPaletteSelectorBits = blockCount * paletteIndexBits;
     const blockPaletteBits = blockCount * localColorCount * globalIndexBits;
     const pixelDataBits = directPixelColors ? 0 : width * height * localIndexBits;
@@ -328,6 +344,7 @@
     const blockCount = blocksX * blocksY;
     const paletteIndexBits = Math.log2(paletteCount);
     const paletteMode = image.paletteMode || "explicit";
+    const channelMode = image.channelMode || "rgb";
     const vectorColorSpace = image.vectorColorSpace || "rgb";
     const paletteVectorCount = paletteMode === "vector"
       ? Number(image.paletteVectorCount || image.paletteVectors && image.paletteVectors.length)
@@ -343,6 +360,7 @@
     validatePaletteVectorCount(paletteMode, paletteVectorCount, image.globalColorCount);
     validatePaletteModeCount(paletteMode, paletteCount);
     validateVectorColorSpace(vectorColorSpace);
+    validateChannelMode(channelMode, paletteMode);
 
     if (paletteMode === "vector") {
       if (!Array.isArray(image.paletteVectors) || image.paletteVectors.length !== paletteVectorCount) {
@@ -394,6 +412,7 @@
       globalColorCount: image.globalColorCount,
       paletteCount,
       paletteColorBits: image.paletteColorBits,
+      channelMode,
       paletteMode,
       vectorColorSpace,
       paletteVectorCount,
@@ -467,6 +486,15 @@
   function validateVectorColorSpace(vectorColorSpace) {
     if (vectorColorSpace !== "rgb" && vectorColorSpace !== "oklab") {
       throw new RangeError(`Unsupported BPAL vector color space: ${vectorColorSpace}`);
+    }
+  }
+
+  function validateChannelMode(channelMode, paletteMode) {
+    if (!Object.prototype.hasOwnProperty.call(CHANNEL_MODE_CODES, channelMode)) {
+      throw new RangeError(`Unsupported BPAL channel mode: ${channelMode}`);
+    }
+    if (paletteMode === "vector" && channelMode !== "rgb") {
+      throw new RangeError("BPAL vector palettes require RGB channel mode");
     }
   }
 
@@ -582,6 +610,14 @@
     return paletteColorBits === 16
       ? unpackRgb565(reader.read(16))
       : createColor(reader.read(8), reader.read(8), reader.read(8));
+  }
+
+  function readStoredColor(reader, paletteColorBits, channelMode) {
+    if (channelMode === "scalar") {
+      const value = reader.read(8);
+      return createColor(value, value, value);
+    }
+    return readColor(reader, paletteColorBits);
   }
 
   function interpolatePaletteVectors(vectors, globalColorCount, vectorColorSpace) {

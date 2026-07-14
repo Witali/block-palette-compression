@@ -77,6 +77,12 @@ Encode with CUDA refinement:
 bpal5cudaenc input.png output.bpal --preset 3 --device 0
 ```
 
+Encode a single-channel PBR map:
+
+```sh
+bpal5cudaenc roughness.png roughness.bpal --preset 3 --find-settings --scalar
+```
+
 Search the preset's bpp range and keep the highest-quality result:
 
 ```sh
@@ -106,6 +112,8 @@ Encoder options:
 - `--global N`: colours in each global palette, power of two from 2 to 4096;
 - `--palettes N`: global palette count, power of two from 1 to 128;
 - `--rgb565`: store global palette colours as RGB565 instead of RGB888;
+- `--scalar`: store one 8-bit value for each shared-palette entry and replicate
+  it to RGB during decode;
 - `--iterations N`: global k-means iteration limit;
 - `--refine N`: iterative-refinement pass count;
 - `--threads N`: CPU encoder worker count from 1 to 256 (default 4);
@@ -137,6 +145,27 @@ Structural options (`--block`, `--local`, and `--global`) customize the
 baseline candidate; the remaining candidates deliberately vary those fields.
 Without `--find-settings`, all explicit options continue to override the
 preset normally.
+
+### Scalar PBR channel mode
+
+The `scalar` channel mode changes only shared-palette storage.
+All block selectors, block-local palette indices, and per-pixel indices retain
+the regular BPAL layout. The final two reserved BPAL v5 header bits remain
+zero; the preceding two bits identify RGB (`0`) or scalar (`1`). Existing RGB
+files therefore remain byte-compatible.
+
+A scalar palette entry occupies 8 bits instead of RGB888's 24 bits. Encoding
+uses the source red channel and decoding replicates the stored byte to red,
+green, and blue. This is intended for ambient-occlusion, height,
+displacement, metalness, opacity, and roughness maps whose RGB channels carry
+the same value. Scalar entries retain all eight bits even when `--rgb565` is
+present; RGB565 quantization applies only to RGB channel mode.
+
+`bpal5_decode_pixel_rgba` exposes direct coordinate lookup. It performs one
+block calculation, reads one selector, one local index, one block-palette
+index, and one shared-palette entry. It never visits another pixel or block.
+Consequently scalar mode retains deterministic O(1) random pixel access and
+requires no variable-length or inter-block state on a GPU.
 
 Presets select RGB888, four refinement passes, and the following BPAL
 structure. Explicit encoder options override the selected preset regardless of

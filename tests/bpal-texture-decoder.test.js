@@ -43,6 +43,34 @@ test("decodes a BPAL file into uploadable RGBA texture pixels", () => {
   ]);
 });
 
+test("expands scalar BPAL palettes for the WebGL shader path", () => {
+  const texture = decode(encodeBlockPaletteFile({
+    width: 2,
+    height: 2,
+    blockSize: 2,
+    localColorCount: 2,
+    globalColorCount: 2,
+    paletteColorBits: 24,
+    channelMode: "scalar",
+    palette: [
+      { r: 12, g: 34, b: 56 },
+      { r: 210, g: 180, b: 90 },
+    ],
+    blockPaletteIndices: new Uint16Array([0, 1]),
+    pixelIndices: new Uint8Array([0, 1, 1, 0]),
+  }));
+  const shaderTexture = createShaderTextureData(texture, 4);
+
+  assert.equal(texture.channelMode, "scalar");
+  assert.deepEqual(Array.from(texture.pixels.slice(0, 8)), [
+    12, 12, 12, 255, 210, 210, 210, 255,
+  ]);
+  assert.deepEqual(
+    Array.from(shaderTexture.paletteAtlas.data.slice(0, 8)),
+    [12, 12, 12, 255, 210, 210, 210, 255]
+  );
+});
+
 test("rejects a non-BPAL texture file", () => {
   assert.throws(
     () => decode(new Uint8Array([0, 1, 2, 3, 4, 5])),
