@@ -59,7 +59,7 @@
     }
   `;
 
-  const GLOBAL_ASSIGNMENT_SHADER = `#version 300 es
+  const GLOBAL_ASSIGNMENT_SHADER_TEMPLATE = `#version 300 es
     precision highp float;
     precision highp int;
 
@@ -122,7 +122,7 @@
       vec3 firstColor = readPaletteColor(paletteBase);
       float bestDistance = colorDistance(sourcePoint, colorPoint(firstColor, u_colorSpace));
 
-      for (int index = 1; index < 4096; index += 1) {
+      for (int index = 1; index < __GLOBAL_COLOR_COUNT__; index += 1) {
         if (index >= paletteSize) {
           break;
         }
@@ -144,6 +144,17 @@
       );
     }
   `;
+
+  function createGlobalAssignmentShader(globalColorCount) {
+    if (!Number.isInteger(globalColorCount) || globalColorCount < 1 || globalColorCount > 4096) {
+      throw new RangeError("Invalid WebGL2 global color count");
+    }
+
+    return GLOBAL_ASSIGNMENT_SHADER_TEMPLATE.replace(
+      "__GLOBAL_COLOR_COUNT__",
+      String(globalColorCount)
+    );
+  }
 
   const BLOCK_ENCODING_SHADER = `#version 300 es
     precision highp float;
@@ -381,7 +392,10 @@
     return {
       mapGlobalAssignments(args) {
         return mapGlobalAssignments(gl, args, {
-          program: getProgram("globalAssignments", GLOBAL_ASSIGNMENT_SHADER),
+          program: getProgram(
+            `globalAssignments:${args.globalColorCount}`,
+            createGlobalAssignmentShader(args.globalColorCount)
+          ),
           sourceTexture: getCachedTexture(
             "source",
             args.sourcePixels,

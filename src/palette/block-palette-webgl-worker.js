@@ -2,7 +2,7 @@
 
 importScripts("./palette-quantizer.js?v=progress-1");
 importScripts("./block-palette-codec.js?v=multi-palette-gpu-2");
-importScripts("./block-palette-webgl-codec.js?v=multi-palette-gpu-2");
+importScripts("./block-palette-webgl-codec.js?v=specialized-global-palette-1");
 
 self.addEventListener("message", (event) => {
   const { pixels, width, height, settings } = event.data;
