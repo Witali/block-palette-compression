@@ -1,5 +1,5 @@
 #include "bpal5_cuda.h"
-#include "ppm.h"
+#include "image_loader.h"
 
 #include <cuda_runtime.h>
 
@@ -13,7 +13,8 @@ namespace {
 void print_usage(const char *program) {
     std::fprintf(
         stderr,
-        "Usage: %s input.ppm output.bpal [options]\n"
+        "Usage: %s input-image output.bpal [options]\n"
+        "Input: JPEG, PNG, TGA, BMP, PSD, GIF, HDR, PIC, PNM\n"
         "Options:\n"
         "  --preset BPP      Quality preset: 1.5,2,2.5,3,4,5,6,8\n"
         "  --device N        CUDA device ordinal (default 0)\n"
@@ -147,7 +148,7 @@ int main(int argc, char **argv) {
         return 2;
     }
 
-    if (!bpal5_ppm_read(argv[1], &rgb, &width, &height, error, sizeof(error))) {
+    if (!bpal5_image_read_rgb(argv[1], &rgb, &width, &height, error, sizeof(error))) {
         std::fprintf(stderr, "bpal5cudaenc: %s\n", error);
         goto cleanup;
     }
@@ -170,7 +171,7 @@ int main(int argc, char **argv) {
     }
 
     std::printf(
-        "Encoded %ux%u PPM to BPAL v5: block %u, local %u, %u x %u shared colors, "
+        "Encoded %ux%u image to BPAL v5: block %u, local %u, %u x %u shared colors, "
         "RGB%u, CUDA refinements %u/%u, MSE %.6f, CPU init %.3f ms, GPU %.3f ms, %s\n",
         width,
         height,
@@ -189,7 +190,7 @@ int main(int argc, char **argv) {
     result = 0;
 
 cleanup:
-    std::free(rgb);
+    bpal5_image_pixels_free(rgb);
     bpal5_image_free(&image);
     return result;
 }

@@ -13,9 +13,10 @@ set(CMAKE_C_EXTENSIONS OFF)
 add_library(bpal5 STATIC
     src/bpal5.c
     src/bpal5_simd.c
+    src/image_loader.c
     src/ppm.c
 )
-target_include_directories(bpal5 PUBLIC include PRIVATE src)
+target_include_directories(bpal5 PUBLIC include PRIVATE src third_party/stb)
 
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(AMD64|amd64|x86_64|X86_64|x64)$")
     target_sources(bpal5 PRIVATE src/bpal5_simd_avx2.c)
@@ -73,6 +74,16 @@ if(BUILD_TESTING)
     add_executable(bpal5_roundtrip_test tests/test_roundtrip.c)
     target_link_libraries(bpal5_roundtrip_test PRIVATE bpal5)
     add_test(NAME bpal5_roundtrip COMMAND bpal5_roundtrip_test)
+
+    add_executable(bpal5_image_loader_test tests/test_image_loader.c)
+    target_include_directories(bpal5_image_loader_test PRIVATE src)
+    target_link_libraries(bpal5_image_loader_test PRIVATE bpal5)
+    add_test(
+        NAME bpal5_image_loader
+        COMMAND bpal5_image_loader_test
+            "${CMAKE_CURRENT_SOURCE_DIR}/../../assets/stone-texture-small.jpg"
+            "${CMAKE_CURRENT_SOURCE_DIR}/../../assets/icons/app-icon-192.png"
+    )
 
     if(TARGET bpal5_cuda)
         add_executable(bpal5_cuda_roundtrip_test tests/test_cuda_roundtrip.cu)

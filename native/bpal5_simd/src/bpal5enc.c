@@ -1,5 +1,5 @@
 #include "bpal5.h"
-#include "ppm.h"
+#include "image_loader.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -7,7 +7,8 @@
 
 static void print_usage(const char *program) {
     fprintf(stderr,
-        "Usage: %s input.ppm output.bpal [options]\n"
+        "Usage: %s input-image output.bpal [options]\n"
+        "Input: JPEG, PNG, TGA, BMP, PSD, GIF, HDR, PIC, PNM\n"
         "Options:\n"
         "  --preset BPP      Quality preset: 1.5,2,2.5,3,4,5,6,8\n"
         "  --block N          Block size: 2,4,8,16,32,64 (default 16)\n"
@@ -100,7 +101,7 @@ int main(int argc, char **argv) {
         }
     }
 
-    if (!bpal5_ppm_read(argv[1], &rgb, &width, &height, error, sizeof(error))) {
+    if (!bpal5_image_read_rgb(argv[1], &rgb, &width, &height, error, sizeof(error))) {
         fprintf(stderr, "bpal5enc: %s\n", error);
         goto cleanup;
     }
@@ -114,7 +115,7 @@ int main(int argc, char **argv) {
     }
 
     printf(
-        "Encoded %ux%u PPM to BPAL v5: block %u, local %u, %u x %u shared colors, RGB%u, refinement %u, %s\n",
+        "Encoded %ux%u image to BPAL v5: block %u, local %u, %u x %u shared colors, RGB%u, refinement %u, %s\n",
         width,
         height,
         options.block_size,
@@ -128,7 +129,7 @@ int main(int argc, char **argv) {
     result = 0;
 
 cleanup:
-    free(rgb);
+    bpal5_image_pixels_free(rgb);
     bpal5_image_free(&image);
     return result;
 }
