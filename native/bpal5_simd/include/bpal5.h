@@ -43,6 +43,7 @@ typedef struct bpal5_encode_options {
 } bpal5_encode_options;
 
 void bpal5_default_encode_options(bpal5_encode_options *options);
+int bpal5_apply_quality_preset(const char *name, bpal5_encode_options *options);
 int bpal5_cpu_has_avx2(void);
 const char *bpal5_simd_backend(int use_simd);
 

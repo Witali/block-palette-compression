@@ -33,6 +33,8 @@ function run(executable, arguments_) {
       result.stderr,
     ].filter(Boolean).join("\n"));
   }
+
+  return result;
 }
 
 function makeImage(width, height) {
@@ -111,6 +113,7 @@ try {
   const rgba = makeImage(width, height);
   const sourcePpmPath = path.join(temporaryDirectory, "source.ppm");
   const cBpalPath = path.join(temporaryDirectory, "from-c.bpal");
+  const cPresetBpalPath = path.join(temporaryDirectory, "from-c-preset.bpal");
   const cDecodedPpmPath = path.join(temporaryDirectory, "from-c.ppm");
   const cRgb565BpalPath = path.join(temporaryDirectory, "from-c-rgb565-128.bpal");
   const cRgb565DecodedPpmPath = path.join(temporaryDirectory, "from-c-rgb565-128.ppm");
@@ -135,6 +138,21 @@ try {
   assert.equal(cDecodedByJs.paletteCount, 4);
   assert.equal(cDecodedByJs.width, width);
   assert.equal(cDecodedByJs.height, height);
+
+  run(encoderPath, [
+    sourcePpmPath,
+    cPresetBpalPath,
+    "--block", "8",
+    "--preset", "1.5",
+    "--iterations", "1",
+    "--refine", "0",
+  ]);
+  const cPresetDecodedByJs = format.decodeBlockPaletteFile(fs.readFileSync(cPresetBpalPath));
+  assert.equal(cPresetDecodedByJs.blockSize, 8);
+  assert.equal(cPresetDecodedByJs.localColorCount, 2);
+  assert.equal(cPresetDecodedByJs.globalColorCount, 8);
+  assert.equal(cPresetDecodedByJs.paletteCount, 2);
+  assert.equal(cPresetDecodedByJs.paletteColorBits, 24);
 
   run(decoderPath, [cBpalPath, cDecodedPpmPath]);
   assertDecodedRgb(readPpm(cDecodedPpmPath), cDecodedByJs);

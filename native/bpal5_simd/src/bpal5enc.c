@@ -9,6 +9,7 @@ static void print_usage(const char *program) {
     fprintf(stderr,
         "Usage: %s input.ppm output.bpal [options]\n"
         "Options:\n"
+        "  --preset BPP      Quality preset: 1.5,2,2.5,3,4,5,6,8\n"
         "  --block N          Block size: 2,4,8,16,32,64 (default 16)\n"
         "  --local N          Colors per block: 2,4,8,16 (default 8)\n"
         "  --global N         Colors per shared palette: 2..4096 power of two (default 32)\n"
@@ -53,8 +54,21 @@ int main(int argc, char **argv) {
     memset(&image, 0, sizeof(image));
 
     for (argument = 3; argument < argc; ++argument) {
+        if (strcmp(argv[argument], "--preset") == 0) {
+            if (++argument >= argc || !bpal5_apply_quality_preset(argv[argument], &options)) {
+                fprintf(stderr, "Invalid value for --preset; expected 1.5, 2, 2.5, 3, 4, 5, 6, or 8\n");
+                return 2;
+            }
+        }
+    }
+
+    for (argument = 3; argument < argc; ++argument) {
         const char *name = argv[argument];
         uint32_t *target = NULL;
+        if (strcmp(name, "--preset") == 0) {
+            ++argument;
+            continue;
+        }
         if (strcmp(name, "--rgb565") == 0) {
             options.palette_color_bits = 16u;
             continue;

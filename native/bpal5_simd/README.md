@@ -29,7 +29,7 @@ On Linux, GCC and Clang builds link the standard math library automatically.
 Encode an RGB image:
 
 ```sh
-bpal5enc input.ppm output.bpal --block 16 --local 8 --global 32 --palettes 4
+bpal5enc input.ppm output.bpal --preset 3
 ```
 
 Decode it:
@@ -43,6 +43,8 @@ backend selected on the current CPU.
 
 Encoder options:
 
+- `--preset BPP`: apply the researched quality settings for target bpp `1.5`,
+  `2`, `2.5`, `3`, `4`, `5`, `6`, or `8`;
 - `--block N`: block width and height, power of two from 2 to 64;
 - `--local N`: colours in each block palette, power of two from 2 to 16;
 - `--global N`: colours in each global palette, power of two from 2 to 4096;
@@ -51,6 +53,21 @@ Encoder options:
 - `--iterations N`: global k-means iteration limit;
 - `--refine N`: iterative-refinement pass count;
 - `--no-simd`: disable AVX2 even when the CPU supports it.
+
+Presets select RGB888, four refinement passes, and the following BPAL
+structure. Explicit encoder options override the selected preset regardless of
+their position on the command line.
+
+| Preset | Block | Local colors | Shared colors | Palettes |
+| ---: | ---: | ---: | ---: | ---: |
+| 1.5 | 4 | 2 | 8 | 2 |
+| 2 | 4 | 2 | 128 | 2 |
+| 2.5 | 8 | 4 | 64 | 32 |
+| 3 | 8 | 4 | 256 | 64 |
+| 4 | 8 | 8 | 128 | 16 |
+| 5 | 16 | 16 | 256 | 64 |
+| 6 | 8 | 16 | 128 | 32 |
+| 8 | 4 | 8 | 256 | 64 |
 
 The encoder clusters blocks by their RGB mean and standard deviation, builds a
 separate global palette for each cluster, chooses a compact palette for every

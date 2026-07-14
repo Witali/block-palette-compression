@@ -9,6 +9,61 @@ static int fail(const char *message) {
     return 1;
 }
 
+typedef struct preset_case {
+    const char *name;
+    uint32_t block_size;
+    uint32_t local_color_count;
+    uint32_t global_color_count;
+    uint32_t palette_count;
+} preset_case;
+
+static int test_quality_presets(void) {
+    static const preset_case cases[] = {
+        { "1.5", 4u, 2u, 8u, 2u },
+        { "2", 4u, 2u, 128u, 2u },
+        { "2.5", 8u, 4u, 64u, 32u },
+        { "3", 8u, 4u, 256u, 64u },
+        { "4", 8u, 8u, 128u, 16u },
+        { "5", 16u, 16u, 256u, 64u },
+        { "6", 8u, 16u, 128u, 32u },
+        { "8", 4u, 8u, 256u, 64u },
+    };
+    size_t index;
+
+    for (index = 0; index < sizeof(cases) / sizeof(cases[0]); ++index) {
+        bpal5_encode_options options;
+        const preset_case *expected = &cases[index];
+
+        bpal5_default_encode_options(&options);
+        options.palette_color_bits = 16u;
+        options.kmeans_iterations = 17u;
+        options.refinement_passes = 0u;
+        options.use_simd = 0;
+        if (!bpal5_apply_quality_preset(expected->name, &options) ||
+            options.block_size != expected->block_size ||
+            options.local_color_count != expected->local_color_count ||
+            options.global_color_count != expected->global_color_count ||
+            options.palette_count != expected->palette_count ||
+            options.palette_color_bits != 24u ||
+            options.kmeans_iterations != 17u ||
+            options.refinement_passes != 4u ||
+            options.use_simd != 0) {
+            return fail("quality preset settings mismatch");
+        }
+    }
+
+    {
+        bpal5_encode_options options;
+        bpal5_default_encode_options(&options);
+        if (bpal5_apply_quality_preset("7", &options) ||
+            options.block_size != 16u || options.local_color_count != 8u ||
+            options.global_color_count != 32u || options.palette_count != 1u) {
+            return fail("invalid quality preset was accepted or changed settings");
+        }
+    }
+    return 0;
+}
+
 int main(void) {
     const uint32_t width = 19u;
     const uint32_t height = 13u;
@@ -27,6 +82,9 @@ int main(void) {
     size_t pixel;
     int result = 1;
 
+    if (test_quality_presets() != 0) {
+        return 1;
+    }
     if (source == NULL) {
         return fail("out of memory");
     }

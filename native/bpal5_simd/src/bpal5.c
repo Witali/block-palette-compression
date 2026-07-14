@@ -22,6 +22,25 @@ typedef struct bit_writer {
     uint64_t bit_offset;
 } bit_writer;
 
+typedef struct encode_preset {
+    const char *name;
+    uint32_t block_size;
+    uint32_t local_color_count;
+    uint32_t global_color_count;
+    uint32_t palette_count;
+} encode_preset;
+
+static const encode_preset QUALITY_PRESETS[] = {
+    { "1.5", 4u, 2u, 8u, 2u },
+    { "2", 4u, 2u, 128u, 2u },
+    { "2.5", 8u, 4u, 64u, 32u },
+    { "3", 8u, 4u, 256u, 64u },
+    { "4", 8u, 8u, 128u, 16u },
+    { "5", 16u, 16u, 256u, 64u },
+    { "6", 8u, 16u, 128u, 32u },
+    { "8", 4u, 8u, 256u, 64u },
+};
+
 static void set_error(char *error, size_t error_size, const char *message) {
     if (error != NULL && error_size > 0) {
         (void)snprintf(error, error_size, "%s", message);
@@ -268,6 +287,27 @@ void bpal5_default_encode_options(bpal5_encode_options *options) {
     options->kmeans_iterations = 8u;
     options->refinement_passes = 4u;
     options->use_simd = 1;
+}
+
+int bpal5_apply_quality_preset(const char *name, bpal5_encode_options *options) {
+    size_t index;
+
+    if (name == NULL || options == NULL) {
+        return 0;
+    }
+    for (index = 0; index < sizeof(QUALITY_PRESETS) / sizeof(QUALITY_PRESETS[0]); ++index) {
+        const encode_preset *preset = &QUALITY_PRESETS[index];
+        if (strcmp(name, preset->name) == 0) {
+            options->block_size = preset->block_size;
+            options->local_color_count = preset->local_color_count;
+            options->global_color_count = preset->global_color_count;
+            options->palette_count = preset->palette_count;
+            options->palette_color_bits = 24u;
+            options->refinement_passes = 4u;
+            return 1;
+        }
+    }
+    return 0;
 }
 
 void bpal5_image_free(bpal5_image *image) {
