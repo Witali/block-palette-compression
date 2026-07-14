@@ -288,6 +288,7 @@
     "viewer.formats": "Поддерживаются BPAL, BPLM и форматы изображений, доступные браузеру",
     "viewer.hint": "Два пальца или Ctrl + колесо — масштаб · перетаскивание — перемещение · стрелки — прокрутка",
     "viewer.opening": "Открываю {name}…",
+    "viewer.sharedFileUnavailable": "Общий файл недоступен. Отправьте его в BPAL ещё раз.",
     "viewer.bpalStatus": "{name} · {width} × {height} · BPAL v{version} · блок {blockSize} × {blockSize} · цветов в блоке: {localColors} · палитры: {palettes} × {colors} цветов · {bitsPerPixel} бит/пиксель",
     "viewer.bplmStatus": "{name} · {width} × {height} · BPLM v{version} · mip {mip}/{maxMip} · блок {blockSize} × {blockSize} · цветов в блоке: {localColors} · палитры: {palettes} × {colors} цветов · {bitsPerPixel} бит/базовый пиксель",
     "viewer.imageStatus": "{name} · {width} × {height} · обычное изображение",

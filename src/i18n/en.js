@@ -288,6 +288,7 @@
     "viewer.formats": "Supports BPAL, BPLM, and image formats available in your browser",
     "viewer.hint": "Two fingers or Ctrl + mouse wheel — zoom · drag — pan · arrow keys — scroll",
     "viewer.opening": "Opening {name}…",
+    "viewer.sharedFileUnavailable": "The shared file is unavailable. Share it with BPAL again.",
     "viewer.bpalStatus": "{name} · {width} × {height} · BPAL v{version} · {blockSize} × {blockSize} block · block colors: {localColors} · palettes: {palettes} × {colors} colors · {bitsPerPixel} bits/pixel",
     "viewer.bplmStatus": "{name} · {width} × {height} · BPLM v{version} · mip {mip}/{maxMip} · {blockSize} × {blockSize} block · block colors: {localColors} · palettes: {palettes} × {colors} colors · {bitsPerPixel} bits/base pixel",
     "viewer.imageStatus": "{name} · {width} × {height} · regular image",

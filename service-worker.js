@@ -1,9 +1,12 @@
 "use strict";
 
-const CACHE_VERSION = "v2";
+const CACHE_VERSION = "v3";
 const SHELL_CACHE = `bpal-shell-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `bpal-runtime-${CACHE_VERSION}`;
-const CURRENT_CACHES = new Set([SHELL_CACHE, RUNTIME_CACHE]);
+const SHARED_FILE_CACHE = "bpal-shared-files-v1";
+const CURRENT_CACHES = new Set([SHELL_CACHE, RUNTIME_CACHE, SHARED_FILE_CACHE]);
+const SHARE_TARGET_URL = new URL("./share-target", self.registration.scope);
+const SHARED_FILE_DIRECTORY_URL = new URL("./shared-files/", self.registration.scope);
 
 // Keep the install small and deterministic. Large images and BPAL/BPLM samples
 // are cached by the fetch handler only after the user requests them.
@@ -80,7 +83,16 @@ self.addEventListener("fetch", (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  if (request.method !== "GET" || url.origin !== self.location.origin) {
+  if (url.origin !== self.location.origin) {
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === SHARE_TARGET_URL.pathname) {
+    event.respondWith(handleShareTarget(request));
+    return;
+  }
+
+  if (request.method !== "GET") {
     return;
   }
 
@@ -94,6 +106,39 @@ self.addEventListener("fetch", (event) => {
   event.waitUntil(updatePromise.then(() => undefined));
   event.respondWith(cacheWhileRevalidate(request, updatePromise));
 });
+
+async function handleShareTarget(request) {
+  const viewerUrl = new URL("./bpal-viewer.html", self.registration.scope);
+
+  try {
+    const formData = await request.formData();
+    const sharedFile = formData.getAll("bpal_file").find(
+      (value) => value && typeof value.arrayBuffer === "function"
+    );
+
+    if (!sharedFile) {
+      throw new TypeError("The share request does not contain a file");
+    }
+
+    const shareId = self.crypto.randomUUID();
+    const sharedFileUrl = new URL(shareId, SHARED_FILE_DIRECTORY_URL);
+    const cache = await caches.open(SHARED_FILE_CACHE);
+
+    await cache.put(sharedFileUrl.href, new Response(sharedFile, {
+      headers: {
+        "Content-Type": sharedFile.type || "application/octet-stream",
+        "X-BPAL-File-Name": encodeURIComponent(sharedFile.name || "shared.bpal"),
+      },
+    }));
+
+    viewerUrl.searchParams.set("shared", shareId);
+  } catch (error) {
+    console.error("Could not receive a file from the Web Share Target.", error);
+    viewerUrl.searchParams.set("share-error", "invalid-file");
+  }
+
+  return Response.redirect(viewerUrl.href, 303);
+}
 
 async function networkFirst(request) {
   try {

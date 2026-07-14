@@ -29,6 +29,8 @@ const MIN_ZOOM = 0.05;
 const MAX_ZOOM = 32;
 const ZOOM_FACTOR = 1.25;
 const STAGE_MARGIN = 32;
+const SHARED_FILE_CACHE = "bpal-shared-files-v1";
+const SHARED_FILE_ID_PATTERN = /^[0-9a-f-]{36}$/i;
 const state = {
   width: 0,
   height: 0,
@@ -56,7 +58,7 @@ const state = {
   stageOffsetX: STAGE_MARGIN,
   stageOffsetY: STAGE_MARGIN,
 };
-let fileLaunchReceived = false;
+let externalFileReceived = false;
 
 window.addEventListener("languagechange", () => {
   if (state.fileDescription) {
@@ -195,6 +197,7 @@ window.addEventListener("resize", () => {
 });
 
 registerFileLaunchHandler();
+openSharedFileFromUrl();
 initializeBundledExamples();
 
 function registerFileLaunchHandler() {
@@ -209,7 +212,7 @@ function registerFileLaunchHandler() {
       return;
     }
 
-    fileLaunchReceived = true;
+    externalFileReceived = true;
     const launchId = ++state.loadId;
 
     setLoading(true);
@@ -233,8 +236,82 @@ function registerFileLaunchHandler() {
   });
 }
 
+function openSharedFileFromUrl() {
+  const url = new URL(window.location.href);
+  const shareId = url.searchParams.get("shared");
+  const shareError = url.searchParams.has("share-error");
+
+  if (!shareId && !shareError) {
+    return;
+  }
+
+  externalFileReceived = true;
+  url.searchParams.delete("shared");
+  url.searchParams.delete("share-error");
+  window.history.replaceState(null, "", url.href);
+
+  if (shareError || !SHARED_FILE_ID_PATTERN.test(shareId)) {
+    setStatus(t("viewer.sharedFileUnavailable"), true);
+    return;
+  }
+
+  loadSharedFile(shareId);
+}
+
+async function loadSharedFile(shareId) {
+  const loadId = ++state.loadId;
+
+  setLoading(true);
+
+  try {
+    if (!("caches" in window)) {
+      throw new Error("Cache Storage is unavailable");
+    }
+
+    const cache = await window.caches.open(SHARED_FILE_CACHE);
+    const sharedFileUrl = new URL(`./shared-files/${shareId}`, window.location.href);
+    const response = await cache.match(sharedFileUrl.href);
+
+    if (!response) {
+      throw new Error("The shared file is no longer available");
+    }
+
+    await cache.delete(sharedFileUrl.href);
+
+    const blob = await response.blob();
+    const fileName = decodeSharedFileName(response.headers.get("X-BPAL-File-Name"));
+
+    if (loadId === state.loadId) {
+      await loadFile(new File([blob], fileName, {
+        type: blob.type || "application/octet-stream",
+      }));
+    }
+  } catch (error) {
+    if (loadId === state.loadId) {
+      console.error("Could not open the file received from the Web Share Target.", error);
+      setStatus(t("viewer.sharedFileUnavailable"), true);
+    }
+  } finally {
+    if (loadId === state.loadId) {
+      setLoading(false);
+    }
+  }
+}
+
+function decodeSharedFileName(encodedName) {
+  if (!encodedName) {
+    return "shared.bpal";
+  }
+
+  try {
+    return decodeURIComponent(encodedName);
+  } catch (error) {
+    return "shared.bpal";
+  }
+}
+
 async function initializeBundledExamples() {
-  if (fileLaunchReceived) {
+  if (externalFileReceived) {
     return;
   }
 
@@ -245,7 +322,7 @@ async function initializeBundledExamples() {
   try {
     const manifest = await window.BpalExampleCatalog.loadManifest();
 
-    if (fileLaunchReceived || initializationId !== state.loadId) {
+    if (externalFileReceived || initializationId !== state.loadId) {
       return;
     }
 

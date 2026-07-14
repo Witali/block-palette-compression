@@ -3,12 +3,14 @@
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
+const vm = require("node:vm");
 
 const root = path.resolve(__dirname, "..");
 const manifest = JSON.parse(read("app.webmanifest"));
 const serviceWorker = read("service-worker.js");
 const registration = read("src/pwa/register-service-worker.js");
 const viewerSource = read("src/pages/bpal-viewer-page.js");
+const testCases = [];
 const htmlPages = [
   "index.html",
   "block-palette.html",
@@ -68,7 +70,62 @@ test("associates installed desktop PWAs with BPAL and BPLM files", () => {
   assert.match(viewerSource, /window\.launchQueue\.setConsumer/);
   assert.match(viewerSource, /const file = await fileHandle\.getFile\(\)/);
   assert.match(viewerSource, /await loadFile\(file\)/);
-  assert.match(viewerSource, /fileLaunchReceived \|\| initializationId !== state\.loadId/);
+  assert.match(viewerSource, /externalFileReceived \|\| initializationId !== state\.loadId/);
+});
+
+test("registers an Android Web Share Target for BPAL and BPLM files", () => {
+  assert.deepEqual(manifest.share_target, {
+    action: "./share-target",
+    method: "POST",
+    enctype: "multipart/form-data",
+    params: {
+      files: [
+        {
+          name: "bpal_file",
+          accept: ["application/octet-stream", ".bpal", ".bplm"],
+        },
+      ],
+    },
+  });
+  assert.match(serviceWorker, /request\.method === "POST"/);
+  assert.match(serviceWorker, /formData\.getAll\("bpal_file"\)/);
+  assert.match(serviceWorker, /Response\.redirect\(viewerUrl\.href, 303\)/);
+  assert.match(viewerSource, /window\.caches\.open\(SHARED_FILE_CACHE\)/);
+  assert.match(viewerSource, /await cache\.delete\(sharedFileUrl\.href\)/);
+  assert.match(viewerSource, /await loadFile\(new File\(\[blob\], fileName/);
+});
+
+test("stores an Android shared file and redirects it to BPAL Viewer", async () => {
+  const harness = createServiceWorkerHarness();
+  const formData = new FormData();
+  const sourceBytes = Buffer.from([0x42, 0x50, 0x41, 0x4c, 0x05, 0x00]);
+
+  formData.append("bpal_file", new File([sourceBytes], "phone sample.bpal", {
+    type: "application/octet-stream",
+  }));
+
+  const response = await dispatchFetch(harness.listeners.fetch, new Request(
+    "https://example.test/block-palette-compression/share-target",
+    { method: "POST", body: formData }
+  ));
+  const redirectUrl = new URL(response.headers.get("location"));
+  const shareId = redirectUrl.searchParams.get("shared");
+
+  assert.equal(response.status, 303);
+  assert.equal(redirectUrl.pathname, "/block-palette-compression/bpal-viewer.html");
+  assert.match(shareId, /^[0-9a-f-]{36}$/i);
+
+  const sharedCache = harness.cacheStores.get("bpal-shared-files-v1");
+  const storedResponse = sharedCache.get(
+    `https://example.test/block-palette-compression/shared-files/${shareId}`
+  );
+
+  assert.ok(storedResponse);
+  assert.equal(
+    decodeURIComponent(storedResponse.headers.get("X-BPAL-File-Name")),
+    "phone sample.bpal"
+  );
+  assert.deepEqual(Buffer.from(await storedResponse.arrayBuffer()), sourceBytes);
 });
 
 test("uses network-first navigations and runtime caching for large assets", () => {
@@ -109,12 +166,113 @@ function read(fileName) {
   return fs.readFileSync(path.join(root, fileName), "utf8");
 }
 
+function createServiceWorkerHarness() {
+  const listeners = {};
+  const cacheStores = new Map();
+  const cachesMock = {
+    async open(cacheName) {
+      if (!cacheStores.has(cacheName)) {
+        cacheStores.set(cacheName, new Map());
+      }
+
+      const entries = cacheStores.get(cacheName);
+
+      return {
+        async addAll() {},
+        async put(request, response) {
+          entries.set(requestUrl(request), response.clone());
+        },
+        async match(request) {
+          const response = entries.get(requestUrl(request));
+
+          return response && response.clone();
+        },
+        async delete(request) {
+          return entries.delete(requestUrl(request));
+        },
+      };
+    },
+    async keys() {
+      return [...cacheStores.keys()];
+    },
+    async delete(cacheName) {
+      return cacheStores.delete(cacheName);
+    },
+    async match(request) {
+      for (const entries of cacheStores.values()) {
+        const response = entries.get(requestUrl(request));
+
+        if (response) {
+          return response.clone();
+        }
+      }
+
+      return undefined;
+    },
+  };
+  const serviceWorkerGlobal = {
+    location: { origin: "https://example.test" },
+    registration: { scope: "https://example.test/block-palette-compression/" },
+    crypto,
+    clients: { claim: async () => undefined },
+    addEventListener(type, listener) {
+      listeners[type] = listener;
+    },
+  };
+
+  vm.runInNewContext(serviceWorker, {
+    URL,
+    Request,
+    Response,
+    FormData,
+    File,
+    Headers,
+    caches: cachesMock,
+    crypto,
+    encodeURIComponent,
+    fetch: async () => {
+      throw new Error("Unexpected network request");
+    },
+    console,
+    self: serviceWorkerGlobal,
+  });
+
+  return { listeners, cacheStores };
+}
+
+function requestUrl(request) {
+  return typeof request === "string" ? request : request.url;
+}
+
+function dispatchFetch(listener, request) {
+  let responsePromise = null;
+
+  listener({
+    request,
+    respondWith(response) {
+      responsePromise = Promise.resolve(response);
+    },
+    waitUntil() {},
+  });
+
+  assert.ok(responsePromise, "The service worker did not handle the share request");
+  return responsePromise;
+}
+
 function test(name, callback) {
-  try {
-    callback();
-    console.log(`ok - ${name}`);
-  } catch (error) {
-    console.error(`not ok - ${name}`);
-    throw error;
+  testCases.push({ name, callback });
+}
+
+async function runTests() {
+  for (const { name, callback } of testCases) {
+    try {
+      await callback();
+      console.log(`ok - ${name}`);
+    } catch (error) {
+      console.error(`not ok - ${name}`);
+      throw error;
+    }
   }
 }
+
+module.exports = runTests();

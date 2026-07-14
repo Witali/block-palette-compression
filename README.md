@@ -107,6 +107,11 @@ operating system launches BPAL Viewer and passes the selected file to it. On
 platforms without the File Handling API, the viewer's file picker and drag and
 drop support remain available.
 
+On Android, install the PWA in Chrome, select a `.bpal` or `.bplm` file in the
+system file manager, and share it with BPAL. The service worker receives the
+Web Share Target POST request, stores the file temporarily, and opens it in
+BPAL Viewer. GitHub Pages does not need a server-side POST endpoint.
+
 ## Test
 
 ```powershell
