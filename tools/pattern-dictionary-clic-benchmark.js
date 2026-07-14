@@ -128,7 +128,7 @@ function parseOptions(args) {
     device: 0,
     maxDictionarySize: 64,
     sampleLimit: 8192,
-    checkpointLog2: 6,
+    checkpointLog2: 4,
     queries: 1024,
     files: [],
     limit: null,

@@ -25,7 +25,7 @@
   const HEADER_BYTES = 28;
   const DEFAULT_MAX_DICTIONARY_SIZE = 64;
   const DEFAULT_SAMPLE_LIMIT = 8192;
-  const DEFAULT_CHECKPOINT_LOG2 = 6;
+  const DEFAULT_CHECKPOINT_LOG2 = 4;
 
   function encodePatternDictionaryFile(image, options) {
     const settings = options || {};
@@ -422,6 +422,7 @@
       paletteCount,
       paletteColorBits,
       dictionarySize,
+      checkpointInterval: 2 ** checkpointLog2,
       directPixelColors,
       blocksX,
       blocksY,

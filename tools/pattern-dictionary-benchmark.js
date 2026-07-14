@@ -97,7 +97,7 @@ function parseOptions(args) {
   const parsed = {
     maxDictionarySize: 64,
     sampleLimit: 8192,
-    checkpointLog2: 6,
+    checkpointLog2: 4,
     queries: 4096,
     files: [],
   };

@@ -102,6 +102,22 @@ test("run-delta blocks preserve independently addressed pixels", () => {
   assertEveryPixelMatches(accessor, expected);
 });
 
+test("default checkpoint directory bounds payload lookup to fifteen preceding tags", () => {
+  const expected = decodeBlockPaletteFile(encodeBlockPaletteFile(createRepeatedPatternImage()));
+  const encoded = encodePatternDictionaryFile(expected, {
+    forceDictionarySize: 2,
+    maxDictionarySize: 2,
+  });
+  const accessor = openPatternDictionaryFile(encoded.bytes);
+  const expectedDirectoryBits = (
+    Math.ceil(encoded.stats.blockCount / 16) + 1
+  ) * 32;
+
+  assert.equal(accessor.checkpointInterval, 16);
+  assert.equal(encoded.stats.directoryBits, expectedDirectoryBits);
+  assertEveryPixelMatches(accessor, expected);
+});
+
 test("transformed dictionary references preserve asymmetric rotated blocks", () => {
   const image = createTransformedPatternImage();
   const expected = decodeBlockPaletteFile(encodeBlockPaletteFile(image));
