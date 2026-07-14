@@ -87,6 +87,17 @@ test("offers researched quality presets immediately after the image selector", (
   assert.match(source, /qualityPresetSelect\.disabled = busy/);
 });
 
+test("finds minimum-RMSE settings inside the current preset bpp range", () => {
+  assert.match(source, /targetBitsPerPixel,/);
+  assert.match(source, /bitsPerPixelTargets: QUALITY_PRESET_BITS_PER_PIXEL/);
+  assert.match(source, /storageWidth: state\.sourceImageData\.width/);
+  assert.match(source, /storageHeight: state\.sourceImageData\.height/);
+  assert.match(source, /baselineProfile: \{/);
+  assert.match(optimizerSource, /calculateBitsPerPixelRange\(/);
+  assert.match(optimizerSource, /selectHighestQualityCandidate\(matchingCandidates, targetBitsPerPixel\)/);
+  assert.match(optimizerSource, /candidate\.rmse - selected\.rmse/);
+});
+
 test("offers zero to four refinement passes and defaults to one", () => {
   assert.match(html, /<select id="refinement-passes" name="refinementPasses">/);
 

@@ -2,8 +2,10 @@
 
 const assert = require("node:assert/strict");
 const {
+  calculateBitsPerPixelRange,
   findBalancedBlockPaletteSettings,
   paretoFrontier,
+  selectHighestQualityCandidate,
 } = require("../src/palette/block-palette-optimizer.js");
 const { compressImage } = require("../src/palette/block-palette-codec.js");
 
@@ -68,6 +70,97 @@ test("removes settings dominated by both file size and error", () => {
   const frontier = paretoFrontier([best, smaller, dominated]);
 
   assert.deepEqual(frontier, [smaller, best]);
+});
+
+test("calculates midpoint bpp ranges from adjacent preset targets", () => {
+  const targets = [1.5, 2, 2.5, 3, 4, 5, 6, 8];
+
+  assert.deepEqual(calculateBitsPerPixelRange(3, targets), {
+    minimum: 2.75,
+    maximum: 3.5,
+  });
+  assert.deepEqual(calculateBitsPerPixelRange(1.5, targets), {
+    minimum: 1.25,
+    maximum: 1.75,
+  });
+  assert.deepEqual(calculateBitsPerPixelRange(8, targets), {
+    minimum: 7,
+    maximum: 9,
+  });
+});
+
+test("selects minimum RMSE within a bpp range and uses bpp distance as a tie-breaker", () => {
+  const candidates = [
+    { fileBytes: 90, bitsPerPixel: 2.9, rmse: 5 },
+    { fileBytes: 130, bitsPerPixel: 3.4, rmse: 3 },
+    { fileBytes: 110, bitsPerPixel: 3.1, rmse: 3 },
+  ];
+
+  assert.equal(selectHighestQualityCandidate(candidates, 3), candidates[2]);
+});
+
+test("limits target-bpp optimization to the midpoint range", () => {
+  const source = new Uint8ClampedArray([
+    0, 0, 0, 255, 85, 85, 85, 255,
+    170, 170, 170, 255, 255, 255, 255, 255,
+  ]);
+  const profiles = [
+    { blockSize: 2, localColorCount: 2, globalColorCount: 4, paletteColorBits: 16 },
+    { blockSize: 2, localColorCount: 2, globalColorCount: 8, paletteColorBits: 24 },
+  ];
+  const initial = findBalancedBlockPaletteSettings(source, 2, 2, {
+    profiles,
+    colorSpace: "rgb",
+    clusteringMethod: "k-medians",
+  });
+  const target = initial.candidates[0].bitsPerPixel;
+  const epsilon = 0.01;
+  const optimized = findBalancedBlockPaletteSettings(source, 2, 2, {
+    profiles,
+    colorSpace: "rgb",
+    clusteringMethod: "k-medians",
+    targetBitsPerPixel: target,
+    bitsPerPixelTargets: [target - epsilon, target, target + epsilon],
+  });
+
+  assert.ok(optimized.matchingCandidates.length >= 1);
+  assert.ok(optimized.matchingCandidates.every((candidate) => (
+    candidate.bitsPerPixel >= optimized.bitsPerPixelRange.minimum &&
+    candidate.bitsPerPixel <= optimized.bitsPerPixelRange.maximum
+  )));
+  assert.equal(
+    optimized.selected.rmse,
+    Math.min(...optimized.matchingCandidates.map((candidate) => candidate.rmse))
+  );
+  assert.equal(
+    optimized.selected.psnr,
+    optimized.selected.rmse === 0
+      ? Infinity
+      : 20 * Math.log10(255 / optimized.selected.rmse)
+  );
+});
+
+test("measures candidate bpp for the full image while evaluating preview quality", () => {
+  const source = new Uint8ClampedArray([
+    0, 0, 0, 255, 85, 85, 85, 255,
+    170, 170, 170, 255, 255, 255, 255, 255,
+  ]);
+  const profile = {
+    blockSize: 2,
+    localColorCount: 2,
+    globalColorCount: 8,
+    paletteColorBits: 24,
+  };
+  const optimized = findBalancedBlockPaletteSettings(source, 2, 2, {
+    profiles: [profile],
+    colorSpace: "rgb",
+    clusteringMethod: "k-medians",
+    storageWidth: 16,
+    storageHeight: 8,
+  });
+
+  assert.equal(optimized.selected.bitsPerPixel, 4);
+  assert.equal(optimized.selected.payloadBytes, 64);
 });
 
 test("optimizes using explicit-palette storage and the current BPAL header", () => {
