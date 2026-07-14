@@ -1345,6 +1345,136 @@
     counts,
     palettePoints
   ) {
+    if (selected.length < 8) {
+      return refineSelectedColorsDirect(
+        selected,
+        replacementCandidates,
+        sourceColors,
+        sourceTargets,
+        counts,
+        palettePoints
+      );
+    }
+
+    const isSelected = new Uint8Array(palettePoints.length);
+    const replacementPositionByColor = new Int32Array(palettePoints.length);
+    const candidateDistances = new Float64Array(
+      sourceColors.length * replacementCandidates.length
+    );
+
+    replacementPositionByColor.fill(-1);
+
+    for (let replacementPosition = 0; replacementPosition < replacementCandidates.length; replacementPosition += 1) {
+      replacementPositionByColor[replacementCandidates[replacementPosition]] = replacementPosition;
+    }
+
+    for (let sourcePosition = 0; sourcePosition < sourceColors.length; sourcePosition += 1) {
+      const rowOffset = sourcePosition * replacementCandidates.length;
+
+      for (let replacementPosition = 0; replacementPosition < replacementCandidates.length; replacementPosition += 1) {
+        candidateDistances[rowOffset + replacementPosition] = squaredDistance(
+          sourceTargets[sourcePosition],
+          palettePoints[replacementCandidates[replacementPosition]]
+        );
+      }
+    }
+
+    for (const color of selected) {
+      isSelected[color] = 1;
+    }
+
+    for (let pass = 0; pass < 4; pass += 1) {
+      let bestError = 0;
+      let bestSlot = -1;
+      let bestReplacement = -1;
+
+      for (let sourcePosition = 0; sourcePosition < sourceColors.length; sourcePosition += 1) {
+        const rowOffset = sourcePosition * replacementCandidates.length;
+        let nearestDistance = Infinity;
+
+        for (const selectedColor of selected) {
+          nearestDistance = Math.min(
+            nearestDistance,
+            candidateDistances[rowOffset + replacementPositionByColor[selectedColor]]
+          );
+        }
+
+        bestError += counts[sourceColors[sourcePosition]] * nearestDistance;
+      }
+
+      for (let slot = 0; slot < selected.length; slot += 1) {
+        const nearestWithoutSlot = new Float64Array(sourceColors.length);
+
+        nearestWithoutSlot.fill(Infinity);
+
+        for (let sourcePosition = 0; sourcePosition < sourceColors.length; sourcePosition += 1) {
+          const rowOffset = sourcePosition * replacementCandidates.length;
+
+          for (let selectedSlot = 0; selectedSlot < selected.length; selectedSlot += 1) {
+            if (selectedSlot === slot) {
+              continue;
+            }
+
+            nearestWithoutSlot[sourcePosition] = Math.min(
+              nearestWithoutSlot[sourcePosition],
+              candidateDistances[
+                rowOffset + replacementPositionByColor[selected[selectedSlot]]
+              ]
+            );
+          }
+        }
+
+        for (let replacementPosition = 0; replacementPosition < replacementCandidates.length; replacementPosition += 1) {
+          const replacement = replacementCandidates[replacementPosition];
+
+          if (isSelected[replacement]) {
+            continue;
+          }
+
+          let error = 0;
+
+          for (let sourcePosition = 0; sourcePosition < sourceColors.length; sourcePosition += 1) {
+            const replacementDistance = candidateDistances[
+              sourcePosition * replacementCandidates.length + replacementPosition
+            ];
+
+            error += counts[sourceColors[sourcePosition]] * Math.min(
+              nearestWithoutSlot[sourcePosition],
+              replacementDistance
+            );
+          }
+
+          if (
+            error < bestError ||
+            (error === bestError && bestReplacement >= 0 && replacement < bestReplacement)
+          ) {
+            bestError = error;
+            bestSlot = slot;
+            bestReplacement = replacement;
+          }
+        }
+      }
+
+      if (bestSlot < 0) {
+        break;
+      }
+
+      isSelected[selected[bestSlot]] = 0;
+      selected[bestSlot] = bestReplacement;
+      isSelected[bestReplacement] = 1;
+    }
+
+    return selected;
+  }
+
+  function refineSelectedColorsDirect(
+    selected,
+    replacementCandidates,
+    sourceColors,
+    sourceTargets,
+    counts,
+    palettePoints
+  ) {
     const isSelected = new Uint8Array(palettePoints.length);
 
     for (const color of selected) {
@@ -1460,14 +1590,29 @@
     const selected = [];
     const isSelected = new Uint8Array(palettePoints.length);
     const nearestDistances = new Float64Array(candidates.length);
+    const candidateDistances = new Float64Array(candidates.length * candidates.length);
+
+    for (let sourcePosition = 0; sourcePosition < candidates.length; sourcePosition += 1) {
+      const rowOffset = sourcePosition * candidates.length;
+
+      for (let candidatePosition = 0; candidatePosition < candidates.length; candidatePosition += 1) {
+        candidateDistances[rowOffset + candidatePosition] = squaredDistance(
+          sourceTargets[sourcePosition],
+          palettePoints[candidates[candidatePosition]]
+        );
+      }
+    }
 
     nearestDistances.fill(Infinity);
 
     while (selected.length < localColorCount) {
       let bestCandidate = -1;
+      let bestCandidatePosition = -1;
       let bestError = Infinity;
 
-      for (const candidate of candidates) {
+      for (let candidatePosition = 0; candidatePosition < candidates.length; candidatePosition += 1) {
+        const candidate = candidates[candidatePosition];
+
         if (isSelected[candidate]) {
           continue;
         }
@@ -1475,10 +1620,9 @@
         let error = 0;
 
         for (let sourcePosition = 0; sourcePosition < candidates.length; sourcePosition += 1) {
-          const candidateDistance = squaredDistance(
-            sourceTargets[sourcePosition],
-            palettePoints[candidate]
-          );
+          const candidateDistance = candidateDistances[
+            sourcePosition * candidates.length + candidatePosition
+          ];
 
           error += counts[candidates[sourcePosition]] * Math.min(
             nearestDistances[sourcePosition],
@@ -1495,6 +1639,7 @@
           ))
         ) {
           bestCandidate = candidate;
+          bestCandidatePosition = candidatePosition;
           bestError = error;
         }
       }
@@ -1505,7 +1650,7 @@
       for (let sourcePosition = 0; sourcePosition < candidates.length; sourcePosition += 1) {
         nearestDistances[sourcePosition] = Math.min(
           nearestDistances[sourcePosition],
-          squaredDistance(sourceTargets[sourcePosition], palettePoints[bestCandidate])
+          candidateDistances[sourcePosition * candidates.length + bestCandidatePosition]
         );
       }
     }
