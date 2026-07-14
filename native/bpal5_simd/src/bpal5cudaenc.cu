@@ -103,7 +103,8 @@ bool find_best_settings(
     }
     std::fprintf(
         stderr,
-        "Finding settings for preset %s in %.3f..%.3f bpp (%zu candidates)\n",
+        "Finding settings for target %.3f bpp (preset %s), allowed range %.3f..%.3f bpp (%zu candidates)\n",
+        target_bpp,
         preset_name,
         minimum_bpp,
         maximum_bpp,
@@ -187,8 +188,9 @@ bool find_best_settings(
         (static_cast<double>(width) * height * 3.0);
     std::fprintf(
         stderr,
-        "Selected %.3f bpp with RMSE %.6f and PSNR %.4f dB\n",
+        "Selected %.3f bpp for target %.3f bpp with RMSE %.6f and PSNR %.4f dB\n",
         best_bpp,
+        target_bpp,
         std::sqrt(best_mse),
         best_mse == 0.0 ? INFINITY : 10.0 * std::log10((255.0 * 255.0) / best_mse)
     );

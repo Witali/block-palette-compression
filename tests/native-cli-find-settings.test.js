@@ -18,6 +18,8 @@ test("offers target-bpp settings search in both native encoders", () => {
     assert.match(source, /bpal5_find_settings_candidates\(/);
     assert.match(source, /bpal5_quality_preset_range\(/);
     assert.match(source, /candidate_stats\.final_error < best_error/);
+    assert.match(source, /Finding settings for target %\.3f bpp/);
+    assert.match(source, /Selected %\.3f bpp for target %\.3f bpp/);
   }
 
   assert.match(header, /BPAL5_FIND_SETTINGS_MAX_CANDIDATES 19u/);

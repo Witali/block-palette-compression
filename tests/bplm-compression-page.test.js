@@ -89,6 +89,7 @@ test("offers researched quality presets immediately after the image selector", (
 
 test("finds minimum-RMSE settings inside the current preset bpp range", () => {
   assert.match(source, /targetBitsPerPixel,/);
+  assert.match(source, /target: targetBitsPerPixel\.toFixed\(2\)/);
   assert.match(source, /bitsPerPixelTargets: QUALITY_PRESET_BITS_PER_PIXEL/);
   assert.match(source, /storageWidth: state\.sourceImageData\.width/);
   assert.match(source, /storageHeight: state\.sourceImageData\.height/);

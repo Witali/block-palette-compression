@@ -120,9 +120,10 @@ The range for a preset is bounded by `(previous + current) / 2` and
 Only profiles whose calculated full-image payload bpp is inside that range
 are encoded. The current command-line settings are included as the baseline
 candidate. Ties in RMSE are resolved by distance from the target bpp and then
-by smaller payload size. Search progress reports bpp, RMSE, and PSNR for every
-eligible candidate. Candidate encodes reuse the same process, including its
-initialized CUDA runtime and driver caches.
+by smaller payload size. Search output states the requested target bpp and its
+allowed range, then reports bpp, RMSE, and PSNR for every eligible candidate.
+Candidate encodes reuse the same process, including its initialized CUDA
+runtime and driver caches.
 
 `--palettes`, `--rgb565`, `--iterations`, `--refine`, `--threads`, and
 `--no-simd` remain common to all search candidates. In particular, settings
