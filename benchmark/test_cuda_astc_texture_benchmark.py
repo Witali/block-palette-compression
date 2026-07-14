@@ -5,8 +5,10 @@ import unittest
 import numpy as np
 
 from tools.cuda_astc_texture_benchmark import (
+    allocate_sample_quotas,
     bd_rate,
     normal_angular_stats,
+    stratified_pick,
 )
 
 
@@ -23,6 +25,30 @@ class CudaAstcTextureBenchmarkTests(unittest.TestCase):
         result = normal_angular_stats(normal, normal.copy())
         self.assertAlmostEqual(result["normalAngleMean"], 0.0, places=6)
         self.assertAlmostEqual(result["normalAngleP95"], 0.0, places=6)
+
+    def test_default_sample_allocation_is_100_45_55(self) -> None:
+        available = {"dtd": 5640, "kylberg": 240, "ambientcg": 55}
+        self.assertEqual(
+            allocate_sample_quotas(available, 200),
+            {"dtd": 100, "kylberg": 45, "ambientcg": 55},
+        )
+
+    def test_stratified_pick_round_robins_classes(self) -> None:
+        images = [
+            {
+                "id": f"dtd/{image_class}/{index}",
+                "dataset": "dtd",
+                "imageClass": "texture",
+                "contentClass": image_class,
+            }
+            for image_class in ("a", "b", "c")
+            for index in range(3)
+        ]
+        selected = stratified_pick(images, 6)
+        counts = {image_class: 0 for image_class in ("a", "b", "c")}
+        for image in selected:
+            counts[image["contentClass"]] += 1
+        self.assertEqual(counts, {"a": 2, "b": 2, "c": 2})
 
 
 if __name__ == "__main__":

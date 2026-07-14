@@ -50,6 +50,8 @@ SCALAR_CLASSES = {
     "roughness",
 }
 EXPECTED_COUNTS = {"dtd": 5640, "kylberg": 240, "ambientcg": 55}
+DEFAULT_SAMPLE_COUNT = 200
+DEFAULT_SAMPLE_WEIGHTS = {"dtd": 100, "kylberg": 45, "ambientcg": 55}
 ENCODED_SETTINGS_RE = re.compile(
     r"block (?P<block>\d+), local (?P<local>\d+), "
     r"(?P<palettes>\d+) x (?P<global>\d+) shared colors, "
@@ -66,6 +68,8 @@ def main() -> int:
     images = discover_corpus(selected_datasets)
     if args.limit_per_dataset is not None:
         images = limit_per_dataset(images, args.limit_per_dataset)
+    elif args.sample_count > 0:
+        images = select_stratified_sample(images, args.sample_count)
     profiles = create_profiles(selected_targets)
     tools = resolve_tools(args)
     work_dir = resolve_path(args.work_dir)
@@ -154,6 +158,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--astc-quality", default="medium")
     parser.add_argument("--work-dir", default="benchmark/work/cuda-astc-textures")
     parser.add_argument("--report", default="benchmark/results/cuda-astc-textures.md")
+    parser.add_argument(
+        "--sample-count",
+        type=int,
+        default=DEFAULT_SAMPLE_COUNT,
+        help="Deterministic stratified sample size; use 0 for the complete corpus",
+    )
     parser.add_argument("--limit-per-dataset", type=int)
     parser.add_argument("--progress-every", type=int, default=10)
     parser.add_argument("--report-only", action="store_true")
@@ -170,6 +180,8 @@ def parse_args() -> argparse.Namespace:
     args = parser.parse_args()
     if args.limit_per_dataset is not None and args.limit_per_dataset < 1:
         parser.error("--limit-per-dataset must be positive")
+    if args.sample_count < 0:
+        parser.error("--sample-count must be non-negative")
     if args.progress_every < 1:
         parser.error("--progress-every must be positive")
     if args.device < 0:
@@ -289,6 +301,84 @@ def limit_per_dataset(images: list[dict[str, Any]], limit: int) -> list[dict[str
             continue
         selected.append(image)
         counts[image["dataset"]] += 1
+    return selected
+
+
+def select_stratified_sample(
+    images: list[dict[str, Any]], sample_count: int
+) -> list[dict[str, Any]]:
+    if sample_count >= len(images):
+        return images
+    if sample_count < 1:
+        return []
+
+    available = collections.Counter(image["dataset"] for image in images)
+    quotas = allocate_sample_quotas(available, sample_count)
+    selected: list[dict[str, Any]] = []
+    for dataset in sorted(quotas):
+        candidates = [image for image in images if image["dataset"] == dataset]
+        selected.extend(stratified_pick(candidates, quotas[dataset]))
+    return sorted(selected, key=lambda image: image["id"])
+
+
+def allocate_sample_quotas(
+    available: collections.Counter[str], sample_count: int
+) -> dict[str, int]:
+    datasets = [dataset for dataset in DEFAULT_SAMPLE_WEIGHTS if available[dataset] > 0]
+    weight_sum = sum(DEFAULT_SAMPLE_WEIGHTS[dataset] for dataset in datasets)
+    raw = {
+        dataset: sample_count * DEFAULT_SAMPLE_WEIGHTS[dataset] / weight_sum
+        for dataset in datasets
+    }
+    quotas = {
+        dataset: min(available[dataset], int(math.floor(raw[dataset])))
+        for dataset in datasets
+    }
+    remaining = sample_count - sum(quotas.values())
+    order = sorted(
+        datasets,
+        key=lambda dataset: (raw[dataset] - math.floor(raw[dataset]), DEFAULT_SAMPLE_WEIGHTS[dataset]),
+        reverse=True,
+    )
+    while remaining > 0:
+        changed = False
+        for dataset in order:
+            if quotas[dataset] >= available[dataset]:
+                continue
+            quotas[dataset] += 1
+            remaining -= 1
+            changed = True
+            if remaining == 0:
+                break
+        if not changed:
+            break
+    return quotas
+
+
+def stratified_pick(images: list[dict[str, Any]], count: int) -> list[dict[str, Any]]:
+    groups: dict[str, list[dict[str, Any]]] = collections.defaultdict(list)
+    for image in images:
+        stratum = image["imageClass"] if image["dataset"] == "ambientcg" else image["contentClass"]
+        groups[stratum].append(image)
+    for group in groups.values():
+        group.sort(key=lambda image: hashlib.sha256(image["id"].encode("utf-8")).hexdigest())
+
+    selected = []
+    positions = {name: 0 for name in groups}
+    names = sorted(groups)
+    while len(selected) < count:
+        changed = False
+        for name in names:
+            position = positions[name]
+            if position >= len(groups[name]):
+                continue
+            selected.append(groups[name][position])
+            positions[name] += 1
+            changed = True
+            if len(selected) == count:
+                break
+        if not changed:
+            break
     return selected
 
 
@@ -637,6 +727,11 @@ def build_report(
                 )
             ),
             "normalization": "RGB8; uint16 PNG values scaled by round(value / 257)",
+            "selection": (
+                "deterministic stratified sample by SHA-256 image ID"
+                if args.sample_count > 0 and args.limit_per_dataset is None
+                else "explicit diagnostic limit or complete corpus"
+            ),
         },
         "method": {
             "bpal": "bpal5cudaenc --preset BPP --find-settings --device N",
@@ -831,6 +926,7 @@ def render_markdown(report: dict[str, Any]) -> str:
                 f"{name} {count:,}" for name, count in report["corpus"]["datasetCounts"].items()
             )
             + ".",
+            f"- Selection: {report['corpus']['selection']}.",
             "- ambientCG previews and duplicate DirectX normal maps were excluded; NormalGL was retained.",
             "- Every input was normalized once to RGB8. Sixteen-bit displacement maps were scaled by `round(value / 257)`.",
             "- BPAL used the CUDA encoder with `--find-settings` independently for every image and target bitrate.",

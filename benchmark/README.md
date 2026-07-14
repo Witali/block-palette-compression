@@ -127,16 +127,20 @@ any dataset files.
 
 ### CUDA settings search versus ASTC
 
-Build `bpal5cudaenc` and run the complete downloaded texture suite with:
+Build `bpal5cudaenc` and run the default deterministic 200-image sample with:
 
 ```powershell
 python tools/cuda_astc_texture_benchmark.py
 ```
 
+The sample contains 100 DTD images stratified across all 47 classes, 45
+Kylberg images stratified across all six classes, and all 55 selected ambientCG
+PBR maps except previews and the duplicate DirectX normal-map variants. Within
+each class, images are ordered by the SHA-256 of their stable ID. Use
+`--sample-count 0` to run the complete downloaded corpus instead.
+
 The benchmark compares eight CUDA BPAL `--find-settings` targets from 1.5 to
-8 bpp against the closest standard ASTC block rates. It uses all DTD and
-Kylberg images and every selected ambientCG PBR map except previews and the
-duplicate DirectX normal-map variants. Progress is appended to
+8 bpp against the closest standard ASTC block rates. Progress is appended to
 `benchmark/work/cuda-astc-textures/records.jsonl`, so an interrupted run can be
 resumed with the same command. The generated Markdown report is written to
 `benchmark/results/cuda-astc-textures.md`.
