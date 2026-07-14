@@ -140,6 +140,7 @@
           referencedBlocks: 0,
           runLengthBlocks: 0,
           transformedBlocks: 0,
+          bitmapDeltaBlocks: 0,
           exactBlocks: 0,
           totalEdits: 0,
           selected: false,
@@ -336,6 +337,29 @@
       const transform = transformed
         ? readBits(bytes, blockPayload, TRANSFORM_BITS)
         : 0;
+
+      if (transformed && transform === 0) {
+        let value = readBits(
+          bytes,
+          dictionaryStart +
+            (tag.prototypeIndex * pixelsPerBlock + localPosition) * localIndexBits,
+          localIndexBits
+        );
+        const bitmapStart = blockPayload + TRANSFORM_BITS;
+
+        if (readBits(bytes, bitmapStart + localPosition, 1) !== 0) {
+          const rank = countSetBits(bytes, bitmapStart, localPosition);
+
+          value = readBits(
+            bytes,
+            bitmapStart + pixelsPerBlock + rank * localIndexBits,
+            localIndexBits
+          );
+        }
+
+        return value;
+      }
+
       const prototypePosition = transformPosition(
         localPosition,
         blockSize,
@@ -583,6 +607,7 @@
       exactBlocks: 0,
       totalEdits: 0,
       transformedBlocks: 0,
+      bitmapDeltaBlocks: 0,
     };
 
     for (const candidate of candidates) {
@@ -699,6 +724,7 @@
       exactBlocks: 0,
       totalEdits: 0,
       transformedBlocks: 0,
+      bitmapDeltaBlocks: 0,
     }));
     const rawBlockBits = metadata.pixelsPerBlock * metadata.localIndexBits;
     const editBits = metadata.positionBits + metadata.localIndexBits;
@@ -766,6 +792,7 @@
           let mode = MODE_RAW;
           let blockPayloadBits = rawBlockBits;
           let count = 0;
+          let selectedTransform = 0;
 
           if (runBits < blockPayloadBits) {
             mode = MODE_RUNS;
@@ -780,26 +807,37 @@
           }
 
           const transformedDeltaBits = TRANSFORM_BITS + bestTransformedDistance * editBits;
+          const bitmapDeltaBits = TRANSFORM_BITS +
+            metadata.pixelsPerBlock +
+            bestDistance * metadata.localIndexBits;
+
+          if (bitmapDeltaBits < blockPayloadBits) {
+            mode = MODE_TRANSFORMED_DICTIONARY;
+            blockPayloadBits = bitmapDeltaBits;
+            count = bestDistance;
+          }
 
           if (transformedDeltaBits < blockPayloadBits) {
             mode = MODE_TRANSFORMED_DICTIONARY;
             blockPayloadBits = transformedDeltaBits;
             count = bestTransformedDistance;
+            selectedTransform = bestTransform;
           }
 
-          state.assignments[block] = mode === MODE_TRANSFORMED_DICTIONARY
+          state.assignments[block] = mode === MODE_TRANSFORMED_DICTIONARY && selectedTransform > 0
             ? bestTransformedPrototype
             : bestPrototype;
           state.modes[block] = mode;
           state.counts[block] = count;
-          state.transforms[block] = mode === MODE_TRANSFORMED_DICTIONARY
-            ? bestTransform
-            : 0;
+          state.transforms[block] = selectedTransform;
           state.payloadBits += blockPayloadBits;
           state.rawBlocks += mode === MODE_RAW ? 1 : 0;
           state.referencedBlocks += mode === MODE_DICTIONARY ||
             mode === MODE_TRANSFORMED_DICTIONARY ? 1 : 0;
-          state.transformedBlocks += mode === MODE_TRANSFORMED_DICTIONARY ? 1 : 0;
+          state.transformedBlocks += mode === MODE_TRANSFORMED_DICTIONARY &&
+            state.transforms[block] > 0 ? 1 : 0;
+          state.bitmapDeltaBlocks += mode === MODE_TRANSFORMED_DICTIONARY &&
+            state.transforms[block] === 0 ? 1 : 0;
           state.runLengthBlocks += mode === MODE_RUNS ? 1 : 0;
           state.exactBlocks += (
             mode === MODE_DICTIONARY || mode === MODE_TRANSFORMED_DICTIONARY
@@ -954,7 +992,10 @@
         } else if (mode === MODE_RUNS) {
           payloadBits += metadata.localIndexBits + encoding.counts[block] * editBits;
         } else if (mode === MODE_TRANSFORMED_DICTIONARY) {
-          payloadBits += TRANSFORM_BITS + encoding.counts[block] * editBits;
+          payloadBits += encoding.transforms[block] === 0
+            ? TRANSFORM_BITS + metadata.pixelsPerBlock +
+              encoding.counts[block] * metadata.localIndexBits
+            : TRANSFORM_BITS + encoding.counts[block] * editBits;
         } else {
           payloadBits += encoding.counts[block] * editBits;
         }
@@ -1050,6 +1091,25 @@
           writer.write(transform, TRANSFORM_BITS);
         }
 
+        if (mode === MODE_TRANSFORMED_DICTIONARY && transform === 0) {
+          for (let position = 0; position < metadata.pixelsPerBlock; position += 1) {
+            writer.write(
+              Number(patterns[patternOffset + position] !== prototype[position]),
+              1
+            );
+          }
+
+          for (let position = 0; position < metadata.pixelsPerBlock; position += 1) {
+            const value = patterns[patternOffset + position];
+
+            if (value !== prototype[position]) {
+              writer.write(value, metadata.localIndexBits);
+            }
+          }
+
+          continue;
+        }
+
         for (let position = 0; position < metadata.pixelsPerBlock; position += 1) {
           const value = patterns[patternOffset + position];
           const prototypePosition = transformPosition(
@@ -1112,6 +1172,7 @@
       exactBlocks: encoding.exactBlocks,
       totalEdits: encoding.totalEdits,
       transformedBlocks: encoding.transformedBlocks,
+      bitmapDeltaBlocks: encoding.bitmapDeltaBlocks,
       fileBytes,
     };
   }
@@ -1132,6 +1193,7 @@
       exactBlocks: 0,
       totalEdits: 0,
       transformedBlocks: 0,
+      bitmapDeltaBlocks: 0,
     };
   }
 
@@ -1171,7 +1233,15 @@
       } else if (tag.mode === MODE_RUNS) {
         relativeOffset += localIndexBits + tag.editCount * editBits;
       } else if (tag.mode === MODE_TRANSFORMED_DICTIONARY) {
-        relativeOffset += TRANSFORM_BITS + tag.editCount * editBits;
+        const transform = readBits(
+          bytes,
+          layout.payloadStart + relativeOffset,
+          TRANSFORM_BITS
+        );
+
+        relativeOffset += transform === 0
+          ? TRANSFORM_BITS + pixelsPerBlock + tag.editCount * localIndexBits
+          : TRANSFORM_BITS + tag.editCount * editBits;
       } else {
         relativeOffset += tag.editCount * editBits;
       }
@@ -1429,6 +1499,16 @@
     }
 
     return value;
+  }
+
+  function countSetBits(bytes, bitOffset, bitCount) {
+    let count = 0;
+
+    for (let bit = 0; bit < bitCount; bit += 1) {
+      count += readBits(bytes, bitOffset + bit, 1);
+    }
+
+    return count;
   }
 
   function asUint8Array(input) {

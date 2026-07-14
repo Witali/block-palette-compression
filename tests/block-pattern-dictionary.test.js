@@ -116,6 +116,20 @@ test("transformed dictionary references preserve asymmetric rotated blocks", () 
   assertEveryPixelMatches(accessor, expected);
 });
 
+test("bitmap dictionary deltas preserve every independently addressed pixel", () => {
+  const image = createBitmapDeltaImage();
+  const expected = decodeBlockPaletteFile(encodeBlockPaletteFile(image));
+  const encoded = encodePatternDictionaryFile(expected, {
+    forceDictionarySize: 1,
+    maxDictionarySize: 1,
+    checkpointLog2: 2,
+  });
+  const accessor = openPatternDictionaryFile(encoded.bytes);
+
+  assert.ok(encoded.stats.bitmapDeltaBlocks > 0);
+  assertEveryPixelMatches(accessor, expected);
+});
+
 test("rejects truncated and invalid pattern-dictionary files", () => {
   const expected = decodeBlockPaletteFile(encodeBlockPaletteFile(createRepeatedPatternImage()));
   const encoded = encodePatternDictionaryFile(expected, {
@@ -307,6 +321,57 @@ function createTransformedPatternImage() {
       { r: 255, g: 255, b: 255 },
     ],
     blockPaletteIndices: new Uint16Array([0, 1, 2, 3, 0, 1, 2, 3]),
+    pixelIndices,
+  };
+}
+
+function createBitmapDeltaImage() {
+  const blockSize = 4;
+  const blockCount = 16;
+  const width = blockSize * blockCount;
+  const height = blockSize;
+  const basePattern = [
+    0, 1, 2, 3,
+    0, 1, 2, 3,
+    0, 1, 2, 3,
+    0, 1, 2, 3,
+  ];
+  const deltaPattern = basePattern.slice();
+  const pixelIndices = new Uint8Array(width * height);
+
+  for (const position of [5, 6, 9, 10, 13, 14]) {
+    deltaPattern[position] = deltaPattern[position] === 1 ? 2 : 1;
+  }
+
+  for (let block = 0; block < blockCount; block += 1) {
+    const pattern = block < 9 ? basePattern : deltaPattern;
+
+    for (let position = 0; position < blockSize * blockSize; position += 1) {
+      const x = block * blockSize + position % blockSize;
+      const y = Math.floor(position / blockSize);
+
+      pixelIndices[y * width + x] = pattern[position];
+    }
+  }
+
+  return {
+    width,
+    height,
+    blockSize,
+    localColorCount: 4,
+    globalColorCount: 4,
+    paletteCount: 1,
+    paletteColorBits: 24,
+    palette: [
+      { r: 0, g: 0, b: 0 },
+      { r: 85, g: 85, b: 85 },
+      { r: 170, g: 170, b: 170 },
+      { r: 255, g: 255, b: 255 },
+    ],
+    blockPaletteIndices: Uint16Array.from(
+      { length: blockCount * 4 },
+      (_, index) => index % 4
+    ),
     pixelIndices,
   };
 }

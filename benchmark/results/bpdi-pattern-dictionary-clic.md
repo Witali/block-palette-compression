@@ -7,36 +7,37 @@ Research date: July 14, 2026.
 An exact pattern dictionary can reduce BPAL files while preserving every
 decoded RGB value and retaining coordinate-level random access. Across all 42
 images in the local CLIC 2020 Professional Validation corpus and three BPAL
-presets, hybrid selection reduced the aggregate size by 4.82%. It selected
+presets, hybrid selection reduced the aggregate size by 5.97%. It selected
 BPDI only when the candidate was smaller and retained BPAL otherwise, so none
 of the 126 output files grew and the PSNR change was exactly 0.000 dB.
 
-BPDI v3 adds canonical first-use palette remapping and exact dictionary
-references under the eight square-block symmetries. Relative to BPDI v2, the
-two changes reduced the same hybrid output by 319,532 bytes (0.371%) and made
-three additional files smaller. Transform references account for 52,714 bytes
-of that reduction on their own. The transform is stored only for transformed
-references, so ordinary dictionary tags do not grow.
+BPDI v3 adds canonical first-use palette remapping, exact dictionary references
+under the eight square-block symmetries, and bitmap-coded medium-density
+deltas. Relative to BPDI v2, the changes reduced the same hybrid output by
+1,349,499 bytes (1.568%) and made 11 additional files smaller. Bitmap deltas
+provided 1,029,967 bytes of that reduction after canonical remapping;
+transform references account for 52,714 bytes on their own. These modes reuse
+an existing block tag, so ordinary dictionary tags do not grow.
 
 The experiment is most effective at 1.5 bpp, where pixel-index patterns occupy
 a large share of the file and use only two local symbols. The aggregate saving
 at this rate was 9.84%, with 31 of 42 images becoming smaller. The 2.5 and 4
-bpp profiles improved by 3.41% and 3.88% respectively.
+bpp profiles improved by 4.21% and 5.66% respectively.
 
 ## Aggregate results
 
 | Preset | Images | BPAL bytes | Best bytes | Change | Smaller files | Aggregate PSNR | PSNR change | Mean random access |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1.5 | 42 | 16,452,505 | 14,833,299 | -9.84% | 31 | 26.713 dB | 0.000 dB | 602,157 pixels/s |
-| 2.5 | 42 | 28,333,084 | 27,366,507 | -3.41% | 17 | 34.026 dB | 0.000 dB | 892,830 pixels/s |
-| 4 | 42 | 45,328,451 | 43,567,476 | -3.88% | 22 | 37.977 dB | 0.000 dB | 728,389 pixels/s |
-| **All** | **126** | **90,114,040** | **85,767,282** | **-4.82%** | **70** | — | **0.000 dB** | — |
+| 1.5 | 42 | 16,452,505 | 14,833,299 | -9.84% | 31 | 26.713 dB | 0.000 dB | 583,097 pixels/s |
+| 2.5 | 42 | 28,333,084 | 27,139,422 | -4.21% | 20 | 34.026 dB | 0.000 dB | 745,369 pixels/s |
+| 4 | 42 | 45,328,451 | 42,764,594 | -5.66% | 27 | 37.977 dB | 0.000 dB | 579,046 pixels/s |
+| **All** | **126** | **90,114,040** | **84,737,315** | **-5.97%** | **78** | — | **0.000 dB** | — |
 
 The largest individual reductions were:
 
 - 29.40% at 1.5 bpp for `jason-briscoe-149782.png`;
-- 23.09% at 2.5 bpp for `jason-briscoe-149782.png`;
-- 24.04% at 4 bpp for `jason-briscoe-149782.png`.
+- 25.21% at 2.5 bpp for `jason-briscoe-149782.png`;
+- 28.14% at 4 bpp for `jason-briscoe-149782.png`.
 
 ## Methodology
 
@@ -72,9 +73,11 @@ Every block selects its cheapest exact representation:
 
 1. raw local indices;
 2. a dictionary pattern plus a sorted list of changed positions and values;
-3. a transformed dictionary pattern plus a three-bit dihedral transform and a
+3. a dictionary pattern plus a changed-position bitmap and packed changed
+   values;
+4. a transformed dictionary pattern plus a three-bit dihedral transform and a
    sorted list of changed positions and values;
-4. the first local index plus positions where the raster-order value changes.
+5. the first local index plus positions where the raster-order value changes.
 
 The file stores a fixed-size tag for every block and one 32-bit payload offset
 for every group of 64 blocks. To retrieve `(x, y)`, the accessor computes the
@@ -83,6 +86,9 @@ then reads only the target pattern and its local delta. It does not reconstruct
 any other image block. Direct-color BPAL blocks remain directly addressable.
 For a transformed reference, the target coordinate is mapped to the prototype
 with a fixed switch over eight transforms before the same bounded delta scan.
+For a bitmap delta, the accessor tests one mask bit and uses a rank/popcount of
+the preceding bits to locate the changed value. Both operations stay inside
+the target block and have a fixed upper bound determined by the block size.
 
 Hybrid encoding serializes both the ordinary BPAL candidate and the BPDI
 candidate in memory, then keeps the smaller one. The unified accessor reads
@@ -119,6 +125,9 @@ node tools/pattern-dictionary-clic-benchmark.js `
 - Encoder-side transform search evaluates eight prototype orientations and is
   slower than BPDI v2. Decoding adds only a fixed coordinate transform and does
   not read neighboring blocks.
+- The JavaScript reference accessor counts bitmap bits directly. A GPU decoder
+  can process the same bounded mask with word-level population-count
+  instructions.
 - Run deltas follow raster order. A small set of scan orders or left/top index
   predictors may provide additional exact compression without sacrificing
   block-local random access.
