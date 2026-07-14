@@ -1,7 +1,9 @@
 # BPAL profile search
 
-These scripts reproduce the staged 1.5–8 bpp search documented in
-[`benchmark/results/bpal-optimal-settings-1.5-to-8-bpp.md`](../results/bpal-optimal-settings-1.5-to-8-bpp.md).
+These scripts reproduce the staged 1.5–8 bpp search documented in the
+[English report](../results/bpal-optimal-settings-1.5-to-8-bpp.md). The
+[original Russian report](../results/bpal-optimal-settings-1.5-to-8-bpp_ru.md)
+is preserved alongside it.
 
 All generated JSON files and reconstructed RGBA images are written below
 `benchmark/work/bpal-profile-search/`, which is intentionally ignored by Git.
