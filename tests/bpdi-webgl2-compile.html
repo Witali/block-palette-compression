@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>BPDI WebGL2 shader compile test</title>
+<pre id="result">pending</pre>
+<canvas id="canvas" width="1" height="1"></canvas>
+<script src="../src/palette/block-palette-format.js"></script>
+<script src="../src/palette/block-pattern-dictionary.js"></script>
+<script src="../src/palette/block-pattern-dictionary-webgl2.js"></script>
+<script>
+"use strict";
+
+const result = document.getElementById("result");
+
+try {
+  const gl = document.getElementById("canvas").getContext("webgl2");
+
+  if (!gl) {
+    throw new Error("WebGL2 unavailable");
+  }
+
+  const vertex = compile(gl, gl.VERTEX_SHADER, `#version 300 es
+  void main() {
+    vec2 positions[3] = vec2[3](
+      vec2(-1.0, -1.0),
+      vec2(3.0, -1.0),
+      vec2(-1.0, 3.0)
+    );
+    gl_Position = vec4(positions[gl_VertexID], 0.0, 1.0);
+  }`);
+  const fragment = compile(gl, gl.FRAGMENT_SHADER, `#version 300 es
+  precision highp float;
+  precision highp int;
+  ${BlockPatternDictionaryWebGl2.GLSL_SOURCE}
+  out vec4 fragmentColor;
+  void main() {
+    fragmentColor = vec4(
+      bpdiGetPixel(uBpdi, uvec2(gl_FragCoord.xy))
+    ) / 255.0;
+  }`);
+  const program = gl.createProgram();
+
+  gl.attachShader(program, vertex);
+  gl.attachShader(program, fragment);
+  gl.linkProgram(program);
+
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+    throw new Error(gl.getProgramInfoLog(program) || "program link failed");
+  }
+
+  const vertexArray = gl.createVertexArray();
+
+  gl.bindVertexArray(vertexArray);
+  gl.useProgram(program);
+
+  const checked = runFixture(gl, program, createTransformedPatternImage(), "transformedBlocks") +
+    runFixture(gl, program, createBitmapDeltaImage(), "bitmapDeltaBlocks");
+
+  result.textContent = `BPDI_WEBGL2_COMPILE_AND_EXECUTE_OK pixels=${checked}`;
+} catch (error) {
+  result.textContent = `BPDI_WEBGL2_COMPILE_FAILED: ${error.message}`;
+}
+
+function compile(gl, type, source) {
+  const shader = gl.createShader(type);
+
+  gl.shaderSource(shader, source);
+  gl.compileShader(shader);
+
+  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+    throw new Error(gl.getShaderInfoLog(shader) || "shader compile failed");
+  }
+
+  return shader;
+}
+
+function runFixture(gl, program, image, expectedStat) {
+  const baseline = BlockPaletteFormat.decodeBlockPaletteFile(
+    BlockPaletteFormat.encodeBlockPaletteFile(image)
+  );
+  const encoded = BlockPatternDictionary.encodePatternDictionaryFile(baseline, {
+    forceDictionarySize: 1,
+    maxDictionarySize: 1,
+  });
+
+  if (!(encoded.stats[expectedStat] > 0)) {
+    throw new Error(`fixture did not select ${expectedStat}`);
+  }
+
+  const accessor = BlockPatternDictionary.openPatternDictionaryFile(encoded.bytes);
+  const data = BlockPatternDictionaryWebGl2.createShaderData(encoded.bytes, 64);
+  const texture = gl.createTexture();
+
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, texture);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texImage2D(
+    gl.TEXTURE_2D,
+    0,
+    gl.R32UI,
+    data.wordAtlas.width,
+    data.wordAtlas.height,
+    0,
+    gl.RED_INTEGER,
+    gl.UNSIGNED_INT,
+    data.wordAtlas.data
+  );
+
+  gl.uniform1i(gl.getUniformLocation(program, "uBpdiWords"), 0);
+  gl.uniform2ui(
+    gl.getUniformLocation(program, "uBpdiWordAtlasSize"),
+    data.wordAtlas.width,
+    data.wordAtlas.height
+  );
+
+  for (const name of [
+    "width", "height", "blockSize", "blocksX", "pixelsPerBlock",
+    "localColorCount", "globalColorCount", "localIndexBits", "globalIndexBits",
+    "paletteIndexBits", "paletteColorBits", "dictionarySize", "directPixelColors",
+    "checkpointLog2", "prototypeIndexBits", "editCountBits", "positionBits",
+    "tagBits", "paletteStart", "selectorStart", "blockPaletteStart",
+    "dictionaryStart", "tagsStart", "directoryStart", "payloadStart",
+  ]) {
+    const location = gl.getUniformLocation(program, `uBpdi.${name}`);
+
+    if (location !== null) {
+      gl.uniform1ui(location, Number(data.layout[name]));
+    }
+  }
+
+  const canvas = gl.canvas;
+
+  canvas.width = baseline.width;
+  canvas.height = baseline.height;
+  gl.viewport(0, 0, baseline.width, baseline.height);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  const pixels = new Uint8Array(baseline.width * baseline.height * 4);
+
+  gl.readPixels(
+    0,
+    0,
+    baseline.width,
+    baseline.height,
+    gl.RGBA,
+    gl.UNSIGNED_BYTE,
+    pixels
+  );
+
+  for (let y = 0; y < baseline.height; y += 1) {
+    for (let x = 0; x < baseline.width; x += 1) {
+      const expected = accessor.getPixel(x, y);
+      const offset = (y * baseline.width + x) * 4;
+
+      if (
+        pixels[offset] !== expected.r ||
+        pixels[offset + 1] !== expected.g ||
+        pixels[offset + 2] !== expected.b ||
+        pixels[offset + 3] !== expected.a
+      ) {
+        throw new Error(
+          `GPU mismatch at ${x},${y}: ` +
+          `${Array.from(pixels.slice(offset, offset + 4))} vs ` +
+          `${expected.r},${expected.g},${expected.b},${expected.a}`
+        );
+      }
+    }
+  }
+
+  gl.deleteTexture(texture);
+  return baseline.width * baseline.height;
+}
+
+function createTransformedPatternImage() {
+  const blockSize = 4;
+  const width = 8;
+  const height = 4;
+  const pattern = [
+    0, 1, 0, 0,
+    0, 1, 1, 0,
+    0, 0, 1, 0,
+    0, 0, 0, 0,
+  ];
+  const pixelIndices = new Uint8Array(width * height);
+
+  for (let y = 0; y < blockSize; y += 1) {
+    for (let x = 0; x < blockSize; x += 1) {
+      pixelIndices[y * width + x] = pattern[y * blockSize + x];
+      pixelIndices[y * width + blockSize + x] = pattern[
+        (blockSize - 1 - x) * blockSize + y
+      ];
+    }
+  }
+
+  return createImage(width, height, blockSize, pixelIndices);
+}
+
+function createBitmapDeltaImage() {
+  const blockSize = 4;
+  const blockCount = 16;
+  const width = blockSize * blockCount;
+  const height = blockSize;
+  const base = [
+    0, 1, 2, 3,
+    0, 1, 2, 3,
+    0, 1, 2, 3,
+    0, 1, 2, 3,
+  ];
+  const delta = base.slice();
+  const pixelIndices = new Uint8Array(width * height);
+
+  for (const position of [5, 6, 9, 10, 13, 14]) {
+    delta[position] = delta[position] === 1 ? 2 : 1;
+  }
+
+  for (let block = 0; block < blockCount; block += 1) {
+    const pattern = block < 9 ? base : delta;
+
+    for (let position = 0; position < 16; position += 1) {
+      const x = block * blockSize + position % blockSize;
+      const y = Math.floor(position / blockSize);
+
+      pixelIndices[y * width + x] = pattern[position];
+    }
+  }
+
+  return createImage(width, height, blockSize, pixelIndices);
+}
+
+function createImage(width, height, blockSize, pixelIndices) {
+  const blockCount = Math.ceil(width / blockSize) * Math.ceil(height / blockSize);
+
+  return {
+    width,
+    height,
+    blockSize,
+    localColorCount: 4,
+    globalColorCount: 4,
+    paletteCount: 1,
+    paletteColorBits: 24,
+    palette: [
+      { r: 0, g: 0, b: 0 },
+      { r: 85, g: 85, b: 85 },
+      { r: 170, g: 170, b: 170 },
+      { r: 255, g: 255, b: 255 },
+    ],
+    blockPaletteIndices: Uint16Array.from(
+      { length: blockCount * 4 },
+      (_, index) => index % 4
+    ),
+    pixelIndices,
+  };
+}
+</script>
+</html>

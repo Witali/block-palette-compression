@@ -92,6 +92,13 @@ mode additionally reads its three-bit subtype from the same independent
 payload. There is no data dependency on decoded pixels or neighboring blocks,
 and the loop bound is identical for every lookup when compiled unrolled.
 
+`src/palette/block-pattern-dictionary-webgl2.js` provides the corresponding
+GLSL ES 3.00 helper, R32UI whole-file packing, layout uniforms, and a JavaScript
+emulation of the packed lookup. Sparse edit positions use a fixed 12-step
+binary search instead of a linear scan. Bitmap rank uses at most 128 bounded
+32-bit slots for the largest supported 64x64 block; smaller blocks perform
+active popcounts only for their available mask words.
+
 The largest individual reductions were:
 
 - 29.40% at 1.5 bpp for `jason-briscoe-149782.png`;
@@ -116,6 +123,11 @@ The largest individual reductions were:
 - Verification: 128 deterministic coordinate queries per image and preset,
   or 16,128 queries in total. Every returned RGBA pixel matched the BPAL
   baseline.
+- GPU reference verification: 4,096 deterministic queries on a repository
+  image and exhaustive transform/bitmap fixtures matched both the ordinary JS
+  accessor and the R32UI-packed emulation. Chrome WebGL2/SwiftShader compiled,
+  linked, and executed the fragment helper; all 288 rendered fixture pixels
+  matched the JS accessor after framebuffer readback.
 - Quality: the CUDA encoder's exact RGB MSE was used to calculate PSNR. BPDI
   reconstructs the BPAL indices exactly, so its MSE and PSNR are identical to
   the baseline by construction.
@@ -198,6 +210,5 @@ Use `--checkpoint-log2 6` to reproduce the compression-ceiling table.
 - Run deltas follow raster order. A small set of scan orders or left/top index
   predictors may provide additional exact compression without sacrificing
   block-local random access.
-- GPU sampling is not implemented for BPDI. A loader can either query BPDI
-  directly or expand one requested tile into the existing BPAL index atlas;
-  neither operation requires decoding the complete image.
+- The WebGL2 helper is a tested reference path and is not yet connected to the
+  cube/viewer resource loaders or benchmarked on discrete GPU hardware.
