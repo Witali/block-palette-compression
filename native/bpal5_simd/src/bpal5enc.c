@@ -59,6 +59,9 @@ static int find_best_settings(
     double best_bpp = 0.0;
     uint64_t best_error = UINT64_MAX;
     uint64_t best_payload_bits = 0u;
+    size_t closest_index = candidate_count;
+    double closest_bpp = 0.0;
+    double closest_distance = INFINITY;
     size_t index;
     int found = 0;
 
@@ -78,6 +81,7 @@ static int find_best_settings(
     for (index = 0u; index < candidate_count; ++index) {
         const uint64_t payload_bits = bpal5_estimate_payload_bits(&candidates[index], width, height);
         const double bpp = (double)payload_bits / ((double)width * height);
+        const double distance = fabs(bpp - target_bpp);
         bpal5_image candidate_image;
         bpal5_encode_stats candidate_stats;
         double mse;
@@ -85,6 +89,12 @@ static int find_best_settings(
         double psnr;
         int better;
 
+        if (distance < closest_distance ||
+            (distance == closest_distance && bpp < closest_bpp)) {
+            closest_index = index;
+            closest_bpp = bpp;
+            closest_distance = distance;
+        }
         if (bpp < minimum_bpp || bpp > maximum_bpp) {
             fprintf(stderr, "  %zu/%zu: %.3f bpp, outside range\n", index + 1u, candidate_count, bpp);
             continue;
@@ -139,6 +149,37 @@ static int find_best_settings(
             found = 1;
         }
         bpal5_image_free(&candidate_image);
+    }
+    if (!found && closest_index < candidate_count) {
+        bpal5_image candidate_image;
+        bpal5_encode_stats candidate_stats;
+
+        memset(&candidate_image, 0, sizeof(candidate_image));
+        memset(&candidate_stats, 0, sizeof(candidate_stats));
+        fprintf(
+            stderr,
+            "No candidate inside the preset range; using closest candidate %.3f bpp\n",
+            closest_bpp
+        );
+        if (!bpal5_encode_rgb_with_stats(
+                rgb,
+                width,
+                height,
+                &candidates[closest_index],
+                &candidate_image,
+                &candidate_stats,
+                error,
+                error_size)) {
+            bpal5_image_free(output);
+            return 0;
+        }
+        *output = candidate_image;
+        *options = candidates[closest_index];
+        *output_stats = candidate_stats;
+        best_error = candidate_stats.final_error;
+        best_payload_bits = bpal5_estimate_payload_bits(options, width, height);
+        best_bpp = closest_bpp;
+        found = 1;
     }
     if (!found) {
         (void)snprintf(

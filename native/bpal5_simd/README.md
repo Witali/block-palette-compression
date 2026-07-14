@@ -125,6 +125,8 @@ are encoded. The current command-line settings are included as the baseline
 candidate. Ties in RMSE are resolved by distance from the target bpp and then
 by smaller payload size. Search output states the requested target bpp and its
 allowed range, then reports bpp, RMSE, and PSNR for every eligible candidate.
+If discrete palette overhead leaves the range empty for a small image, the
+candidate closest to the target bpp is encoded and reported as a fallback.
 Candidate encodes reuse the same process, including its initialized CUDA
 runtime and driver caches.
 

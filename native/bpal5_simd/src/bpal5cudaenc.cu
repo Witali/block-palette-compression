@@ -95,6 +95,9 @@ bool find_best_settings(
     double best_bpp = 0.0;
     uint64_t best_error = UINT64_MAX;
     uint64_t best_payload_bits = 0u;
+    size_t closest_index = candidate_count;
+    double closest_bpp = 0.0;
+    double closest_distance = INFINITY;
     bool found = false;
 
     if (!bpal5_quality_preset_range(preset_name, &target_bpp, &minimum_bpp, &maximum_bpp)) {
@@ -114,9 +117,16 @@ bool find_best_settings(
         const uint64_t payload_bits = bpal5_estimate_payload_bits(&candidates[index], width, height);
         const double bpp = static_cast<double>(payload_bits) /
             (static_cast<double>(width) * height);
+        const double distance = std::fabs(bpp - target_bpp);
         bpal5_image candidate_image{};
         bpal5_cuda_encode_stats candidate_stats{};
 
+        if (distance < closest_distance ||
+            (distance == closest_distance && bpp < closest_bpp)) {
+            closest_index = index;
+            closest_bpp = bpp;
+            closest_distance = distance;
+        }
         if (bpp < minimum_bpp || bpp > maximum_bpp) {
             std::fprintf(stderr, "  %zu/%zu: %.3f bpp, outside range\n", index + 1u, candidate_count, bpp);
             continue;
@@ -173,6 +183,36 @@ bool find_best_settings(
             found = true;
         }
         bpal5_image_free(&candidate_image);
+    }
+    if (!found && closest_index < candidate_count) {
+        bpal5_image candidate_image{};
+        bpal5_cuda_encode_stats candidate_stats{};
+
+        std::fprintf(
+            stderr,
+            "No candidate inside the preset range; using closest candidate %.3f bpp\n",
+            closest_bpp
+        );
+        if (!bpal5_encode_rgb_cuda(
+                rgb,
+                width,
+                height,
+                &candidates[closest_index],
+                device,
+                &candidate_image,
+                &candidate_stats,
+                error,
+                error_size)) {
+            bpal5_image_free(output);
+            return false;
+        }
+        *output = candidate_image;
+        *options = candidates[closest_index];
+        *output_stats = candidate_stats;
+        best_error = candidate_stats.final_error;
+        best_payload_bits = bpal5_estimate_payload_bits(options, width, height);
+        best_bpp = closest_bpp;
+        found = true;
     }
     if (!found) {
         std::snprintf(
