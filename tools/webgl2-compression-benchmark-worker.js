@@ -2,7 +2,7 @@
 
 importScripts("../src/palette/palette-quantizer.js?v=progress-1");
 importScripts("../src/palette/block-palette-codec.js?v=refinement-distance-cache-2");
-importScripts("../src/palette/block-palette-webgl-codec.js?v=shader-specialization-1");
+importScripts("../src/palette/block-palette-webgl-codec.js?v=integer-index-textures-2");
 
 self.addEventListener("message", (event) => {
   const { pixels, width, height, settings } = event.data;
