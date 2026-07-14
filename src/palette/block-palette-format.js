@@ -288,17 +288,20 @@
     const blockCount = image.blockCount === undefined
       ? Math.ceil(image.width / image.blockSize) * Math.ceil(image.height / image.blockSize)
       : image.blockCount;
+    const paletteCount = image.paletteCount || 1;
 
     const palettePacking = image.paletteMode !== "vector" &&
         (image.channelMode || "rgb") === "rgb" && Array.isArray(image.palette)
-      ? createPackedPalettePlan(image)
+      ? createPackedPalettePlan(image.paletteCount === paletteCount
+        ? image
+        : { ...image, paletteCount })
       : null;
     const rawPaletteColorBits = (image.channelMode || "rgb") === "scalar"
       ? 8
       : image.paletteColorBits;
     const rawPaletteBytes = (image.paletteMode === "vector"
       ? (image.paletteVectorCount || 0) * 2
-      : (image.paletteCount || 1) * image.globalColorCount) * rawPaletteColorBits / 8;
+      : paletteCount * image.globalColorCount) * rawPaletteColorBits / 8;
     const selectedPacking = palettePacking && palettePacking.byteCount < rawPaletteBytes
       ? palettePacking
       : null;
@@ -309,7 +312,7 @@
       image.localColorCount,
       image.globalColorCount,
       image.paletteColorBits,
-      image.paletteCount || 1,
+      paletteCount,
       image.paletteMode || "explicit",
       image.paletteVectorCount || 0,
       BIT_FIELD_HEADER_BITS,

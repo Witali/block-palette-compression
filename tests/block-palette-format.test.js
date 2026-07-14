@@ -312,6 +312,33 @@ test("losslessly packs narrow shared palettes into independent delta records", (
   assert.deepEqual(Array.from(decoded.pixels), Array.from(reconstructWithSampler(encoded, image.width, image.height)));
 });
 
+test("uses the default single palette when calculating packed layout", () => {
+  const globalColorCount = 64;
+  const image = {
+    width: 16,
+    height: 16,
+    blockSize: 4,
+    localColorCount: 4,
+    globalColorCount,
+    paletteColorBits: 24,
+    palette: Array.from({ length: globalColorCount }, (_, index) => ({
+      r: 20 + (index & 15),
+      g: 30 + (index >> 2 & 15),
+      b: 40 + (index >> 1 & 15),
+    })),
+    blockPaletteIndices: Uint16Array.from({ length: 16 * 4 }, (_, index) =>
+      index % globalColorCount
+    ),
+    pixelIndices: Uint8Array.from({ length: 16 * 16 }, (_, index) => index % 4),
+  };
+  const layout = getBlockPaletteFileLayout(image);
+  const encoded = encodeBlockPaletteFile(image);
+
+  assert.equal(layout.packedPalettes, true);
+  assert.equal(layout.totalBytes, encoded.length);
+  assert.equal(encoded[13] & 1, 1);
+});
+
 test("samples raw RGB565 BPAL pixels directly without decoding the image", () => {
   const image = {
     width: 2,
