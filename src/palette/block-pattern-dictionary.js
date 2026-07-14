@@ -16,7 +16,10 @@
 
   const MAGIC_BYTES = [0x42, 0x50, 0x44, 0x49]; // BPDI
   const MAGIC = "BPDI";
-  const VERSION = 1;
+  const VERSION = 2;
+  const MODE_DICTIONARY = 0;
+  const MODE_RAW = 1;
+  const MODE_RUNS = 2;
   const HEADER_BYTES = 28;
   const DEFAULT_MAX_DICTIONARY_SIZE = 64;
   const DEFAULT_SAMPLE_LIMIT = 8192;
@@ -133,6 +136,7 @@
           directoryBits: 0,
           rawBlocks: candidate.stats.blockCount,
           referencedBlocks: 0,
+          runLengthBlocks: 0,
           exactBlocks: 0,
           totalEdits: 0,
           selected: false,
@@ -217,7 +221,7 @@
     const prototypeIndexBits = dictionarySize > 0 ? Math.log2(dictionarySize) : 0;
     const editCountBits = Math.ceil(Math.log2(pixelsPerBlock + 1));
     const tagBits = dictionarySize > 0
-      ? 1 + prototypeIndexBits + editCountBits
+      ? 2 + prototypeIndexBits + editCountBits
       : 0;
     const groupCount = dictionarySize > 0
       ? Math.ceil(blockCount / 2 ** checkpointLog2)
@@ -298,12 +302,31 @@
       const tag = readTag(bytes, layout, blockIndex);
       const blockPayload = findBlockPayload(bytes, layout, blockIndex, pixelsPerBlock, localIndexBits);
 
-      if (tag.raw) {
+      if (tag.mode === MODE_RAW) {
         return readBits(
           bytes,
           blockPayload + localPosition * localIndexBits,
           localIndexBits
         );
+      }
+
+      const editBits = layout.positionBits + localIndexBits;
+
+      if (tag.mode === MODE_RUNS) {
+        let value = readBits(bytes, blockPayload, localIndexBits);
+
+        for (let change = 0; change < tag.editCount; change += 1) {
+          const changeOffset = blockPayload + localIndexBits + change * editBits;
+          const position = readBits(bytes, changeOffset, layout.positionBits);
+
+          if (position > localPosition) {
+            break;
+          }
+
+          value = readBits(bytes, changeOffset + layout.positionBits, localIndexBits);
+        }
+
+        return value;
       }
 
       let value = readBits(
@@ -312,7 +335,6 @@
           (tag.prototypeIndex * pixelsPerBlock + localPosition) * localIndexBits,
         localIndexBits
       );
-      const editBits = layout.positionBits + localIndexBits;
 
       for (let edit = 0; edit < tag.editCount; edit += 1) {
         const editOffset = blockPayload + edit * editBits;
@@ -536,11 +558,13 @@
       dictionarySize: 0,
       dictionary: [],
       assignments: null,
-      distances: null,
+      modes: null,
+      counts: null,
       payloadBits: rawPayloadBits,
       pixelSectionBits: rawPayloadBits,
       rawBlocks: metadata.blockCount,
       referencedBlocks: 0,
+      runLengthBlocks: 0,
       exactBlocks: 0,
       totalEdits: 0,
     };
@@ -649,10 +673,12 @@
       dictionarySize,
       dictionary: prototypes.slice(0, dictionarySize),
       assignments: new Uint16Array(metadata.blockCount),
-      distances: new Uint16Array(metadata.blockCount),
+      modes: new Uint8Array(metadata.blockCount),
+      counts: new Uint16Array(metadata.blockCount),
       payloadBits: 0,
       rawBlocks: 0,
       referencedBlocks: 0,
+      runLengthBlocks: 0,
       exactBlocks: 0,
       totalEdits: 0,
     }));
@@ -664,6 +690,13 @@
       const patternOffset = block * metadata.pixelsPerBlock;
       let bestDistance = metadata.pixelsPerBlock + 1;
       let bestPrototype = 0;
+      let changeCount = 0;
+
+      for (let position = 1; position < metadata.pixelsPerBlock; position += 1) {
+        if (patterns[patternOffset + position] !== patterns[patternOffset + position - 1]) {
+          changeCount += 1;
+        }
+      }
 
       stateIndex = 0;
 
@@ -686,15 +719,32 @@
         ) {
           const state = states[stateIndex];
           const deltaBits = bestDistance * editBits;
-          const raw = rawBlockBits <= deltaBits;
+          const runBits = metadata.localIndexBits + changeCount * editBits;
+          let mode = MODE_RAW;
+          let blockPayloadBits = rawBlockBits;
+          let count = 0;
+
+          if (runBits < blockPayloadBits) {
+            mode = MODE_RUNS;
+            blockPayloadBits = runBits;
+            count = changeCount;
+          }
+
+          if (deltaBits < blockPayloadBits) {
+            mode = MODE_DICTIONARY;
+            blockPayloadBits = deltaBits;
+            count = bestDistance;
+          }
 
           state.assignments[block] = bestPrototype;
-          state.distances[block] = bestDistance;
-          state.payloadBits += raw ? rawBlockBits : deltaBits;
-          state.rawBlocks += raw ? 1 : 0;
-          state.referencedBlocks += raw ? 0 : 1;
-          state.exactBlocks += !raw && bestDistance === 0 ? 1 : 0;
-          state.totalEdits += raw ? 0 : bestDistance;
+          state.modes[block] = mode;
+          state.counts[block] = count;
+          state.payloadBits += blockPayloadBits;
+          state.rawBlocks += mode === MODE_RAW ? 1 : 0;
+          state.referencedBlocks += mode === MODE_DICTIONARY ? 1 : 0;
+          state.runLengthBlocks += mode === MODE_RUNS ? 1 : 0;
+          state.exactBlocks += mode === MODE_DICTIONARY && bestDistance === 0 ? 1 : 0;
+          state.totalEdits += count;
           stateIndex += 1;
         }
       }
@@ -706,7 +756,7 @@
       const dictionaryBits = state.dictionarySize *
         metadata.pixelsPerBlock * metadata.localIndexBits;
       const tagsBits = metadata.blockCount *
-        (1 + prototypeIndexBits + editCountBits);
+        (2 + prototypeIndexBits + editCountBits);
       const groupCount = Math.ceil(metadata.blockCount / checkpointInterval);
       const directoryBits = (groupCount + 1) * 32;
 
@@ -800,7 +850,7 @@
       metadata.pixelsPerBlock * metadata.localIndexBits;
     const tagBits = dictionaryEncoding.dictionarySize > 0
       ? metadata.blockCount * (
-        1 +
+        2 +
         Math.log2(dictionaryEncoding.dictionarySize) +
         Math.ceil(Math.log2(metadata.pixelsPerBlock + 1))
       )
@@ -828,11 +878,15 @@
       const end = Math.min(metadata.blockCount, (group + 1) * checkpointInterval);
 
       for (let block = group * checkpointInterval; block < end; block += 1) {
-        const distance = encoding.distances[block];
+        const mode = encoding.modes[block];
 
-        payloadBits += rawBlockBits <= distance * editBits
-          ? rawBlockBits
-          : distance * editBits;
+        if (mode === MODE_RAW) {
+          payloadBits += rawBlockBits;
+        } else if (mode === MODE_RUNS) {
+          payloadBits += metadata.localIndexBits + encoding.counts[block] * editBits;
+        } else {
+          payloadBits += encoding.counts[block] * editBits;
+        }
       }
     }
 
@@ -878,31 +932,40 @@
   function writeTags(writer, metadata, encoding) {
     const prototypeIndexBits = Math.log2(encoding.dictionarySize);
     const editCountBits = Math.ceil(Math.log2(metadata.pixelsPerBlock + 1));
-    const rawBlockBits = metadata.pixelsPerBlock * metadata.localIndexBits;
-    const editBits = metadata.positionBits + metadata.localIndexBits;
-
     for (let block = 0; block < metadata.blockCount; block += 1) {
-      const distance = encoding.distances[block];
-      const raw = rawBlockBits <= distance * editBits;
+      const mode = encoding.modes[block];
 
-      writer.write(raw ? 1 : 0, 1);
-      writer.write(raw ? 0 : encoding.assignments[block], prototypeIndexBits);
-      writer.write(raw ? 0 : distance, editCountBits);
+      writer.write(mode, 2);
+      writer.write(
+        mode === MODE_DICTIONARY ? encoding.assignments[block] : 0,
+        prototypeIndexBits
+      );
+      writer.write(mode === MODE_RAW ? 0 : encoding.counts[block], editCountBits);
     }
   }
 
   function writeDictionaryPayload(writer, patterns, metadata, encoding) {
-    const rawBlockBits = metadata.pixelsPerBlock * metadata.localIndexBits;
-    const editBits = metadata.positionBits + metadata.localIndexBits;
-
     for (let block = 0; block < metadata.blockCount; block += 1) {
       const patternOffset = block * metadata.pixelsPerBlock;
-      const distance = encoding.distances[block];
-      const raw = rawBlockBits <= distance * editBits;
+      const mode = encoding.modes[block];
 
-      if (raw) {
+      if (mode === MODE_RAW) {
         for (let position = 0; position < metadata.pixelsPerBlock; position += 1) {
           writer.write(patterns[patternOffset + position], metadata.localIndexBits);
+        }
+      } else if (mode === MODE_RUNS) {
+        let previous = patterns[patternOffset];
+
+        writer.write(previous, metadata.localIndexBits);
+
+        for (let position = 1; position < metadata.pixelsPerBlock; position += 1) {
+          const value = patterns[patternOffset + position];
+
+          if (value !== previous) {
+            writer.write(position, metadata.positionBits);
+            writer.write(value, metadata.localIndexBits);
+            previous = value;
+          }
         }
       } else {
         const prototype = encoding.dictionary[encoding.assignments[block]];
@@ -960,6 +1023,7 @@
       directoryBits,
       rawBlocks: encoding.rawBlocks,
       referencedBlocks: encoding.referencedBlocks,
+      runLengthBlocks: encoding.runLengthBlocks,
       exactBlocks: encoding.exactBlocks,
       totalEdits: encoding.totalEdits,
       fileBytes,
@@ -971,11 +1035,13 @@
       dictionarySize: 0,
       dictionary: [],
       assignments: null,
-      distances: null,
+      modes: null,
+      counts: null,
       payloadBits: 0,
       pixelSectionBits: 0,
       rawBlocks: 0,
       referencedBlocks: 0,
+      runLengthBlocks: 0,
       exactBlocks: 0,
       totalEdits: 0,
     };
@@ -983,15 +1049,20 @@
 
   function readTag(bytes, layout, blockIndex) {
     let offset = layout.tagsStart + blockIndex * layout.tagBits;
-    const raw = readBits(bytes, offset, 1) === 1;
+    const mode = readBits(bytes, offset, 2);
 
-    offset += 1;
+    offset += 2;
+
+    if (mode > MODE_RUNS) {
+      throw new RangeError("Invalid BPDI block mode");
+    }
+
     const prototypeIndex = readBits(bytes, offset, layout.prototypeIndexBits);
 
     offset += layout.prototypeIndexBits;
 
     return {
-      raw,
+      mode,
       prototypeIndex,
       editCount: readBits(bytes, offset, layout.editCountBits),
     };
@@ -1007,7 +1078,13 @@
     for (let block = firstBlock; block < blockIndex; block += 1) {
       const tag = readTag(bytes, layout, block);
 
-      relativeOffset += tag.raw ? rawBlockBits : tag.editCount * editBits;
+      if (tag.mode === MODE_RAW) {
+        relativeOffset += rawBlockBits;
+      } else if (tag.mode === MODE_RUNS) {
+        relativeOffset += localIndexBits + tag.editCount * editBits;
+      } else {
+        relativeOffset += tag.editCount * editBits;
+      }
     }
 
     return layout.payloadStart + relativeOffset;

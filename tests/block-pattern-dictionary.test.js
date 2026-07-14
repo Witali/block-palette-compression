@@ -88,6 +88,20 @@ test("direct-color blocks remain independently addressable without a pixel paylo
   assertEveryPixelMatches(accessor, expected);
 });
 
+test("run-delta blocks preserve independently addressed pixels", () => {
+  const image = createRunPatternImage();
+  const expected = decodeBlockPaletteFile(encodeBlockPaletteFile(image));
+  const encoded = encodePatternDictionaryFile(expected, {
+    forceDictionarySize: 1,
+    maxDictionarySize: 1,
+    checkpointLog2: 2,
+  });
+  const accessor = openPatternDictionaryFile(encoded.bytes);
+
+  assert.ok(encoded.stats.runLengthBlocks > 0);
+  assertEveryPixelMatches(accessor, expected);
+});
+
 test("rejects truncated and invalid pattern-dictionary files", () => {
   const expected = decodeBlockPaletteFile(encodeBlockPaletteFile(createRepeatedPatternImage()));
   const encoded = encodePatternDictionaryFile(expected, {
@@ -182,6 +196,54 @@ function createNoisyPatternImage() {
     for (let x = 0; x < width; x += 1) {
       random = (Math.imul(random, 1664525) + 1013904223) >>> 0;
       pixelIndices[y * width + x] = random >>> 30;
+    }
+  }
+
+  return {
+    width,
+    height,
+    blockSize,
+    localColorCount,
+    globalColorCount: palette.length,
+    paletteCount: 1,
+    paletteColorBits: 24,
+    palette,
+    blockPaletteIndices,
+    pixelIndices,
+  };
+}
+
+function createRunPatternImage() {
+  const width = 64;
+  const height = 4;
+  const blockSize = 4;
+  const localColorCount = 4;
+  const blockCount = width / blockSize;
+  const palette = [
+    { r: 0, g: 0, b: 0 },
+    { r: 85, g: 85, b: 85 },
+    { r: 170, g: 170, b: 170 },
+    { r: 255, g: 255, b: 255 },
+  ];
+  const permutations = [
+    [0, 1, 2, 3], [0, 1, 3, 2], [0, 2, 1, 3], [0, 2, 3, 1],
+    [0, 3, 1, 2], [0, 3, 2, 1], [1, 0, 2, 3], [1, 0, 3, 2],
+    [1, 2, 0, 3], [1, 2, 3, 0], [1, 3, 0, 2], [1, 3, 2, 0],
+    [2, 0, 1, 3], [2, 0, 3, 1], [2, 1, 0, 3], [2, 1, 3, 0],
+  ];
+  const blockPaletteIndices = new Uint16Array(blockCount * localColorCount);
+  const pixelIndices = new Uint8Array(width * height);
+
+  for (let block = 0; block < blockCount; block += 1) {
+    for (let local = 0; local < localColorCount; local += 1) {
+      blockPaletteIndices[block * localColorCount + local] = local;
+    }
+
+    for (let position = 0; position < blockSize * blockSize; position += 1) {
+      const x = block * blockSize + position % blockSize;
+      const y = Math.floor(position / blockSize);
+
+      pixelIndices[y * width + x] = permutations[block][Math.floor(position / 4)];
     }
   }
 
