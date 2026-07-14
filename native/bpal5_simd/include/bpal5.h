@@ -39,6 +39,7 @@ typedef struct bpal5_encode_options {
     uint32_t palette_color_bits;
     uint32_t kmeans_iterations;
     uint32_t refinement_passes;
+    uint32_t thread_count;
     int use_simd;
 } bpal5_encode_options;
 

@@ -38,6 +38,7 @@ static int test_quality_presets(void) {
         options.palette_color_bits = 16u;
         options.kmeans_iterations = 17u;
         options.refinement_passes = 0u;
+        options.thread_count = 7u;
         options.use_simd = 0;
         if (!bpal5_apply_quality_preset(expected->name, &options) ||
             options.block_size != expected->block_size ||
@@ -47,6 +48,7 @@ static int test_quality_presets(void) {
             options.palette_color_bits != 24u ||
             options.kmeans_iterations != 17u ||
             options.refinement_passes != 4u ||
+            options.thread_count != 7u ||
             options.use_simd != 0) {
             return fail("quality preset settings mismatch");
         }

@@ -18,6 +18,7 @@ static void print_usage(const char *program) {
         "  --rgb565           Store shared colors as RGB565 (default RGB888)\n"
         "  --iterations N     K-means iterations, 1..64 (default 8)\n"
         "  --refine N         Refinement passes, 0..16 (default 4)\n"
+        "  --threads N        Worker threads, 1..256 (default 4)\n"
         "  --no-simd          Disable AVX2 acceleration\n",
         program
     );
@@ -36,6 +37,7 @@ static int parse_u32(const char *text, uint32_t *value) {
 int main(int argc, char **argv) {
     bpal5_encode_options options;
     bpal5_image image;
+    bpal5_encode_stats stats;
     uint8_t *rgb = NULL;
     uint32_t width = 0;
     uint32_t height = 0;
@@ -53,6 +55,7 @@ int main(int argc, char **argv) {
     }
     bpal5_default_encode_options(&options);
     memset(&image, 0, sizeof(image));
+    memset(&stats, 0, sizeof(stats));
 
     for (argument = 3; argument < argc; ++argument) {
         if (strcmp(argv[argument], "--preset") == 0) {
@@ -90,6 +93,8 @@ int main(int argc, char **argv) {
             target = &options.kmeans_iterations;
         } else if (strcmp(name, "--refine") == 0) {
             target = &options.refinement_passes;
+        } else if (strcmp(name, "--threads") == 0) {
+            target = &options.thread_count;
         } else {
             fprintf(stderr, "Unknown option: %s\n", name);
             print_usage(argv[0]);
@@ -100,12 +105,24 @@ int main(int argc, char **argv) {
             return 2;
         }
     }
+    if (options.thread_count == 0u || options.thread_count > 256u) {
+        fprintf(stderr, "Invalid value for --threads; expected 1..256\n");
+        return 2;
+    }
 
     if (!bpal5_image_read_rgb(argv[1], &rgb, &width, &height, error, sizeof(error))) {
         fprintf(stderr, "bpal5enc: %s\n", error);
         goto cleanup;
     }
-    if (!bpal5_encode_rgb(rgb, width, height, &options, &image, error, sizeof(error))) {
+    if (!bpal5_encode_rgb_with_stats(
+            rgb,
+            width,
+            height,
+            &options,
+            &image,
+            &stats,
+            error,
+            sizeof(error))) {
         fprintf(stderr, "bpal5enc: %s\n", error);
         goto cleanup;
     }
@@ -115,7 +132,9 @@ int main(int argc, char **argv) {
     }
 
     printf(
-        "Encoded %ux%u image to BPAL v5: block %u, local %u, %u x %u shared colors, RGB%u, refinement %u, %s\n",
+        "Encoded %ux%u image to BPAL v5: block %u, local %u, %u x %u shared colors, "
+        "RGB%u, refinement %u, %u threads, %s, CPU stages %.3f ms "
+        "(clusters %.3f, palettes %.3f, blocks %.3f, refine %.3f)\n",
         width,
         height,
         options.block_size,
@@ -124,7 +143,16 @@ int main(int argc, char **argv) {
         options.global_color_count,
         options.palette_color_bits == 16u ? 565u : 888u,
         options.refinement_passes,
-        bpal5_simd_backend(options.use_simd)
+        options.thread_count,
+        bpal5_simd_backend(options.use_simd),
+        stats.block_clustering_milliseconds +
+            stats.palette_building_milliseconds +
+            stats.block_encoding_milliseconds +
+            stats.refinement_milliseconds,
+        stats.block_clustering_milliseconds,
+        stats.palette_building_milliseconds,
+        stats.block_encoding_milliseconds,
+        stats.refinement_milliseconds
     );
     result = 0;
 

@@ -49,6 +49,52 @@ void bpal5_expand_scalar(
     }
 }
 
+uint64_t bpal5_block_score_scalar(
+    const uint8_t *red,
+    const uint8_t *green,
+    const uint8_t *blue,
+    const uint32_t *best_distances,
+    uint32_t count,
+    uint32_t color_rgba
+) {
+    const int target_red = (int)(color_rgba & 255u);
+    const int target_green = (int)((color_rgba >> 8u) & 255u);
+    const int target_blue = (int)((color_rgba >> 16u) & 255u);
+    uint64_t score = 0u;
+    uint32_t index;
+    for (index = 0u; index < count; ++index) {
+        const int dr = (int)red[index] - target_red;
+        const int dg = (int)green[index] - target_green;
+        const int db = (int)blue[index] - target_blue;
+        const uint32_t distance = (uint32_t)(dr * dr + dg * dg + db * db);
+        score += distance < best_distances[index] ? distance : best_distances[index];
+    }
+    return score;
+}
+
+void bpal5_block_update_scalar(
+    const uint8_t *red,
+    const uint8_t *green,
+    const uint8_t *blue,
+    uint32_t *best_distances,
+    uint32_t count,
+    uint32_t color_rgba
+) {
+    const int target_red = (int)(color_rgba & 255u);
+    const int target_green = (int)((color_rgba >> 8u) & 255u);
+    const int target_blue = (int)((color_rgba >> 16u) & 255u);
+    uint32_t index;
+    for (index = 0u; index < count; ++index) {
+        const int dr = (int)red[index] - target_red;
+        const int dg = (int)green[index] - target_green;
+        const int db = (int)blue[index] - target_blue;
+        const uint32_t distance = (uint32_t)(dr * dr + dg * dg + db * db);
+        if (distance < best_distances[index]) {
+            best_distances[index] = distance;
+        }
+    }
+}
+
 int bpal5_cpu_has_avx2(void) {
 #if defined(BPAL5_HAVE_AVX2_IMPL) && defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
     int registers[4];
@@ -115,4 +161,22 @@ bpal5_expand_fn bpal5_select_expand(int use_simd) {
     (void)use_simd;
 #endif
     return bpal5_expand_scalar;
+}
+
+void bpal5_select_block_kernels(
+    int use_simd,
+    bpal5_block_score_fn *score,
+    bpal5_block_update_fn *update
+) {
+#if defined(BPAL5_HAVE_AVX2_IMPL)
+    if (use_simd && bpal5_cpu_has_avx2()) {
+        *score = bpal5_block_score_avx2;
+        *update = bpal5_block_update_avx2;
+        return;
+    }
+#else
+    (void)use_simd;
+#endif
+    *score = bpal5_block_score_scalar;
+    *update = bpal5_block_update_scalar;
 }

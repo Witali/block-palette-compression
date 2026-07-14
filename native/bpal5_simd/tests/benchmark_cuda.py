@@ -25,6 +25,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--preset", default="3", help="quality preset passed to both encoders")
     parser.add_argument("--refine", type=int, default=4, help="refinement passes")
+    parser.add_argument("--threads", type=int, default=4, help="CPU encoder worker threads")
     parser.add_argument("--device", type=int, default=0, help="CUDA device ordinal")
     parser.add_argument("--runs", type=int, default=5, help="measured runs per encoder")
     parser.add_argument("--warmup", type=int, default=1, help="unmeasured runs per encoder")
@@ -100,6 +101,8 @@ def main() -> int:
     args = parse_args()
     if args.runs < 1 or args.warmup < 0:
         raise ValueError("--runs must be positive and --warmup cannot be negative")
+    if args.threads < 1:
+        raise ValueError("--threads must be positive")
 
     source = args.source.resolve()
     build_dir = args.build_dir.resolve()
@@ -128,6 +131,8 @@ def main() -> int:
             ]
             if label == "CUDA":
                 command += ["--device", str(args.device)]
+            else:
+                command += ["--threads", str(args.threads)]
 
             for _ in range(args.warmup):
                 run(command)
@@ -177,7 +182,10 @@ def main() -> int:
                 results[label]["cuda_stage_timings"] = cuda_stage_timings
 
     print(f"Image: {source} ({width}x{height})")
-    print(f"Settings: preset {args.preset}, refinement {args.refine}, {args.runs} measured runs")
+    print(
+        f"Settings: preset {args.preset}, refinement {args.refine}, "
+        f"CPU threads {args.threads}, {args.runs} measured runs"
+    )
     print()
     print("Encoder  Mean ms  Best ms  Stddev ms  Size bytes       MSE    PSNR dB")
     print("-------  -------  -------  ---------  ----------  --------  ---------")

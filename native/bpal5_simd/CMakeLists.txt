@@ -3,6 +3,7 @@ project(bpal5_simd VERSION 1.0 LANGUAGES C)
 
 include(CTest)
 include(CheckLanguage)
+find_package(OpenMP)
 
 option(BPAL5_BUILD_CUDA "Build the CUDA BPAL encoder when nvcc is available" ON)
 
@@ -17,6 +18,10 @@ add_library(bpal5 STATIC
     src/ppm.c
 )
 target_include_directories(bpal5 PUBLIC include PRIVATE src third_party/stb)
+if(OpenMP_C_FOUND)
+    target_link_libraries(bpal5 PUBLIC OpenMP::OpenMP_C)
+    target_compile_definitions(bpal5 PRIVATE BPAL5_HAVE_OPENMP=1)
+endif()
 
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(AMD64|amd64|x86_64|X86_64|x64)$")
     target_sources(bpal5 PRIVATE src/bpal5_simd_avx2.c)

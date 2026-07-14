@@ -8,6 +8,10 @@
 #include <string.h>
 #include <time.h>
 
+#if defined(BPAL5_HAVE_OPENMP)
+#include <omp.h>
+#endif
+
 #define BPAL5_MAX_DIMENSION (1u << 24)
 #define BPAL5_MAX_SAMPLE_PIXELS 32768u
 #define BPAL5_BLOCK_DESCRIPTOR_COMPONENTS 6u
@@ -365,6 +369,7 @@ void bpal5_default_encode_options(bpal5_encode_options *options) {
     options->palette_color_bits = 24u;
     options->kmeans_iterations = 8u;
     options->refinement_passes = 4u;
+    options->thread_count = 4u;
     options->use_simd = 1;
 }
 
@@ -1183,12 +1188,26 @@ static int build_global_palettes(
     char *error,
     size_t error_size
 ) {
-    uint32_t palette_index;
-    for (palette_index = 0; palette_index < image->palette_count; ++palette_index) {
+    int failures = 0;
+    int palette_number;
+#if defined(BPAL5_HAVE_OPENMP)
+#pragma omp parallel for num_threads(options->thread_count) schedule(dynamic) reduction(+ : failures)
+#endif
+    for (palette_number = 0; palette_number < (int)image->palette_count; ++palette_number) {
+        const uint32_t palette_index = (uint32_t)palette_number;
         uint32_t sample_count = 0u;
-        uint8_t *sample = sample_palette_pixels(rgb, image, palette_index, &sample_count, error, error_size);
+        char local_error[256] = {0};
+        uint8_t *sample = sample_palette_pixels(
+            rgb,
+            image,
+            palette_index,
+            &sample_count,
+            local_error,
+            sizeof(local_error)
+        );
         if (sample_count != 0u && sample == NULL) {
-            return 0;
+            ++failures;
+            continue;
         }
         if (!build_one_palette(
                 sample,
@@ -1198,14 +1217,47 @@ static int build_global_palettes(
                 image->palette_color_bits,
                 options->kmeans_iterations,
                 nearest,
-                error,
-                error_size)) {
+                local_error,
+                sizeof(local_error))) {
             free(sample);
-            return 0;
+            ++failures;
+            continue;
         }
         free(sample);
     }
-    return 1;
+    if (failures != 0) {
+        set_error(error, error_size, "Could not build one or more BPAL palettes");
+    }
+    return failures == 0;
+}
+
+typedef struct block_workspace {
+    uint8_t *candidate_flags;
+    uint16_t *candidates;
+    uint32_t *best_distances;
+    uint8_t *selected_flags;
+    uint8_t *block_channels;
+} block_workspace;
+
+static void free_block_workspace(block_workspace *workspace) {
+    free(workspace->candidate_flags);
+    free(workspace->candidates);
+    free(workspace->best_distances);
+    free(workspace->selected_flags);
+    free(workspace->block_channels);
+    memset(workspace, 0, sizeof(*workspace));
+}
+
+static int allocate_block_workspace(const bpal5_image *image, block_workspace *workspace) {
+    workspace->candidate_flags = (uint8_t *)malloc(image->global_color_count);
+    workspace->candidates = (uint16_t *)malloc((size_t)image->global_color_count * sizeof(uint16_t));
+    workspace->best_distances =
+        (uint32_t *)malloc((size_t)image->block_size * image->block_size * sizeof(uint32_t));
+    workspace->selected_flags = (uint8_t *)malloc(image->global_color_count);
+    workspace->block_channels = (uint8_t *)malloc((size_t)image->block_size * image->block_size * 3u);
+    return workspace->candidate_flags != NULL && workspace->candidates != NULL &&
+        workspace->best_distances != NULL && workspace->selected_flags != NULL &&
+        workspace->block_channels != NULL;
 }
 
 static uint64_t encode_blocks(
@@ -1215,26 +1267,54 @@ static uint64_t encode_blocks(
     uint16_t *block_palette_indices,
     uint8_t *pixel_indices,
     bpal5_nearest_fn nearest,
+    int use_simd,
+    uint32_t thread_count,
     char *error,
     size_t error_size
 ) {
-    uint8_t *candidate_flags = (uint8_t *)malloc(image->global_color_count);
-    uint16_t *candidates = (uint16_t *)malloc((size_t)image->global_color_count * sizeof(uint16_t));
-    uint32_t *best_distances = (uint32_t *)malloc((size_t)image->block_size * image->block_size * sizeof(uint32_t));
-    uint8_t *selected_flags = (uint8_t *)malloc(image->global_color_count);
+    uint32_t worker_count = thread_count;
+    block_workspace *workspaces;
     uint64_t total_error = 0u;
-    uint32_t block;
+    int64_t block_number;
+    uint32_t worker;
+    bpal5_block_score_fn score_candidate;
+    bpal5_block_update_fn update_best;
 
-    if (candidate_flags == NULL || candidates == NULL || best_distances == NULL || selected_flags == NULL) {
+#if !defined(BPAL5_HAVE_OPENMP)
+    worker_count = 1u;
+#endif
+    workspaces = (block_workspace *)calloc(worker_count, sizeof(*workspaces));
+    if (workspaces == NULL) {
         set_error(error, error_size, "Out of memory selecting block palettes");
-        free(candidate_flags);
-        free(candidates);
-        free(best_distances);
-        free(selected_flags);
         return UINT64_MAX;
     }
+    for (worker = 0; worker < worker_count; ++worker) {
+        if (!allocate_block_workspace(image, &workspaces[worker])) {
+            set_error(error, error_size, "Out of memory selecting block palettes");
+            for (worker = 0; worker < worker_count; ++worker) {
+                free_block_workspace(&workspaces[worker]);
+            }
+            free(workspaces);
+            return UINT64_MAX;
+        }
+    }
+    bpal5_select_block_kernels(use_simd, &score_candidate, &update_best);
 
-    for (block = 0; block < image->block_count; ++block) {
+#if defined(BPAL5_HAVE_OPENMP)
+#pragma omp parallel for num_threads(thread_count) schedule(static) reduction(+ : total_error)
+#endif
+    for (block_number = 0; block_number < (int64_t)image->block_count; ++block_number) {
+        const uint32_t block = (uint32_t)block_number;
+#if defined(BPAL5_HAVE_OPENMP)
+        const uint32_t worker_index = (uint32_t)omp_get_thread_num();
+#else
+        const uint32_t worker_index = 0u;
+#endif
+        uint8_t *candidate_flags = workspaces[worker_index].candidate_flags;
+        uint16_t *candidates = workspaces[worker_index].candidates;
+        uint32_t *best_distances = workspaces[worker_index].best_distances;
+        uint8_t *selected_flags = workspaces[worker_index].selected_flags;
+        uint8_t *block_channels = workspaces[worker_index].block_channels;
         const uint32_t block_x = block % image->blocks_x;
         const uint32_t block_y = block / image->blocks_x;
         const uint32_t start_x = block_x * image->block_size;
@@ -1245,6 +1325,9 @@ static uint64_t encode_blocks(
         const uint32_t *shared_palette = palette + palette_base;
         uint32_t candidate_count = 0u;
         uint32_t block_pixel_count = 0u;
+        uint8_t *block_red = block_channels;
+        uint8_t *block_green = block_red + (size_t)image->block_size * image->block_size;
+        uint8_t *block_blue = block_green + (size_t)image->block_size * image->block_size;
         uint32_t y;
         uint32_t x;
         uint32_t slot;
@@ -1254,6 +1337,9 @@ static uint64_t encode_blocks(
         for (y = start_y; y < end_y; ++y) {
             for (x = start_x; x < end_x; ++x) {
                 const uint8_t *pixel = rgb + ((size_t)y * image->width + x) * 3u;
+                block_red[block_pixel_count] = pixel[0];
+                block_green[block_pixel_count] = pixel[1];
+                block_blue[block_pixel_count] = pixel[2];
                 const uint32_t global_index = nearest(
                     shared_palette,
                     image->global_color_count,
@@ -1286,20 +1372,19 @@ static uint64_t encode_blocks(
             for (candidate_position = 0; candidate_position < candidate_count; ++candidate_position) {
                 const uint32_t candidate = candidates[candidate_position];
                 const uint32_t candidate_color = shared_palette[candidate];
-                uint64_t candidate_total = 0u;
-                uint32_t position = 0u;
+                uint64_t candidate_total;
 
                 if (selected_flags[candidate] != 0u) {
                     continue;
                 }
-                for (y = start_y; y < end_y; ++y) {
-                    for (x = start_x; x < end_x; ++x) {
-                        const uint8_t *pixel = rgb + ((size_t)y * image->width + x) * 3u;
-                        const uint32_t distance = color_distance(pixel[0], pixel[1], pixel[2], candidate_color);
-                        candidate_total += distance < best_distances[position] ? distance : best_distances[position];
-                        ++position;
-                    }
-                }
+                candidate_total = score_candidate(
+                    block_red,
+                    block_green,
+                    block_blue,
+                    best_distances,
+                    block_pixel_count,
+                    candidate_color
+                );
                 if (candidate_total < best_total) {
                     best_total = candidate_total;
                     best_candidate = candidate;
@@ -1310,22 +1395,20 @@ static uint64_t encode_blocks(
             block_palette_indices[(size_t)block * image->local_color_count + slot] = (uint16_t)best_candidate;
             {
                 const uint32_t selected_color = shared_palette[best_candidate];
-                uint32_t position = 0u;
-                for (y = start_y; y < end_y; ++y) {
-                    for (x = start_x; x < end_x; ++x) {
-                        const uint8_t *pixel = rgb + ((size_t)y * image->width + x) * 3u;
-                        const uint32_t distance = color_distance(pixel[0], pixel[1], pixel[2], selected_color);
-                        if (distance < best_distances[position]) {
-                            best_distances[position] = distance;
-                        }
-                        ++position;
-                    }
-                }
+                update_best(
+                    block_red,
+                    block_green,
+                    block_blue,
+                    best_distances,
+                    block_pixel_count,
+                    selected_color
+                );
             }
         }
 
         {
             uint32_t local_palette[16];
+            uint32_t position = 0u;
             for (slot = 0; slot < image->local_color_count; ++slot) {
                 local_palette[slot] = shared_palette[
                     block_palette_indices[(size_t)block * image->local_color_count + slot]
@@ -1334,25 +1417,30 @@ static uint64_t encode_blocks(
             for (y = start_y; y < end_y; ++y) {
                 for (x = start_x; x < end_x; ++x) {
                     const size_t pixel_index = (size_t)y * image->width + x;
-                    const uint8_t *pixel = rgb + pixel_index * 3u;
                     const uint32_t local_index = nearest(
                         local_palette,
                         image->local_color_count,
-                        pixel[0],
-                        pixel[1],
-                        pixel[2]
+                        block_red[position],
+                        block_green[position],
+                        block_blue[position]
                     );
                     pixel_indices[pixel_index] = (uint8_t)local_index;
-                    total_error += color_distance(pixel[0], pixel[1], pixel[2], local_palette[local_index]);
+                    total_error += color_distance(
+                        block_red[position],
+                        block_green[position],
+                        block_blue[position],
+                        local_palette[local_index]
+                    );
+                    ++position;
                 }
             }
         }
     }
 
-    free(candidate_flags);
-    free(candidates);
-    free(best_distances);
-    free(selected_flags);
+    for (worker = 0; worker < worker_count; ++worker) {
+        free_block_workspace(&workspaces[worker]);
+    }
+    free(workspaces);
     return total_error;
 }
 
@@ -1438,7 +1526,8 @@ int bpal5_prepare_rgb_image_internal(
         !is_power_of_two(options->global_color_count) || options->global_color_count < options->local_color_count || options->global_color_count > 4096u ||
         !is_power_of_two(options->palette_count) || options->palette_count > 128u ||
         (options->palette_color_bits != 16u && options->palette_color_bits != 24u) ||
-        options->kmeans_iterations == 0u || options->kmeans_iterations > 64u || options->refinement_passes > 16u) {
+        options->kmeans_iterations == 0u || options->kmeans_iterations > 64u || options->refinement_passes > 16u ||
+        options->thread_count == 0u || options->thread_count > 256u) {
         set_error(error, error_size, "Invalid BPAL encoder settings");
         return 0;
     }
@@ -1539,6 +1628,8 @@ int bpal5_encode_rgb_with_stats(
         image.block_palette_indices,
         image.pixel_indices,
         nearest,
+        options->use_simd,
+        options->thread_count,
         error,
         error_size
     );
@@ -1584,6 +1675,8 @@ int bpal5_encode_rgb_with_stats(
             candidate_blocks,
             candidate_pixels,
             nearest,
+            options->use_simd,
+            options->thread_count,
             error,
             error_size
         );
