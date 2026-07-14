@@ -154,9 +154,9 @@ normally.
 
 The `scalar` channel mode changes only shared-palette storage.
 All block selectors, block-local palette indices, and per-pixel indices retain
-the regular BPAL layout. The final two reserved BPAL v5 header bits remain
-zero; the preceding two bits identify RGB (`0`) or scalar (`1`). Existing RGB
-files therefore remain byte-compatible.
+the regular BPAL layout. Header bits 76-77 identify RGB (`0`) or scalar (`1`).
+The final two bits are format flags; bit 0 selects independent packed RGB
+palette records. Existing unpacked RGB files therefore remain byte-compatible.
 
 A scalar palette entry occupies 8 bits instead of RGB888's 24 bits. Encoding
 uses the source red channel and decoding replicates the stored byte to red,
@@ -170,6 +170,11 @@ block calculation, reads one selector, one local index, one block-palette
 index, and one shared-palette entry. It never visits another pixel or block.
 Consequently scalar mode retains deterministic O(1) random pixel access and
 requires no variable-length or inter-block state on a GPU.
+
+Packed palette records are used only in RGB mode and only when their complete
+section, including its directory and record tags, is smaller than the raw
+palette array. Scalar8 palettes remain raw because their one-byte entries are
+already more compact than the RGB record representation.
 
 Presets select RGB888, four refinement passes, and the following BPAL
 structure. Explicit encoder options override the selected preset regardless of

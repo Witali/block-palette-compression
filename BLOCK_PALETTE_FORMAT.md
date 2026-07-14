@@ -29,11 +29,15 @@ The first 4 bytes are the ASCII magic value `BPAL`. They are followed by an
 | 63 | 9 | Zero in new files; vector count minus 1 in the legacy model |
 | 72 | 1 | Zero in new files; legacy model space: `0` for RGB, `1` for OKLab |
 | 73 | 3 | `log2(shared palette count)`: from `0` through `7` |
-| 76 | 4 | Reserved; zero in v5 |
+| 76 | 2 | Channel mode: `0` for RGB, `1` for scalar8 |
+| 78 | 2 | Flags; bit 0 enables independently packed explicit RGB palettes |
 
 The complete v5 service header is 14 bytes: 4 magic bytes and 10 bytes of bit
 fields. The value `7` represents 128 palettes and uses the last available
 encoding of the existing 3-bit field; it does not enlarge the header.
+
+Decoders reject unsupported channel-mode or flag values instead of interpreting
+the payload incorrectly.
 
 ## Payload
 
@@ -41,8 +45,9 @@ Let `P` be the shared-palette count, `G` the color count in each shared
 palette, and `L` the local color count in each block. The following sections
 are written immediately after the header without intermediate alignment:
 
-1. `P × G` colors, grouped by shared-palette index. Each color uses 16 or 24
-   bits. Legacy vector files instead store the start and end color of each
+1. `P × G` colors, grouped by shared-palette index. Each RGB color uses 16 or
+   24 bits. Each scalar8 entry uses 8 bits and is replicated to RGB during
+   decode. Legacy vector files instead store the start and end color of each
    vector.
 2. One shared-palette selector for every block in block-row order. A selector
    uses `log2(P)` bits; this section has zero bits when `P = 1`.
@@ -74,6 +79,48 @@ P × G × C + B × log2(P) + B × L × log2(G)
 
 Only the final byte of the file is padded with zero bits when necessary. The
 alpha channel is not stored; the decoded image is treated as fully opaque.
+
+## Independently packed explicit palettes
+
+When header flag bit 0 is set, the raw explicit RGB palette array is replaced
+by a byte-aligned palette section. The remaining selector, block-table, and
+pixel sections start at the first byte after this section and retain their
+existing fixed-width bit layout. Scalar8 palettes are already compact and
+never use packed RGB records.
+
+The packed section contains:
+
+1. Its complete byte length as a 32-bit big-endian integer.
+2. One 32-bit big-endian record offset for every shared palette. Offsets are
+   relative to the first palette record.
+3. `P` independent, byte-aligned palette records.
+
+A record whose first byte is zero stores `G` raw RGB565 or RGB888 colors after
+that byte. A delta record has this five-byte header:
+
+| Byte | Value |
+| ---: | --- |
+| 0 | `0x80 | redResidualBits` |
+| 1 | `greenResidualBits << 4 | blueResidualBits` |
+| 2 | Red base |
+| 3 | Green base |
+| 4 | Blue base |
+
+Each residual width is from 0 through 8. The header is followed by `G` RGB
+residual triplets in palette-index order, packed most-significant bit first.
+Each reconstructed channel is simply `base + residual`. A record ends at the
+next byte boundary.
+
+The encoder chooses raw or delta storage independently for every palette, then
+uses the complete packed section only when it is smaller than the legacy raw
+palette array after including the section length, directory, record tags, and
+byte padding. Palette packing is therefore lossless and cannot enlarge a file.
+
+For random access, a decoder reads the block selector and local/global indices
+as before, then uses one directory entry to locate the selected palette record.
+No previous block or palette must be decoded. The delta path uses only bounded
+integer bit reads, masks, shifts, and additions, which maps directly to a GPU
+shader or CUDA kernel.
 
 ## Vector palettes
 

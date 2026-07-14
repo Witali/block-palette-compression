@@ -232,6 +232,26 @@ static int test_specialized_channel_mode(uint32_t channel_mode, size_t expected_
             goto cleanup;
         }
     }
+    if (channel_mode == BPAL5_CHANNEL_SCALAR) {
+        bpal5_image invalid;
+        uint32_t random_pixel = 0u;
+        memset(&invalid, 0, sizeof(invalid));
+        bytes[13] |= 1u;
+        if (bpal5_parse(bytes, byte_count, &invalid, error, sizeof(error)) ||
+            bpal5_sample_file_pixel_rgba(
+                bytes,
+                byte_count,
+                0u,
+                0u,
+                &random_pixel,
+                error,
+                sizeof(error))) {
+            bpal5_image_free(&invalid);
+            result = fail("packed scalar file was not rejected");
+            goto cleanup;
+        }
+        bytes[13] &= (uint8_t)~1u;
+    }
     result = 0;
 
 cleanup:
@@ -339,6 +359,23 @@ int main(void) {
     if (scalar_size != pixel_count * 4u || simd_size != scalar_size || memcmp(scalar, simd, scalar_size) != 0) {
         result = fail("scalar and SIMD decode results differ");
         goto cleanup;
+    }
+    for (pixel = 0u; pixel < pixel_count; ++pixel) {
+        uint32_t sampled;
+        const uint32_t x = (uint32_t)(pixel % width);
+        const uint32_t y = (uint32_t)(pixel / width);
+        if (!bpal5_sample_file_pixel_rgba(
+                bytes,
+                byte_count,
+                x,
+                y,
+                &sampled,
+                error,
+                sizeof(error)) ||
+            memcmp(&sampled, scalar + pixel * 4u, sizeof(sampled)) != 0) {
+            result = fail("direct pixel sampling differs from full decode");
+            goto cleanup;
+        }
     }
     {
         uint64_t decoded_error = 0u;

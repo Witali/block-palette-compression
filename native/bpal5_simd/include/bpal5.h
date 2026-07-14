@@ -140,6 +140,16 @@ int bpal5_serialize(
     size_t error_size
 );
 
+int bpal5_sample_file_pixel_rgba(
+    const uint8_t *bytes,
+    size_t byte_count,
+    uint32_t x,
+    uint32_t y,
+    uint32_t *rgba,
+    char *error,
+    size_t error_size
+);
+
 int bpal5_load_file(
     const char *path,
     bpal5_image *output,

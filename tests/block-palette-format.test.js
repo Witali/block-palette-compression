@@ -8,6 +8,7 @@ const {
   HEADER_BYTES,
   encodeBlockPaletteFile,
   decodeBlockPaletteFile,
+  sampleBlockPaletteFilePixel,
   getBlockPaletteFileLayout,
 } = require("../src/palette/block-palette-format.js");
 
@@ -69,13 +70,22 @@ test("stores scalar palette entries in eight bits", () => {
   const decoded = decodeBlockPaletteFile(encoded);
 
   assert.equal(layout.globalPaletteBits, 32);
+  assert.equal(layout.packedPalettes, false);
   assert.equal(layout.totalBytes, 19);
   assert.equal(encoded[13] & 0x0f, 4);
   assert.equal(decoded.channelMode, "scalar");
   assert.deepEqual(decoded.palette[0], { r: 17, g: 17, b: 17, hex: "#111111" });
+  assert.deepEqual(sampleBlockPaletteFilePixel(encoded, 0, 0), decoded.palette[0]);
+  assert.deepEqual(sampleBlockPaletteFilePixel(encoded, 1, 0), decoded.palette[1]);
   assert.deepEqual(Array.from(decoded.pixels.slice(0, 8)), [
     17, 17, 17, 255, 240, 240, 240, 255,
   ]);
+  const invalidPackedScalar = encoded.slice();
+  invalidPackedScalar[13] |= 1;
+  assert.throws(
+    () => decodeBlockPaletteFile(invalidPackedScalar),
+    /Packed BPAL palettes require explicit RGB mode/
+  );
 });
 
 test("omits pixel indices when every block pixel has its own color entry", () => {
@@ -263,6 +273,67 @@ test("stores and restores 12-bit common-palette indices", () => {
   assert.deepEqual(Array.from(decoded.pixels.slice(4, 8)), [255, 255, 63, 255]);
 });
 
+test("losslessly packs narrow shared palettes into independent delta records", () => {
+  const paletteCount = 8;
+  const globalColorCount = 64;
+  const palette = Array.from({ length: paletteCount * globalColorCount }, (_, index) => {
+    const paletteIndex = Math.floor(index / globalColorCount);
+    const local = index % globalColorCount;
+    return {
+      r: 20 + paletteIndex * 20 + (local & 15),
+      g: 30 + paletteIndex * 10 + (local >> 2 & 15),
+      b: 40 + paletteIndex * 8 + (local >> 1 & 15),
+    };
+  });
+  const image = {
+    width: 16,
+    height: 16,
+    blockSize: 4,
+    localColorCount: 4,
+    globalColorCount,
+    paletteCount,
+    paletteColorBits: 24,
+    palette,
+    blockPaletteSelectors: Uint8Array.from({ length: 16 }, (_, index) => index % paletteCount),
+    blockPaletteIndices: Uint16Array.from({ length: 16 * 4 }, (_, index) => index % globalColorCount),
+    pixelIndices: Uint8Array.from({ length: 16 * 16 }, (_, index) => index % 4),
+  };
+  const layout = getBlockPaletteFileLayout(image);
+  const encoded = encodeBlockPaletteFile(image);
+  const decoded = decodeBlockPaletteFile(encoded);
+
+  assert.equal(layout.packedPalettes, true);
+  assert.equal(encoded[13] & 1, 1);
+  assert.ok(layout.packedPaletteBytes < paletteCount * globalColorCount * 3);
+  assert.deepEqual(decoded.palette, palette.map((color) => ({
+    ...color,
+    hex: `#${[color.r, color.g, color.b].map((value) => value.toString(16).padStart(2, "0")).join("")}`,
+  })));
+  assert.deepEqual(Array.from(decoded.pixels), Array.from(reconstructWithSampler(encoded, image.width, image.height)));
+});
+
+test("samples raw RGB565 BPAL pixels directly without decoding the image", () => {
+  const image = {
+    width: 2,
+    height: 2,
+    blockSize: 2,
+    localColorCount: 2,
+    globalColorCount: 4,
+    paletteColorBits: 16,
+    palette: [
+      { r: 255, g: 0, b: 0 }, { r: 0, g: 255, b: 0 },
+      { r: 0, g: 0, b: 255 }, { r: 255, g: 255, b: 255 },
+    ],
+    blockPaletteIndices: new Uint16Array([0, 1]),
+    pixelIndices: new Uint8Array([0, 1, 1, 0]),
+  };
+  const encoded = encodeBlockPaletteFile(image);
+  const decoded = decodeBlockPaletteFile(encoded);
+
+  assert.equal(encoded[13] & 1, 0);
+  assert.deepEqual(Array.from(decoded.pixels), Array.from(reconstructWithSampler(encoded, 2, 2)));
+});
+
 test("rejects invalid BPAL magic, versions, and lengths", () => {
   const image = {
     width: 2,
@@ -297,6 +368,17 @@ test("rejects invalid BPAL magic, versions, and lengths", () => {
 
 function pixels(values) {
   return new Uint8ClampedArray(values.flat());
+}
+
+function reconstructWithSampler(encoded, width, height) {
+  const output = new Uint8ClampedArray(width * height * 4);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const color = sampleBlockPaletteFilePixel(encoded, x, y);
+      output.set([color.r, color.g, color.b, 255], (y * width + x) * 4);
+    }
+  }
+  return output;
 }
 
 function createLegacyVectorImage(vectorColorSpace) {
