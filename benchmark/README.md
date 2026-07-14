@@ -154,6 +154,26 @@ of being clipped by a generic image-mode conversion. The report uses pooled
 RGB PSNR, exact payload sizes, Bjontegaard delta rate, and angular error for
 normal maps.
 
+### Scalar PBR palette benchmark
+
+After the CUDA/ASTC run, compare scalar8 palette storage with the exact
+structural settings selected by the RGB BPAL baseline:
+
+```powershell
+python tools/specialized_pbr_benchmark.py `
+  --baseline-records benchmark/work/cuda-astc-textures/records.jsonl `
+  --source-dir benchmark/work/cuda-astc-textures/sources `
+  --encoder native/bpal5_simd/build-cuda/bpal5cudaenc.exe `
+  --decoder native/bpal5_simd/build-cuda/bpal5dec.exe
+```
+
+This covers all 31 ambientCG ambient-occlusion, displacement, metalness,
+opacity, and roughness maps at eight rates. Reusing the baseline's selected
+block structure isolates the storage change: decoded scalar values and PSNR
+must remain identical, while measured payload bpp may decrease. Records are
+resumable under `benchmark/work/specialized-pbr/`; the tracked report is
+`benchmark/results/specialized-pbr-modes.md`.
+
 ## Run
 
 Build the native C/SIMD codec first:
