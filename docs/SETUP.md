@@ -119,7 +119,8 @@ cmake --build native\bpal5_simd\build-cuda
 ctest --test-dir native\bpal5_simd\build-cuda --output-on-failure
 ```
 
-The resulting `bpal5cudaenc` program reads binary RGB PPM (`P6`) images and
-writes BPAL v5 textures. See the
+The resulting `bpal5cudaenc` program reads JPEG, PNG, TGA, BMP, PSD, GIF, HDR,
+PIC, and binary PNM images through the vendored `stb_image` loader and writes
+BPAL v5 textures. No separate image-library installation is required. See the
 [native command-line tools guide](../native/bpal5_simd/README.md) for all
 encoder settings, presets, CUDA pipeline details, and benchmarking.

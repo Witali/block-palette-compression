@@ -7,8 +7,10 @@ explicit-palette variant of BPAL v5 used by this repository:
 - `bpal5cudaenc`: CUDA encoder that accelerates iterative refinement;
 - `bpal5dec`: C11 CPU decoder with an optional AVX2 path.
 
-The programs have no image-library dependency: input and output images use
-binary PPM (`P6`).
+The encoders use a vendored copy of `stb_image` 2.30 and accept JPEG, PNG, TGA,
+BMP, PSD, GIF, HDR, PIC, and binary PNM images without an external image DLL.
+Input is converted to RGB; alpha and animation are not stored by BPAL. The
+decoder writes binary PPM (`P6`).
 
 The implementation reads and writes the same continuous, MSB-first bit stream
 as `src/palette/block-palette-format.js`, including multi-palette selectors.
@@ -64,13 +66,13 @@ CUDA architecture list when producing binaries for other GPU generations.
 Encode an RGB image:
 
 ```sh
-bpal5enc input.ppm output.bpal --preset 3
+bpal5enc input.jpg output.bpal --preset 3
 ```
 
 Encode with CUDA refinement:
 
 ```sh
-bpal5cudaenc input.ppm output.bpal --preset 3 --device 0
+bpal5cudaenc input.png output.bpal --preset 3 --device 0
 ```
 
 Decode it:
@@ -119,16 +121,28 @@ block, and then refines the result by comparing reconstructed colours with the
 source pixels. Defaults are block size 16, 8 local colours, 32 global colours,
 one global palette, RGB888, 8 k-means iterations, and 4 refinement passes.
 
+`stb_image.h` and its license are stored in `third_party/stb`. The accompanying
+README records the pinned upstream commit and SHA-256 hash for reproducible
+offline builds.
+
 ## CUDA pipeline and quality guarantees
 
 The CUDA encoder deliberately reuses the CPU encoder for block clustering and
-initial global-palette construction. It then keeps the source image, palette,
-block-local tables, and pixel indices on the GPU while CUDA kernels perform:
+initial global-palette construction. The compact RGB24 input crosses the PCIe
+boundary once and is expanded by a CUDA kernel into an aligned 32-bit RGB
+cache. The palette, block-local tables, pixel indices, and aligned source then
+stay on the GPU while CUDA kernels perform:
 
 - exact RGB error measurement;
 - shared-palette centroid accumulation and update;
 - block-local palette selection;
 - final pixel-index assignment.
+
+Block-local palette selection processes every local slot in one kernel. It
+keeps per-block best distances and selected colours in shared memory instead
+of repeatedly writing a full-image scratch array to global GPU memory. The
+only per-pass GPU-to-CPU value is the 64-bit candidate error needed for early
+termination; final palette and index arrays are downloaded once.
 
 Every candidate refinement pass is measured using the same integer RGB squared
 error as the CPU encoder. A pass is accepted only when it lowers the error, so
@@ -151,7 +165,33 @@ python native\bpal5_simd\tests\benchmark_cuda.py input.ppm `
 ```
 
 The script reports mean and best encode time, output size, decoded MSE, PSNR,
-and CUDA speedup. It uses only the Python standard library.
+CUDA kernel time, and CUDA speedup. It uses only the Python standard library.
+
+The packed BPAL serializer also batches aligned `uint8_t` and `uint16_t`
+indices into 32-bit words before emitting the continuous MSB-first stream.
+This preserves the format while avoiding one writer call per individual bit
+or index. Reproduce its isolated timing with:
+
+```powershell
+cmake --build native\bpal5_simd\build-cuda --target bpal5_serialize_benchmark
+native\bpal5_simd\build-cuda\bpal5_serialize_benchmark.exe input.bpal 2000
+```
+
+### Optimization validation
+
+On an RTX 5060 Ti, a 330x512 PPM with preset 3 and four refinement passes was
+measured with 15 alternating runs of the original and optimized executables.
+The output was byte-identical for every preset from 1.5 through 8 bpp and for
+RGB565.
+
+| Measurement | Original | Optimized | Speedup |
+| --- | ---: | ---: | ---: |
+| CUDA phase, mean | 4.103 ms | 3.575 ms | 1.148x |
+| Full process, mean | 436.756 ms | 430.667 ms | 1.014x |
+| BPAL serialization, mean | 0.873 ms | 0.308 ms | 2.84x |
+
+End-to-end improvement is smaller because initial global-palette construction
+still dominates this preset on the CPU.
 
 ## API and compatibility
 
@@ -163,5 +203,6 @@ available. The CUDA test is reported as skipped when no CUDA device is present.
 
 The decoder intentionally rejects BPAL vector-palette files. The current image
 compressor emits explicit palettes, and explicit BPAL v5 is the format covered
-by these tools. PPM has no alpha channel, so decoded output is RGB; the library
-decoder returns RGBA with alpha set to 255.
+by these tools. BPAL command-line encoding is RGB-only, so input alpha is
+discarded. The library decoder returns RGBA with alpha set to 255, while the
+command-line decoder writes RGB PPM.
