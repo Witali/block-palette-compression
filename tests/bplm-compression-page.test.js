@@ -189,6 +189,18 @@ test("hides the block grid by default and vertically aligns its control", () => 
   assert.match(css, /\.result-caption input \{[^}]*margin: 0;/);
 });
 
+test("aligns preview headers and keeps zoom controls compact", () => {
+  assert.match(css, /figcaption \{[\s\S]*?height: 52px;[\s\S]*?padding: 8px 14px;/);
+  assert.match(css, /\.result-caption > :first-child \{[^}]*text-overflow: ellipsis;/);
+  assert.match(css, /\.result-caption-controls \{[^}]*flex-wrap: nowrap;/);
+  assert.match(
+    css,
+    /\.zoom-controls button \{[^}]*min-width: 30px;[^}]*min-height: 30px;[^}]*height: 30px;/
+  );
+  assert.match(css, /@media \(max-width: 820px\) \{\s*\.comparison \{ grid-template-columns: 1fr; \}/);
+  assert.match(css, /@media \(max-width: 430px\) \{[\s\S]*?figcaption \{ height: auto; \}/);
+});
+
 test("shows real compression stages in a cancellable modal progress dialog", () => {
   assert.match(html, /<dialog id="progress-dialog"/);
   assert.match(html, /<progress id="progress-bar" max="100" value="0">/);
