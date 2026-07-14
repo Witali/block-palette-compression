@@ -4,14 +4,17 @@
   const blockPaletteFormat = typeof module === "object" && module.exports
     ? require("./block-palette-format.js")
     : root.BlockPaletteFormat;
-  const api = factory(blockPaletteFormat);
+  const adaptiveBlockFormat = typeof module === "object" && module.exports
+    ? require("./adaptive-block-format.js")
+    : root.AdaptiveBlockFormat;
+  const api = factory(blockPaletteFormat, adaptiveBlockFormat);
 
   if (typeof module === "object" && module.exports) {
     module.exports = api;
   }
 
   root.BlockPatternDictionary = api;
-})(typeof self !== "undefined" ? self : globalThis, function (blockPaletteFormat) {
+})(typeof self !== "undefined" ? self : globalThis, function (blockPaletteFormat, adaptiveBlockFormat) {
   "use strict";
 
   const MAGIC_BYTES = [0x42, 0x50, 0x44, 0x49]; // BPDI
@@ -157,6 +160,11 @@
 
     if (magic === "BPAL") {
       return openBlockPaletteFileForRandomAccess(bytes);
+    }
+
+    if (magic === "BPAV" && adaptiveBlockFormat &&
+        typeof adaptiveBlockFormat.openAdaptiveBlockFile === "function") {
+      return adaptiveBlockFormat.openAdaptiveBlockFile(bytes);
     }
 
     throw new RangeError("Unsupported random-access image magic");
