@@ -1,7 +1,7 @@
 # BPAL profile search
 
-These scripts reproduce the staged 2–6 bpp search documented in
-[`benchmark/results/bpal-optimal-settings-2-to-6-bpp.md`](../results/bpal-optimal-settings-2-to-6-bpp.md).
+These scripts reproduce the staged 1.5–8 bpp search documented in
+[`benchmark/results/bpal-optimal-settings-1.5-to-8-bpp.md`](../results/bpal-optimal-settings-1.5-to-8-bpp.md).
 
 All generated JSON files and reconstructed RGBA images are written below
 `benchmark/work/bpal-profile-search/`, which is intentionally ignored by Git.
@@ -37,14 +37,30 @@ The stages perform:
 Intermediate reports are `screen-<source-id>.json`, `validate.json`, and
 `policy.json` under the ignored work directory.
 
+## Extended 1.5 and 8 bpp search
+
+The range-edge study uses wider structural ranges, targeted 1024/4096-color
+palettes, and a dynamic eight-worker queue for every crop stage:
+
+```powershell
+node benchmark/profile_search/extended.js screen --jobs 8
+node benchmark/profile_search/extended.js validate --jobs 8
+node benchmark/profile_search/extended.js policy --jobs 8
+```
+
+Its intermediate reports are written under
+`benchmark/work/bpal-profile-search/extended/`.
+
 ## Full-resolution verification
 
-The final 15 profiles are encoded on all eight 1024×1024 sources with four
-refinement passes. The command resumes any complete RGBA outputs and defaults
-to eight concurrent Node.js processes:
+The configured original and extended profiles are encoded on all eight
+1024×1024 sources with four refinement passes. The command resumes any complete
+RGBA outputs, can filter target budgets, and defaults to eight concurrent
+Node.js processes:
 
 ```powershell
 node benchmark/profile_search/full.js --jobs 8
+node benchmark/profile_search/full.js --targets 1.5,8 --jobs 8
 ```
 
 To validate every stored RGB MSE, calculate luminance SSIM, and record the PSNR
@@ -63,6 +79,7 @@ The scripts can be checked without running the expensive benchmark:
 
 ```powershell
 node --check benchmark/profile_search/search.js
+node --check benchmark/profile_search/extended.js
 node --check benchmark/profile_search/full.js
 python -m py_compile benchmark/profile_search/score.py
 ```

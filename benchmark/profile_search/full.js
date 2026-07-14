@@ -21,6 +21,17 @@ const SOURCE_IDS = [
   "clic-08-zugr-108",
 ];
 const PROFILES = [
+  profile(1.5, 4, 2, 8, 2, 24, "k-means-uniform", 0, "uniform"),
+  profile(1.5, 4, 2, 8, 2, 24, "k-means", 1, "diversity-1"),
+  profile(1.5, 4, 2, 8, 2, 24, "k-means", 0, "baseline"),
+  profile(1.5, 4, 2, 8, 2, 16, "k-means-uniform", 0, "rgb565-uniform"),
+  profile(1.5, 4, 2, 8, 2, 16, "k-means", 1, "rgb565-diversity-1"),
+  profile(8, 4, 8, 256, 64, 24, "k-means", 0, "baseline"),
+  profile(8, 4, 8, 256, 64, 24, "k-means", 0.5, "diversity-0_5"),
+  profile(8, 4, 8, 256, 64, 24, "k-medians", 0, "k-medians"),
+  profile(8, 4, 8, 256, 64, 24, "k-means", 1, "diversity-1"),
+  profile(8, 4, 8, 128, 128, 24, "k-means", 0, "structure-128x128"),
+  profile(8, 4, 8, 256, 32, 24, "k-means", 0, "structure-256x32"),
   profile(2, 4, 2, 128, 2, 24, "k-medians", 0),
   profile(2.5, 8, 4, 64, 32, 24, "k-medians", 0),
   profile(3, 8, 4, 256, 64, 24, "k-means", 0),
@@ -42,8 +53,9 @@ if (process.argv[2] === "--worker") {
   runWorker(Number(process.argv[3]), Number(process.argv[4]));
 } else if (process.argv.includes("--help") || process.argv.includes("-h")) {
   process.stdout.write(
-    "Usage: node benchmark/profile_search/full.js [--jobs N]\n" +
-    "Runs or resumes 15 full-resolution profiles and writes ignored artifacts under benchmark/work.\n"
+    "Usage: node benchmark/profile_search/full.js [--jobs N] [--targets LIST]\n" +
+    "Runs or resumes full-resolution profiles and writes ignored artifacts under benchmark/work.\n" +
+    "LIST is a comma-separated set such as 1.5,8.\n"
   );
 } else {
   runMain().catch((error) => {
@@ -54,10 +66,11 @@ if (process.argv[2] === "--worker") {
 
 async function runMain() {
   const concurrency = parseConcurrency();
+  const profileIndexes = selectProfileIndexes();
   fs.mkdirSync(OUTPUT_ROOT, { recursive: true });
   validateSources();
   const jobs = [];
-  for (let profileIndex = 0; profileIndex < PROFILES.length; profileIndex += 1) {
+  for (const profileIndex of profileIndexes) {
     for (let sourceIndex = 0; sourceIndex < SOURCE_IDS.length; sourceIndex += 1) {
       const outputPath = rgbaPath(profileIndex, sourceIndex);
       if (!fs.existsSync(outputPath) || fs.statSync(outputPath).size !== WIDTH * HEIGHT * 4) {
@@ -66,11 +79,11 @@ async function runMain() {
     }
   }
   process.stdout.write(
-    `Found ${PROFILES.length * SOURCE_IDS.length - jobs.length} completed jobs; ` +
+    `Found ${profileIndexes.length * SOURCE_IDS.length - jobs.length} completed jobs; ` +
     `running ${jobs.length} jobs with concurrency ${concurrency}\n`
   );
   await runPool(jobs, concurrency);
-  writeReport(concurrency);
+  writeReport(concurrency, profileIndexes);
 }
 
 async function runPool(jobs, concurrency) {
@@ -155,8 +168,9 @@ function runWorker(profileIndex, sourceIndex) {
   process.stdout.write(`${JSON.stringify(record)}\n`);
 }
 
-function writeReport(concurrency) {
-  const completedProfiles = PROFILES.map((candidate, profileIndex) => {
+function writeReport(concurrency, profileIndexes) {
+  const completedProfiles = profileIndexes.map((profileIndex) => {
+    const candidate = PROFILES[profileIndex];
     const images = SOURCE_IDS.map((sourceId, sourceIndex) => {
       const metadataPath = jsonPath(profileIndex, sourceIndex);
       if (fs.existsSync(metadataPath)) {
@@ -291,6 +305,30 @@ function parseConcurrency() {
     throw new Error("--jobs must be an integer from 1 to 64");
   }
   return value;
+}
+
+function selectProfileIndexes() {
+  const index = process.argv.indexOf("--targets");
+  if (index < 0) {
+    return PROFILES.map((_, profileIndex) => profileIndex);
+  }
+  const values = new Set(
+    String(process.argv[index + 1] || "")
+      .split(",")
+      .filter(Boolean)
+      .map(Number)
+  );
+  if (values.size === 0 || Array.from(values).some((value) => !Number.isFinite(value))) {
+    throw new Error("--targets must be a comma-separated list of numbers");
+  }
+  const profileIndexes = PROFILES
+    .map((candidate, profileIndex) => ({ candidate, profileIndex }))
+    .filter(({ candidate }) => values.has(candidate.targetBpp))
+    .map(({ profileIndex }) => profileIndex);
+  if (profileIndexes.length === 0) {
+    throw new Error("--targets did not match any profiles");
+  }
+  return profileIndexes;
 }
 
 function psnr(mse) {
