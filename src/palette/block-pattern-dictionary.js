@@ -16,10 +16,12 @@
 
   const MAGIC_BYTES = [0x42, 0x50, 0x44, 0x49]; // BPDI
   const MAGIC = "BPDI";
-  const VERSION = 2;
+  const VERSION = 3;
   const MODE_DICTIONARY = 0;
   const MODE_RAW = 1;
   const MODE_RUNS = 2;
+  const MODE_TRANSFORMED_DICTIONARY = 3;
+  const TRANSFORM_BITS = 3;
   const HEADER_BYTES = 28;
   const DEFAULT_MAX_DICTIONARY_SIZE = 64;
   const DEFAULT_SAMPLE_LIMIT = 8192;
@@ -137,6 +139,7 @@
           rawBlocks: candidate.stats.blockCount,
           referencedBlocks: 0,
           runLengthBlocks: 0,
+          transformedBlocks: 0,
           exactBlocks: 0,
           totalEdits: 0,
           selected: false,
@@ -329,15 +332,26 @@
         return value;
       }
 
+      const transformed = tag.mode === MODE_TRANSFORMED_DICTIONARY;
+      const transform = transformed
+        ? readBits(bytes, blockPayload, TRANSFORM_BITS)
+        : 0;
+      const prototypePosition = transformPosition(
+        localPosition,
+        blockSize,
+        transform
+      );
       let value = readBits(
         bytes,
         dictionaryStart +
-          (tag.prototypeIndex * pixelsPerBlock + localPosition) * localIndexBits,
+          (tag.prototypeIndex * pixelsPerBlock + prototypePosition) * localIndexBits,
         localIndexBits
       );
 
       for (let edit = 0; edit < tag.editCount; edit += 1) {
-        const editOffset = blockPayload + edit * editBits;
+        const editOffset = blockPayload +
+          (transformed ? TRANSFORM_BITS : 0) +
+          edit * editBits;
         const position = readBits(bytes, editOffset, layout.positionBits);
 
         if (position === localPosition) {
@@ -560,6 +574,7 @@
       assignments: null,
       modes: null,
       counts: null,
+      transforms: null,
       payloadBits: rawPayloadBits,
       pixelSectionBits: rawPayloadBits,
       rawBlocks: metadata.blockCount,
@@ -567,6 +582,7 @@
       runLengthBlocks: 0,
       exactBlocks: 0,
       totalEdits: 0,
+      transformedBlocks: 0,
     };
 
     for (const candidate of candidates) {
@@ -675,21 +691,33 @@
       assignments: new Uint16Array(metadata.blockCount),
       modes: new Uint8Array(metadata.blockCount),
       counts: new Uint16Array(metadata.blockCount),
+      transforms: new Uint8Array(metadata.blockCount),
       payloadBits: 0,
       rawBlocks: 0,
       referencedBlocks: 0,
       runLengthBlocks: 0,
       exactBlocks: 0,
       totalEdits: 0,
+      transformedBlocks: 0,
     }));
     const rawBlockBits = metadata.pixelsPerBlock * metadata.localIndexBits;
     const editBits = metadata.positionBits + metadata.localIndexBits;
+    const transformedPrototypes = prototypes.map((prototype) => (
+      Array.from({ length: 8 }, (_, transform) => (
+        transform === 0
+          ? prototype
+          : createTransformedPrototype(prototype, metadata.blockSize, transform)
+      ))
+    ));
     let stateIndex = 0;
 
     for (let block = 0; block < metadata.blockCount; block += 1) {
       const patternOffset = block * metadata.pixelsPerBlock;
       let bestDistance = metadata.pixelsPerBlock + 1;
       let bestPrototype = 0;
+      let bestTransformedDistance = metadata.pixelsPerBlock + 1;
+      let bestTransformedPrototype = 0;
+      let bestTransform = 0;
       let changeCount = 0;
 
       for (let position = 1; position < metadata.pixelsPerBlock; position += 1) {
@@ -711,6 +739,21 @@
         if (distance < bestDistance) {
           bestDistance = distance;
           bestPrototype = prototypeIndex;
+        }
+
+        for (let transform = 1; transform < 8; transform += 1) {
+          const transformedDistance = hammingDistance(
+            patterns,
+            patternOffset,
+            transformedPrototypes[prototypeIndex][transform],
+            bestTransformedDistance
+          );
+
+          if (transformedDistance < bestTransformedDistance) {
+            bestTransformedDistance = transformedDistance;
+            bestTransformedPrototype = prototypeIndex;
+            bestTransform = transform;
+          }
         }
 
         if (
@@ -736,14 +779,31 @@
             count = bestDistance;
           }
 
-          state.assignments[block] = bestPrototype;
+          const transformedDeltaBits = TRANSFORM_BITS + bestTransformedDistance * editBits;
+
+          if (transformedDeltaBits < blockPayloadBits) {
+            mode = MODE_TRANSFORMED_DICTIONARY;
+            blockPayloadBits = transformedDeltaBits;
+            count = bestTransformedDistance;
+          }
+
+          state.assignments[block] = mode === MODE_TRANSFORMED_DICTIONARY
+            ? bestTransformedPrototype
+            : bestPrototype;
           state.modes[block] = mode;
           state.counts[block] = count;
+          state.transforms[block] = mode === MODE_TRANSFORMED_DICTIONARY
+            ? bestTransform
+            : 0;
           state.payloadBits += blockPayloadBits;
           state.rawBlocks += mode === MODE_RAW ? 1 : 0;
-          state.referencedBlocks += mode === MODE_DICTIONARY ? 1 : 0;
+          state.referencedBlocks += mode === MODE_DICTIONARY ||
+            mode === MODE_TRANSFORMED_DICTIONARY ? 1 : 0;
+          state.transformedBlocks += mode === MODE_TRANSFORMED_DICTIONARY ? 1 : 0;
           state.runLengthBlocks += mode === MODE_RUNS ? 1 : 0;
-          state.exactBlocks += mode === MODE_DICTIONARY && bestDistance === 0 ? 1 : 0;
+          state.exactBlocks += (
+            mode === MODE_DICTIONARY || mode === MODE_TRANSFORMED_DICTIONARY
+          ) && count === 0 ? 1 : 0;
           state.totalEdits += count;
           stateIndex += 1;
         }
@@ -884,6 +944,8 @@
           payloadBits += rawBlockBits;
         } else if (mode === MODE_RUNS) {
           payloadBits += metadata.localIndexBits + encoding.counts[block] * editBits;
+        } else if (mode === MODE_TRANSFORMED_DICTIONARY) {
+          payloadBits += TRANSFORM_BITS + encoding.counts[block] * editBits;
         } else {
           payloadBits += encoding.counts[block] * editBits;
         }
@@ -937,7 +999,9 @@
 
       writer.write(mode, 2);
       writer.write(
-        mode === MODE_DICTIONARY ? encoding.assignments[block] : 0,
+        mode === MODE_DICTIONARY || mode === MODE_TRANSFORMED_DICTIONARY
+          ? encoding.assignments[block]
+          : 0,
         prototypeIndexBits
       );
       writer.write(mode === MODE_RAW ? 0 : encoding.counts[block], editCountBits);
@@ -969,11 +1033,23 @@
         }
       } else {
         const prototype = encoding.dictionary[encoding.assignments[block]];
+        const transform = mode === MODE_TRANSFORMED_DICTIONARY
+          ? encoding.transforms[block]
+          : 0;
+
+        if (mode === MODE_TRANSFORMED_DICTIONARY) {
+          writer.write(transform, TRANSFORM_BITS);
+        }
 
         for (let position = 0; position < metadata.pixelsPerBlock; position += 1) {
           const value = patterns[patternOffset + position];
+          const prototypePosition = transformPosition(
+            position,
+            metadata.blockSize,
+            transform
+          );
 
-          if (value !== prototype[position]) {
+          if (value !== prototype[prototypePosition]) {
             writer.write(position, metadata.positionBits);
             writer.write(value, metadata.localIndexBits);
           }
@@ -1026,6 +1102,7 @@
       runLengthBlocks: encoding.runLengthBlocks,
       exactBlocks: encoding.exactBlocks,
       totalEdits: encoding.totalEdits,
+      transformedBlocks: encoding.transformedBlocks,
       fileBytes,
     };
   }
@@ -1037,6 +1114,7 @@
       assignments: null,
       modes: null,
       counts: null,
+      transforms: null,
       payloadBits: 0,
       pixelSectionBits: 0,
       rawBlocks: 0,
@@ -1044,6 +1122,7 @@
       runLengthBlocks: 0,
       exactBlocks: 0,
       totalEdits: 0,
+      transformedBlocks: 0,
     };
   }
 
@@ -1053,7 +1132,7 @@
 
     offset += 2;
 
-    if (mode > MODE_RUNS) {
+    if (mode > MODE_TRANSFORMED_DICTIONARY) {
       throw new RangeError("Invalid BPDI block mode");
     }
 
@@ -1082,6 +1161,8 @@
         relativeOffset += rawBlockBits;
       } else if (tag.mode === MODE_RUNS) {
         relativeOffset += localIndexBits + tag.editCount * editBits;
+      } else if (tag.mode === MODE_TRANSFORMED_DICTIONARY) {
+        relativeOffset += TRANSFORM_BITS + tag.editCount * editBits;
       } else {
         relativeOffset += tag.editCount * editBits;
       }
@@ -1262,6 +1343,65 @@
     }
 
     return distance;
+  }
+
+  function createTransformedPrototype(prototype, blockSize, transform) {
+    const transformed = new Uint8Array(prototype.length);
+
+    for (let position = 0; position < prototype.length; position += 1) {
+      transformed[position] = prototype[transformPosition(position, blockSize, transform)];
+    }
+
+    return transformed;
+  }
+
+  // Maps an output coordinate to one of the eight dihedral symmetries of the
+  // dictionary prototype. This is branch-bounded and uses no neighboring block.
+  function transformPosition(position, blockSize, transform) {
+    const x = position % blockSize;
+    const y = Math.floor(position / blockSize);
+    const last = blockSize - 1;
+    let sourceX;
+    let sourceY;
+
+    switch (transform) {
+      case 0:
+        sourceX = x;
+        sourceY = y;
+        break;
+      case 1:
+        sourceX = y;
+        sourceY = last - x;
+        break;
+      case 2:
+        sourceX = last - x;
+        sourceY = last - y;
+        break;
+      case 3:
+        sourceX = last - y;
+        sourceY = x;
+        break;
+      case 4:
+        sourceX = last - x;
+        sourceY = y;
+        break;
+      case 5:
+        sourceX = x;
+        sourceY = last - y;
+        break;
+      case 6:
+        sourceX = y;
+        sourceY = x;
+        break;
+      case 7:
+        sourceX = last - y;
+        sourceY = last - x;
+        break;
+      default:
+        throw new RangeError("Invalid BPDI dictionary transform");
+    }
+
+    return sourceY * blockSize + sourceX;
   }
 
   function readBits(bytes, bitOffset, bitCount) {

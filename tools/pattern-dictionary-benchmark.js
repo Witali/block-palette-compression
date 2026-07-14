@@ -71,6 +71,7 @@ for (const name of files) {
     dictionarySize: stats.selected ? stats.dictionarySize : 0,
     rawBlocks: stats.rawBlocks,
     referencedBlocks: stats.referencedBlocks,
+    transformedBlocks: stats.transformedBlocks,
     runLengthBlocks: stats.runLengthBlocks,
     exactBlocks: stats.exactBlocks,
     totalEdits: stats.totalEdits,
@@ -187,14 +188,15 @@ function printMarkdown(rows, settings) {
     "The exact dictionary representation therefore preserves source-relative MSE and PSNR."
   );
   console.log("");
-  console.log("| File | BPAL bytes | Best bytes | Format | File change | Pixel stream change | K | Dictionary refs | Run-delta blocks | Blocks | Exact refs | Encode ms | Random px/s |");
-  console.log("| --- | ---: | ---: | :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |");
+  console.log("| File | BPAL bytes | Best bytes | Format | File change | Pixel stream change | K | Dictionary refs | Transformed refs | Run-delta blocks | Blocks | Exact refs | Encode ms | Random px/s |");
+  console.log("| --- | ---: | ---: | :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |");
 
   for (const row of rows) {
     console.log(
       `| ${row.name} | ${row.sourceBytes} | ${row.encodedBytes} | ${row.format} | ` +
       `${formatSigned(row.fileChangePercent)}% | ${formatSigned(row.pixelChangePercent)}% | ` +
-      `${row.dictionarySize} | ${row.referencedBlocks} | ${row.runLengthBlocks} | ` +
+      `${row.dictionarySize} | ${row.referencedBlocks} | ${row.transformedBlocks} | ` +
+      `${row.runLengthBlocks} | ` +
       `${row.rawBlocks + row.referencedBlocks + row.runLengthBlocks} | ${row.exactBlocks} | ` +
       `${row.encodeMilliseconds.toFixed(1)} | ` +
       `${Math.round(row.randomAccessQueriesPerSecond)} |`

@@ -102,6 +102,20 @@ test("run-delta blocks preserve independently addressed pixels", () => {
   assertEveryPixelMatches(accessor, expected);
 });
 
+test("transformed dictionary references preserve asymmetric rotated blocks", () => {
+  const image = createTransformedPatternImage();
+  const expected = decodeBlockPaletteFile(encodeBlockPaletteFile(image));
+  const encoded = encodePatternDictionaryFile(expected, {
+    forceDictionarySize: 1,
+    maxDictionarySize: 1,
+    checkpointLog2: 1,
+  });
+  const accessor = openPatternDictionaryFile(encoded.bytes);
+
+  assert.ok(encoded.stats.transformedBlocks > 0);
+  assertEveryPixelMatches(accessor, expected);
+});
+
 test("rejects truncated and invalid pattern-dictionary files", () => {
   const expected = decodeBlockPaletteFile(encodeBlockPaletteFile(createRepeatedPatternImage()));
   const encoded = encodePatternDictionaryFile(expected, {
@@ -257,6 +271,46 @@ function createRunPatternImage() {
     paletteColorBits: 24,
     palette,
     blockPaletteIndices,
+    pixelIndices,
+  };
+}
+
+function createTransformedPatternImage() {
+  const blockSize = 4;
+  const width = blockSize * 2;
+  const height = blockSize;
+  const pattern = [
+    0, 1, 2, 3,
+    1, 3, 0, 2,
+    3, 2, 1, 0,
+    2, 0, 3, 1,
+  ];
+  const pixelIndices = new Uint8Array(width * height);
+
+  for (let y = 0; y < blockSize; y += 1) {
+    for (let x = 0; x < blockSize; x += 1) {
+      pixelIndices[y * width + x] = pattern[y * blockSize + x];
+      pixelIndices[y * width + blockSize + x] = pattern[
+        (blockSize - 1 - x) * blockSize + y
+      ];
+    }
+  }
+
+  return {
+    width,
+    height,
+    blockSize,
+    localColorCount: 4,
+    globalColorCount: 4,
+    paletteCount: 1,
+    paletteColorBits: 24,
+    palette: [
+      { r: 0, g: 0, b: 0 },
+      { r: 85, g: 85, b: 85 },
+      { r: 170, g: 170, b: 170 },
+      { r: 255, g: 255, b: 255 },
+    ],
+    blockPaletteIndices: new Uint16Array([0, 1, 2, 3, 0, 1, 2, 3]),
     pixelIndices,
   };
 }

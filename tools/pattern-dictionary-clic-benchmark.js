@@ -90,6 +90,7 @@ for (const preset of options.presets) {
       dictionarySize: stats.dictionarySize,
       rawBlocks: stats.rawBlocks,
       dictionaryBlocks: stats.referencedBlocks,
+      transformedBlocks: stats.transformedBlocks,
       runDeltaBlocks: stats.runLengthBlocks,
       exactDictionaryBlocks: stats.exactBlocks,
       dictionaryMilliseconds,
@@ -289,6 +290,7 @@ function createReport(rows, sources, settings) {
       aggregatePsnr: calculatePsnr(aggregateMse),
       psnrDelta: 0,
       dictionaryBlocks: sum(matches, "dictionaryBlocks"),
+      transformedBlocks: sum(matches, "transformedBlocks"),
       runDeltaBlocks: sum(matches, "runDeltaBlocks"),
       rawBlocks: sum(matches, "rawBlocks"),
       meanRandomAccessQueriesPerSecond: average(matches, "randomAccessQueriesPerSecond"),
@@ -341,8 +343,8 @@ function renderMarkdown(report) {
     "Every selected BPDI file reconstructs the same RGB values as its BPAL baseline. " +
       "Files for which BPDI is not smaller remain BPAL, so quality never changes and size never grows.",
     "",
-    "| Preset | Images | BPAL bytes | Best bytes | Change | Smaller files | PSNR | PSNR change | Dictionary blocks | Run-delta blocks | Raw blocks | Random px/s |",
-    "| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+    "| Preset | Images | BPAL bytes | Best bytes | Change | Smaller files | PSNR | PSNR change | Dictionary blocks | Transformed refs | Run-delta blocks | Raw blocks | Random px/s |",
+    "| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
   ];
 
   for (const profile of report.profiles) {
@@ -351,7 +353,7 @@ function renderMarkdown(report) {
       `${profile.bestBytes} | ${formatSigned(profile.fileChangePercent)}% | ` +
       `${profile.smallerFiles} | ${profile.aggregatePsnr.toFixed(3)} dB | ` +
       `${profile.psnrDelta.toFixed(3)} dB | ${profile.dictionaryBlocks} | ` +
-      `${profile.runDeltaBlocks} | ${profile.rawBlocks} | ` +
+      `${profile.transformedBlocks} | ${profile.runDeltaBlocks} | ${profile.rawBlocks} | ` +
       `${Math.round(profile.meanRandomAccessQueriesPerSecond)} |`
     );
   }
