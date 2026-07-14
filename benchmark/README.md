@@ -154,6 +154,20 @@ of being clipped by a generic image-mode conversion. The report uses pooled
 RGB PSNR, exact payload sizes, Bjontegaard delta rate, and angular error for
 normal maps.
 
+### Local palette packing
+
+After building `native/bpal5_simd/build-local/bpal5cudaenc.exe`, compare the
+GPU-friendly independent palette records against the byte-equivalent legacy
+layout on a stratified 60-texture sample:
+
+```powershell
+python tools/local_palette_packing_benchmark.py
+```
+
+The benchmark covers all eight CUDA `--find-settings` targets, includes every
+directory and record byte in file-size totals, and verifies byte-identical
+decoded output for packed and legacy files.
+
 ## Run
 
 Build the native C/SIMD codec first:
