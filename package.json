@@ -11,6 +11,7 @@
     "benchmark:textures": "python tools/texture_codec_benchmark.py",
     "benchmark:patterns": "node tools/pattern-dictionary-benchmark.js",
     "benchmark:patterns:clic": "node tools/pattern-dictionary-clic-benchmark.js",
-    "benchmark:textures:test": "python -m unittest benchmark.test_metrics"
+    "benchmark:textures:cuda-astc": "python tools/cuda_astc_texture_benchmark.py",
+    "benchmark:textures:test": "python -m unittest benchmark.test_metrics benchmark.test_cuda_astc_texture_benchmark"
   }
 }

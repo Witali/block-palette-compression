@@ -125,6 +125,28 @@ requires its dataset report to be cited, and the selected ambientCG assets are
 CC0 1.0 Universal. Review the source links in the manifest before distributing
 any dataset files.
 
+### CUDA settings search versus ASTC
+
+Build `bpal5cudaenc` and run the complete downloaded texture suite with:
+
+```powershell
+python tools/cuda_astc_texture_benchmark.py
+```
+
+The benchmark compares eight CUDA BPAL `--find-settings` targets from 1.5 to
+8 bpp against the closest standard ASTC block rates. It uses all DTD and
+Kylberg images and every selected ambientCG PBR map except previews and the
+duplicate DirectX normal-map variants. Progress is appended to
+`benchmark/work/cuda-astc-textures/records.jsonl`, so an interrupted run can be
+resumed with the same command. The generated Markdown report is written to
+`benchmark/results/cuda-astc-textures.md`.
+
+All inputs are normalized to RGB8 before either encoder sees them. In
+particular, 16-bit displacement maps are scaled by `round(value / 257)` instead
+of being clipped by a generic image-mode conversion. The report uses pooled
+RGB PSNR, exact payload sizes, Bjontegaard delta rate, and angular error for
+normal maps.
+
 ## Run
 
 Build the native C/SIMD codec first:
