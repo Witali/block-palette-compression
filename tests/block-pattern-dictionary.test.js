@@ -102,6 +102,50 @@ test("run-delta blocks preserve independently addressed pixels", () => {
   assertEveryPixelMatches(accessor, expected);
 });
 
+test("default checkpoint directory bounds payload lookup to fifteen preceding tags", () => {
+  const expected = decodeBlockPaletteFile(encodeBlockPaletteFile(createRepeatedPatternImage()));
+  const encoded = encodePatternDictionaryFile(expected, {
+    forceDictionarySize: 2,
+    maxDictionarySize: 2,
+  });
+  const accessor = openPatternDictionaryFile(encoded.bytes);
+  const expectedDirectoryBits = (
+    Math.ceil(encoded.stats.blockCount / 16) + 1
+  ) * 32;
+
+  assert.equal(accessor.checkpointInterval, 16);
+  assert.equal(encoded.stats.directoryBits, expectedDirectoryBits);
+  assertEveryPixelMatches(accessor, expected);
+});
+
+test("transformed dictionary references preserve asymmetric rotated blocks", () => {
+  const image = createTransformedPatternImage();
+  const expected = decodeBlockPaletteFile(encodeBlockPaletteFile(image));
+  const encoded = encodePatternDictionaryFile(expected, {
+    forceDictionarySize: 1,
+    maxDictionarySize: 1,
+    checkpointLog2: 1,
+  });
+  const accessor = openPatternDictionaryFile(encoded.bytes);
+
+  assert.ok(encoded.stats.transformedBlocks > 0);
+  assertEveryPixelMatches(accessor, expected);
+});
+
+test("bitmap dictionary deltas preserve every independently addressed pixel", () => {
+  const image = createBitmapDeltaImage();
+  const expected = decodeBlockPaletteFile(encodeBlockPaletteFile(image));
+  const encoded = encodePatternDictionaryFile(expected, {
+    forceDictionarySize: 1,
+    maxDictionarySize: 1,
+    checkpointLog2: 2,
+  });
+  const accessor = openPatternDictionaryFile(encoded.bytes);
+
+  assert.ok(encoded.stats.bitmapDeltaBlocks > 0);
+  assertEveryPixelMatches(accessor, expected);
+});
+
 test("rejects truncated and invalid pattern-dictionary files", () => {
   const expected = decodeBlockPaletteFile(encodeBlockPaletteFile(createRepeatedPatternImage()));
   const encoded = encodePatternDictionaryFile(expected, {
@@ -225,12 +269,6 @@ function createRunPatternImage() {
     { r: 170, g: 170, b: 170 },
     { r: 255, g: 255, b: 255 },
   ];
-  const permutations = [
-    [0, 1, 2, 3], [0, 1, 3, 2], [0, 2, 1, 3], [0, 2, 3, 1],
-    [0, 3, 1, 2], [0, 3, 2, 1], [1, 0, 2, 3], [1, 0, 3, 2],
-    [1, 2, 0, 3], [1, 2, 3, 0], [1, 3, 0, 2], [1, 3, 2, 0],
-    [2, 0, 1, 3], [2, 0, 3, 1], [2, 1, 0, 3], [2, 1, 3, 0],
-  ];
   const blockPaletteIndices = new Uint16Array(blockCount * localColorCount);
   const pixelIndices = new Uint8Array(width * height);
 
@@ -243,7 +281,9 @@ function createRunPatternImage() {
       const x = block * blockSize + position % blockSize;
       const y = Math.floor(position / blockSize);
 
-      pixelIndices[y * width + x] = permutations[block][Math.floor(position / 4)];
+      pixelIndices[y * width + x] = block < 9
+        ? (position % blockSize + Math.floor(position / blockSize)) % 2
+        : Math.floor(position / blockSize);
     }
   }
 
@@ -257,6 +297,97 @@ function createRunPatternImage() {
     paletteColorBits: 24,
     palette,
     blockPaletteIndices,
+    pixelIndices,
+  };
+}
+
+function createTransformedPatternImage() {
+  const blockSize = 4;
+  const width = blockSize * 2;
+  const height = blockSize;
+  const pattern = [
+    0, 1, 0, 0,
+    0, 1, 1, 0,
+    0, 0, 1, 0,
+    0, 0, 0, 0,
+  ];
+  const pixelIndices = new Uint8Array(width * height);
+
+  for (let y = 0; y < blockSize; y += 1) {
+    for (let x = 0; x < blockSize; x += 1) {
+      pixelIndices[y * width + x] = pattern[y * blockSize + x];
+      pixelIndices[y * width + blockSize + x] = pattern[
+        (blockSize - 1 - x) * blockSize + y
+      ];
+    }
+  }
+
+  return {
+    width,
+    height,
+    blockSize,
+    localColorCount: 4,
+    globalColorCount: 4,
+    paletteCount: 1,
+    paletteColorBits: 24,
+    palette: [
+      { r: 0, g: 0, b: 0 },
+      { r: 85, g: 85, b: 85 },
+      { r: 170, g: 170, b: 170 },
+      { r: 255, g: 255, b: 255 },
+    ],
+    blockPaletteIndices: new Uint16Array([0, 1, 2, 3, 0, 1, 2, 3]),
+    pixelIndices,
+  };
+}
+
+function createBitmapDeltaImage() {
+  const blockSize = 4;
+  const blockCount = 16;
+  const width = blockSize * blockCount;
+  const height = blockSize;
+  const basePattern = [
+    0, 1, 2, 3,
+    0, 1, 2, 3,
+    0, 1, 2, 3,
+    0, 1, 2, 3,
+  ];
+  const deltaPattern = basePattern.slice();
+  const pixelIndices = new Uint8Array(width * height);
+
+  for (const position of [5, 6, 9, 10, 13, 14]) {
+    deltaPattern[position] = deltaPattern[position] === 1 ? 2 : 1;
+  }
+
+  for (let block = 0; block < blockCount; block += 1) {
+    const pattern = block < 9 ? basePattern : deltaPattern;
+
+    for (let position = 0; position < blockSize * blockSize; position += 1) {
+      const x = block * blockSize + position % blockSize;
+      const y = Math.floor(position / blockSize);
+
+      pixelIndices[y * width + x] = pattern[position];
+    }
+  }
+
+  return {
+    width,
+    height,
+    blockSize,
+    localColorCount: 4,
+    globalColorCount: 4,
+    paletteCount: 1,
+    paletteColorBits: 24,
+    palette: [
+      { r: 0, g: 0, b: 0 },
+      { r: 85, g: 85, b: 85 },
+      { r: 170, g: 170, b: 170 },
+      { r: 255, g: 255, b: 255 },
+    ],
+    blockPaletteIndices: Uint16Array.from(
+      { length: blockCount * 4 },
+      (_, index) => index % 4
+    ),
     pixelIndices,
   };
 }
