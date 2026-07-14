@@ -198,7 +198,18 @@ test("aligns preview headers and keeps zoom controls compact", () => {
     /\.zoom-controls button \{[^}]*min-width: 30px;[^}]*min-height: 30px;[^}]*height: 30px;/
   );
   assert.match(css, /@media \(max-width: 820px\) \{\s*\.comparison \{ grid-template-columns: 1fr; \}/);
-  assert.match(css, /@media \(max-width: 430px\) \{[\s\S]*?figcaption \{ height: auto; \}/);
+  assert.match(css, /@media \(max-width: 600px\) \{[\s\S]*?figcaption \{ height: auto; \}/);
+});
+
+test("lets users choose smooth or pixelated preview scaling", () => {
+  assert.match(html, /<input id="smooth-scaling" type="checkbox" checked>/);
+  assert.match(html, /data-i18n="block\.smoothing"/);
+  assert.match(html, /data-i18n-title="block\.smoothingTitle"/);
+  assert.match(source, /smoothScalingInput\.addEventListener\("change", updateCanvasImageRendering\)/);
+  assert.match(source, /const pixelated = !smoothScalingInput\.checked/);
+  assert.match(source, /stage\.classList\.toggle\("is-pixelated", pixelated\)/);
+  assert.doesNotMatch(source, /is-magnified/);
+  assert.match(css, /\.canvas-stage\.is-pixelated canvas \{ image-rendering: pixelated; \}/);
 });
 
 test("shows real compression stages in a cancellable modal progress dialog", () => {

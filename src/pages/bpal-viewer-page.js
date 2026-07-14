@@ -18,6 +18,7 @@ const zoomOutButton = document.querySelector("#zoom-out");
 const zoomInButton = document.querySelector("#zoom-in");
 const actualSizeButton = document.querySelector("#actual-size");
 const fitImageButton = document.querySelector("#fit-image");
+const smoothScalingInput = document.querySelector("#smooth-scaling");
 const panButtons = {
   left: document.querySelector("#pan-left"),
   up: document.querySelector("#pan-up"),
@@ -88,6 +89,7 @@ zoomOutButton.addEventListener("click", () => setZoom(state.zoom / ZOOM_FACTOR))
 zoomInButton.addEventListener("click", () => setZoom(state.zoom * ZOOM_FACTOR));
 actualSizeButton.addEventListener("click", showActualSize);
 fitImageButton.addEventListener("click", fitImage);
+smoothScalingInput.addEventListener("change", updateImageRendering);
 mipPreviousButton.addEventListener("click", () => showBplmMip(state.mipIndex - 1));
 mipNextButton.addEventListener("click", () => showBplmMip(state.mipIndex + 1));
 
@@ -196,6 +198,7 @@ window.addEventListener("resize", () => {
   }
 });
 
+updateImageRendering();
 registerFileLaunchHandler();
 openSharedFileFromUrl();
 initializeBundledExamples();
@@ -636,7 +639,6 @@ function setZoom(value, clientX, clientY, forceCenter, fixedImagePoint) {
   stage.style.width = `${stageWidth}px`;
   stage.style.height = `${stageHeight}px`;
   stage.style.margin = `${state.stageOffsetY}px ${state.stageOffsetX}px`;
-  stage.classList.toggle("is-magnified", nextZoom >= 2);
   zoomLevel.value = `${formatZoom(nextZoom)}%`;
   zoomOutButton.disabled = nextZoom <= MIN_ZOOM;
   zoomInButton.disabled = nextZoom >= MAX_ZOOM;
@@ -661,6 +663,10 @@ function setZoom(value, clientX, clientY, forceCenter, fixedImagePoint) {
   } else {
     requestAnimationFrame(updateScrollPosition);
   }
+}
+
+function updateImageRendering() {
+  stage.classList.toggle("is-pixelated", !smoothScalingInput.checked);
 }
 
 function panBy(left, top) {

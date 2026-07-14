@@ -13,6 +13,7 @@ const BpalExampleCatalog = require("../src/pages/bpal-example-catalog.js");
 const root = path.resolve(__dirname, "..");
 const viewerHtml = fs.readFileSync(path.join(root, "bpal-viewer.html"), "utf8");
 const viewerSource = fs.readFileSync(path.join(root, "src", "pages", "bpal-viewer-page.js"), "utf8");
+const viewerCss = fs.readFileSync(path.join(root, "bpal-viewer.css"), "utf8");
 const pagesWorkflow = fs.readFileSync(path.join(root, ".github", "workflows", "pages.yml"), "utf8");
 
 test("generates every bundled BPAL and BPLM image for the viewer", () => {
@@ -123,6 +124,16 @@ test("selects fit by default and toggles between fit and actual size", () => {
   assert.match(viewerSource, /setViewMode\("actual"\)/);
   assert.match(viewerSource, /setViewMode\("fit"\)/);
   assert.match(viewerSource, /setViewMode\("custom"\)/);
+});
+
+test("lets users choose smooth or pixelated viewer scaling", () => {
+  assert.match(viewerHtml, /<input id="smooth-scaling" type="checkbox" checked>/);
+  assert.match(viewerHtml, /data-i18n="viewer\.smoothing"/);
+  assert.match(viewerHtml, /data-i18n-title="viewer\.smoothingTitle"/);
+  assert.match(viewerSource, /smoothScalingInput\.addEventListener\("change", updateImageRendering\)/);
+  assert.match(viewerSource, /stage\.classList\.toggle\("is-pixelated", !smoothScalingInput\.checked\)/);
+  assert.doesNotMatch(viewerSource, /is-magnified/);
+  assert.match(viewerCss, /\.image-stage\.is-pixelated canvas \{\s*image-rendering: pixelated;/);
 });
 
 function test(name, callback) {

@@ -25,6 +25,7 @@ const downloadFileButton = document.getElementById("download-file-button");
 const downloadBplmButton = document.getElementById("download-bplm-button");
 const downloadButton = document.getElementById("download-button");
 const showGridInput = document.getElementById("show-grid");
+const smoothScalingInput = document.getElementById("smooth-scaling");
 const statusElement = document.getElementById("status");
 const progressDialog = document.getElementById("progress-dialog");
 const progressBar = document.getElementById("progress-bar");
@@ -201,6 +202,7 @@ downloadFileButton.addEventListener("click", downloadBlockPaletteFile);
 downloadBplmButton.addEventListener("click", downloadBlockPaletteMipmapFile);
 downloadButton.addEventListener("click", downloadResult);
 showGridInput.addEventListener("change", drawGrid);
+smoothScalingInput.addEventListener("change", updateCanvasImageRendering);
 zoomOutButton.addEventListener("click", () => setZoom(state.zoom / ZOOM_FACTOR));
 zoomInButton.addEventListener("click", () => setZoom(state.zoom * ZOOM_FACTOR));
 actualSizeButton.addEventListener("click", showActualSize);
@@ -272,6 +274,7 @@ function applyQualityPreset() {
 }
 
 updateDiversityLabel();
+updateCanvasImageRendering();
 loadImage(imageSelect.value, optionLabel(imageSelect.selectedOptions[0])).catch(showError);
 
 async function loadImage(url, name) {
@@ -711,12 +714,19 @@ function applyCanvasDisplaySize() {
   for (const stage of [sourceStage, resultStage]) {
     stage.style.width = displayWidth;
     stage.style.height = displayHeight;
-    stage.classList.toggle("is-magnified", state.zoom >= 2);
   }
 
   zoomLevel.value = `${formatZoom(state.zoom)}%`;
   zoomOutButton.disabled = state.zoom <= MIN_ZOOM;
   zoomInButton.disabled = state.zoom >= MAX_ZOOM;
+}
+
+function updateCanvasImageRendering() {
+  const pixelated = !smoothScalingInput.checked;
+
+  for (const stage of [sourceStage, resultStage]) {
+    stage.classList.toggle("is-pixelated", pixelated);
+  }
 }
 
 function fitImage() {

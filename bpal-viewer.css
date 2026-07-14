@@ -201,6 +201,23 @@ h1 {
   min-width: auto;
 }
 
+.smoothing-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 38px;
+  padding: 0 6px;
+  color: #91a1b3;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.smoothing-control input {
+  margin: 0;
+  accent-color: #3989e7;
+}
+
 #zoom-level {
   min-width: 64px;
   color: #c4d0dc;
@@ -293,7 +310,7 @@ h1 {
   height: 100%;
 }
 
-.image-stage.is-magnified canvas {
+.image-stage.is-pixelated canvas {
   image-rendering: pixelated;
 }
 

@@ -297,7 +297,7 @@ canvas {
   line-height: 0;
 }
 .canvas-stage canvas { width: 100%; height: 100%; }
-.canvas-stage.is-magnified canvas { image-rendering: pixelated; }
+.canvas-stage.is-pixelated canvas { image-rendering: pixelated; }
 .result-stage canvas { grid-area: 1 / 1; }
 #result-canvas { cursor: crosshair; }
 #grid-canvas { z-index: 1; pointer-events: none; box-shadow: none; }
@@ -421,11 +421,14 @@ canvas {
   .comparison { grid-template-columns: 1fr; }
 }
 
-@media (max-width: 430px) {
-  .metrics { grid-template-columns: 1fr; }
+@media (max-width: 600px) {
   figcaption { height: auto; }
   .result-caption { align-items: start; flex-direction: column; }
-  .result-caption-controls { justify-content: flex-start; width: 100%; }
+  .result-caption-controls { flex-wrap: wrap; justify-content: flex-start; width: 100%; }
+}
+
+@media (max-width: 430px) {
+  .metrics { grid-template-columns: 1fr; }
   .block-swatch { width: 100%; }
   .progress-statistics { grid-template-columns: 1fr; }
 }
