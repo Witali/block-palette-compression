@@ -117,6 +117,8 @@ try {
   const cDecodedPpmPath = path.join(temporaryDirectory, "from-c.ppm");
   const cRgb565BpalPath = path.join(temporaryDirectory, "from-c-rgb565-128.bpal");
   const cRgb565DecodedPpmPath = path.join(temporaryDirectory, "from-c-rgb565-128.ppm");
+  const cScalarBpalPath = path.join(temporaryDirectory, "from-c-scalar.bpal");
+  const cScalarDecodedPpmPath = path.join(temporaryDirectory, "from-c-scalar.ppm");
   const jsBpalPath = path.join(temporaryDirectory, "from-js.bpal");
   const jsDecodedPpmPath = path.join(temporaryDirectory, "from-js.ppm");
 
@@ -177,6 +179,25 @@ try {
   assert.equal(cRgb565DecodedByJs.paletteColorBits, 16);
   run(decoderPath, [cRgb565BpalPath, cRgb565DecodedPpmPath]);
   assertDecodedRgb(readPpm(cRgb565DecodedPpmPath), cRgb565DecodedByJs);
+
+  for (const [option, expectedMode, bpalPath, ppmPath] of [
+    ["--scalar", "scalar", cScalarBpalPath, cScalarDecodedPpmPath],
+  ]) {
+    run(encoderPath, [
+      sourcePpmPath,
+      bpalPath,
+      "--block", "4",
+      "--local", "4",
+      "--global", "8",
+      "--iterations", "2",
+      "--refine", "1",
+      option,
+    ]);
+    const decodedByJs = format.decodeBlockPaletteFile(fs.readFileSync(bpalPath));
+    assert.equal(decodedByJs.channelMode, expectedMode);
+    run(decoderPath, [bpalPath, ppmPath]);
+    assertDecodedRgb(readPpm(ppmPath), decodedByJs);
+  }
 
   const jsCompressed = codec.compressImage(rgba, width, height, {
     blockSize: 4,

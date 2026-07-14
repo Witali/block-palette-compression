@@ -22,12 +22,14 @@ test("offers target-bpp settings search in both native encoders", () => {
     assert.match(source, /Selected %\.3f bpp for target %\.3f bpp/);
   }
 
-  assert.match(header, /BPAL5_FIND_SETTINGS_MAX_CANDIDATES 19u/);
+  assert.match(header, /BPAL5_FIND_SETTINGS_MAX_CANDIDATES 153u/);
   assert.match(librarySource, /minimum_bits_per_pixel = \(previous \+ preset->bits_per_pixel\) \/ 2\.0/);
   assert.match(librarySource, /maximum_bits_per_pixel = \(next \+ preset->bits_per_pixel\) \/ 2\.0/);
-  assert.doesNotMatch(librarySource, /candidate\.palette_color_bits = profile->palette_color_bits/);
+  assert.match(librarySource, /palette_counts\[\] = \{ 2u, 16u, 32u, 64u \}/);
+  assert.match(librarySource, /palette_color_bits\[\] = \{ 16u, 24u \}/);
+  assert.match(librarySource, /bpal5_rate_guard_accept\(/);
   assert.match(readme, /--preset 3 --find-settings/);
-  assert.match(readme, /search never changes the selected RGB565 or RGB888 palette color format/);
+  assert.match(readme, /expanded candidates\s+deliberately vary palette count, color format/);
 });
 
 test("exposes CPU encoder error without a decode pass", () => {

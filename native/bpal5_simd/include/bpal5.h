@@ -12,6 +12,9 @@ extern "C" {
 #define BPAL5_HEADER_BYTES 14u
 #define BPAL5_FIND_SETTINGS_MAX_CANDIDATES 153u
 
+#define BPAL5_CHANNEL_RGB 0u
+#define BPAL5_CHANNEL_SCALAR 1u
+
 typedef struct bpal5_image {
     uint32_t width;
     uint32_t height;
@@ -23,6 +26,7 @@ typedef struct bpal5_image {
     uint32_t global_color_count;
     uint32_t palette_count;
     uint32_t palette_color_bits;
+    uint32_t channel_mode;
     uint32_t local_index_bits;
     uint32_t global_index_bits;
     uint32_t palette_index_bits;
@@ -38,6 +42,7 @@ typedef struct bpal5_encode_options {
     uint32_t global_color_count;
     uint32_t palette_count;
     uint32_t palette_color_bits;
+    uint32_t channel_mode;
     uint32_t kmeans_iterations;
     uint32_t refinement_passes;
     uint32_t thread_count;
@@ -106,6 +111,15 @@ int bpal5_decode_rgba(
     int use_simd,
     uint8_t **rgba,
     size_t *rgba_size,
+    char *error,
+    size_t error_size
+);
+
+int bpal5_decode_pixel_rgba(
+    const bpal5_image *image,
+    uint32_t x,
+    uint32_t y,
+    uint32_t *rgba,
     char *error,
     size_t error_size
 );

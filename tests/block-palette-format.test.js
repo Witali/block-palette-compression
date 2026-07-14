@@ -46,6 +46,38 @@ test("round-trips an explicit RGB888 block-palette image through BPAL v5", () =>
   assert.equal(encoded.length, layout.totalBytes);
 });
 
+test("stores scalar palette entries in eight bits", () => {
+  const image = {
+    width: 2,
+    height: 2,
+    blockSize: 2,
+    localColorCount: 2,
+    globalColorCount: 4,
+    paletteColorBits: 24,
+    channelMode: "scalar",
+    palette: [
+      { r: 17, g: 91, b: 203 },
+      { r: 240, g: 0, b: 0 },
+      { r: 0, g: 0, b: 0 },
+      { r: 0, g: 0, b: 0 },
+    ],
+    blockPaletteIndices: new Uint16Array([0, 1]),
+    pixelIndices: new Uint8Array([0, 1, 1, 0]),
+  };
+  const layout = getBlockPaletteFileLayout(image);
+  const encoded = encodeBlockPaletteFile(image);
+  const decoded = decodeBlockPaletteFile(encoded);
+
+  assert.equal(layout.globalPaletteBits, 32);
+  assert.equal(layout.totalBytes, 19);
+  assert.equal(encoded[13] & 0x0f, 4);
+  assert.equal(decoded.channelMode, "scalar");
+  assert.deepEqual(decoded.palette[0], { r: 17, g: 17, b: 17, hex: "#111111" });
+  assert.deepEqual(Array.from(decoded.pixels.slice(0, 8)), [
+    17, 17, 17, 255, 240, 240, 240, 255,
+  ]);
+});
+
 test("omits pixel indices when every block pixel has its own color entry", () => {
   const values = Array.from({ length: 15 }, (_, index) => [
     index * 17,

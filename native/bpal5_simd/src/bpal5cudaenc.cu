@@ -25,6 +25,7 @@ void print_usage(const char *program) {
         "  --global N        Colors per shared palette: 2..4096 power of two (default 32)\n"
         "  --palettes N      Shared palettes: 1..128 power of two (default 1)\n"
         "  --rgb565          Store shared colors as RGB565 (default RGB888)\n"
+        "  --scalar          Store one 8-bit scalar per shared color\n"
         "  --iterations N    CPU palette K-means iterations, 1..64 (default 8)\n"
         "  --refine N        CUDA refinement passes, 0..16 (default 4)\n"
         "  --no-simd         Disable AVX2 during CPU palette initialization\n",
@@ -179,7 +180,9 @@ bool find_best_settings(
             candidates[index].block_size,
             candidates[index].local_color_count,
             candidates[index].global_color_count,
-            candidates[index].palette_color_bits == 16u ? 565u : 888u,
+            candidates[index].channel_mode == BPAL5_CHANNEL_SCALAR
+                ? 888u
+                : (candidates[index].palette_color_bits == 16u ? 565u : 888u),
             rmse,
             psnr
         );
@@ -379,6 +382,10 @@ int main(int argc, char **argv) {
             options.palette_color_bits = 16u;
             continue;
         }
+        if (std::strcmp(name, "--scalar") == 0) {
+            options.channel_mode = BPAL5_CHANNEL_SCALAR;
+            continue;
+        }
         if (std::strcmp(name, "--no-simd") == 0) {
             options.use_simd = 0;
             continue;
@@ -456,7 +463,7 @@ int main(int argc, char **argv) {
 
     std::printf(
         "Encoded %ux%u image to BPAL v5: block %u, local %u, %u x %u shared colors, "
-        "RGB%u, CUDA refinements %u/%u, MSE %.6f, RMSE %.6f, PSNR %.4f dB, CPU init %.3f ms "
+        "RGB%u, %s, CUDA refinements %u/%u, MSE %.6f, RMSE %.6f, PSNR %.4f dB, CPU init %.3f ms "
         "(clusters %.3f, samples %.3f), CUDA setup %.3f ms, GPU %.3f ms "
         "(palettes %.3f, initial blocks %.3f, refine %.3f), %s\n",
         width,
@@ -465,7 +472,10 @@ int main(int argc, char **argv) {
         options.local_color_count,
         options.palette_count,
         options.global_color_count,
-        options.palette_color_bits == 16u ? 565u : 888u,
+        image.palette_color_bits == 16u ? 565u : 888u,
+        options.channel_mode == BPAL5_CHANNEL_SCALAR
+            ? "scalar8"
+            : "rgb",
         stats.accepted_refinement_passes,
         stats.requested_refinement_passes,
         static_cast<double>(stats.final_error) / (static_cast<double>(width) * height * 3.0),

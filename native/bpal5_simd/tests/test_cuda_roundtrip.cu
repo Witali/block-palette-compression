@@ -15,7 +15,8 @@ int run_roundtrip(
     const std::vector<uint8_t> &source,
     uint32_t width,
     uint32_t height,
-    uint32_t palette_color_bits
+    uint32_t palette_color_bits,
+    uint32_t channel_mode
 ) {
     const size_t pixel_count = static_cast<size_t>(width) * height;
     bpal5_encode_options options;
@@ -40,6 +41,7 @@ int run_roundtrip(
     options.kmeans_iterations = 4u;
     options.refinement_passes = 2u;
     options.palette_color_bits = palette_color_bits;
+    options.channel_mode = channel_mode;
 
     if (!bpal5_encode_rgb_cuda(
             source.data(),
@@ -85,14 +87,31 @@ int run_roundtrip(
     if (decoded_size != pixel_count * 4u || parsed.width != width || parsed.height != height ||
         parsed.block_size != 8u || parsed.local_color_count != 4u ||
         parsed.global_color_count != 256u || parsed.palette_count != 64u ||
-        parsed.palette_color_bits != palette_color_bits) {
+        parsed.palette_color_bits != (channel_mode == BPAL5_CHANNEL_SCALAR ? 24u : palette_color_bits) ||
+        parsed.channel_mode != channel_mode) {
         result = fail("CUDA BPAL round-trip metadata mismatch");
         goto cleanup;
     }
 
     for (size_t pixel = 0u; pixel < pixel_count; ++pixel) {
+        uint32_t random_pixel = 0u;
+        if (!bpal5_decode_pixel_rgba(
+                &parsed,
+                static_cast<uint32_t>(pixel % width),
+                static_cast<uint32_t>(pixel / width),
+                &random_pixel,
+                error,
+                sizeof(error)) ||
+            std::memcmp(&random_pixel, decoded + pixel * 4u, 4u) != 0) {
+            result = fail("CUDA specialized random pixel decode mismatch");
+            goto cleanup;
+        }
         for (size_t channel = 0u; channel < 3u; ++channel) {
-            const int difference = static_cast<int>(source[pixel * 3u + channel]) -
+            uint8_t expected = source[pixel * 3u + channel];
+            if (channel_mode == BPAL5_CHANNEL_SCALAR) {
+                expected = source[pixel * 3u];
+            }
+            const int difference = static_cast<int>(expected) -
                 static_cast<int>(decoded[pixel * 4u + channel]);
             decoded_error += static_cast<uint64_t>(difference * difference);
         }
@@ -103,8 +122,9 @@ int run_roundtrip(
     }
 
     std::printf(
-        "CUDA RGB%u roundtrip ok: %zu bytes, error %llu -> %llu, %u/%u passes, %s\n",
+        "CUDA RGB%u mode %u roundtrip ok: %zu bytes, error %llu -> %llu, %u/%u passes, %s\n",
         palette_color_bits,
+        channel_mode,
         byte_count,
         static_cast<unsigned long long>(stats.initial_error),
         static_cast<unsigned long long>(stats.final_error),
@@ -145,6 +165,7 @@ int main() {
         source[pixel * 3u + 1u] = static_cast<uint8_t>((x * 5u + y * 23u) & 255u);
         source[pixel * 3u + 2u] = static_cast<uint8_t>(((x ^ y) * 31u + x * 2u) & 255u);
     }
-    return run_roundtrip(source, width, height, 24u) != 0 ||
-        run_roundtrip(source, width, height, 16u) != 0;
+    return run_roundtrip(source, width, height, 24u, BPAL5_CHANNEL_RGB) != 0 ||
+        run_roundtrip(source, width, height, 16u, BPAL5_CHANNEL_RGB) != 0 ||
+        run_roundtrip(source, width, height, 16u, BPAL5_CHANNEL_SCALAR) != 0;
 }

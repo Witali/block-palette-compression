@@ -144,6 +144,25 @@ static uint32_t unpack_rgb565(uint16_t value) {
     return pack_rgba(red, green, blue);
 }
 
+static uint32_t palette_storage_bits(const bpal5_image *image) {
+    if (image->channel_mode == BPAL5_CHANNEL_SCALAR) {
+        return 8u;
+    }
+    return image->palette_color_bits;
+}
+
+static void finalize_channel_palette(bpal5_image *image) {
+    const size_t entries = (size_t)image->palette_count * image->global_color_count;
+    size_t index;
+
+    if (image->channel_mode == BPAL5_CHANNEL_SCALAR) {
+        for (index = 0u; index < entries; ++index) {
+            const uint8_t value = color_red(image->palette_rgba[index]);
+            image->palette_rgba[index] = pack_rgba(value, value, value);
+        }
+    }
+}
+
 static uint32_t quantize_color(uint32_t color, uint32_t palette_color_bits) {
     return palette_color_bits == 16u ? unpack_rgb565(pack_rgb565(color)) : color;
 }
@@ -270,7 +289,7 @@ static int bit_write_u16_values(
 }
 
 static int calculate_file_size(const bpal5_image *image, size_t *total_bytes) {
-    const uint64_t palette_bits = (uint64_t)image->palette_count * image->global_color_count * image->palette_color_bits;
+    const uint64_t palette_bits = (uint64_t)image->palette_count * image->global_color_count * palette_storage_bits(image);
     const uint64_t selector_bits = (uint64_t)image->block_count * image->palette_index_bits;
     const uint64_t block_bits = (uint64_t)image->block_count * image->local_color_count * image->global_index_bits;
     const uint64_t pixel_bits = uses_direct_pixel_colors(image->block_size, image->local_color_count)
@@ -315,6 +334,10 @@ static int validate_image_metadata(const bpal5_image *image, char *error, size_t
     }
     if (image->palette_color_bits != 16u && image->palette_color_bits != 24u) {
         set_error(error, error_size, "BPAL palette color depth must be 16 or 24 bits");
+        return 0;
+    }
+    if (image->channel_mode > BPAL5_CHANNEL_SCALAR) {
+        set_error(error, error_size, "Unsupported BPAL channel mode");
         return 0;
     }
     if (image->blocks_x != (image->width + image->block_size - 1u) / image->block_size ||
@@ -402,6 +425,7 @@ void bpal5_default_encode_options(bpal5_encode_options *options) {
     options->global_color_count = 32u;
     options->palette_count = 1u;
     options->palette_color_bits = 24u;
+    options->channel_mode = BPAL5_CHANNEL_RGB;
     options->kmeans_iterations = 8u;
     options->refinement_passes = 4u;
     options->thread_count = 4u;
@@ -506,7 +530,8 @@ size_t bpal5_find_settings_candidates(
                         candidate.local_color_count == existing->local_color_count &&
                         candidate.global_color_count == existing->global_color_count &&
                         candidate.palette_count == existing->palette_count &&
-                        candidate.palette_color_bits == existing->palette_color_bits) {
+                        candidate.palette_color_bits == existing->palette_color_bits &&
+                        candidate.channel_mode == existing->channel_mode) {
                         duplicate = 1;
                         break;
                     }
@@ -534,19 +559,25 @@ uint64_t bpal5_estimate_payload_bits(
         !is_power_of_two(options->block_size) ||
         !is_power_of_two(options->local_color_count) ||
         !is_power_of_two(options->global_color_count) ||
-        !is_power_of_two(options->palette_count)) {
+        !is_power_of_two(options->palette_count) ||
+        options->channel_mode > BPAL5_CHANNEL_SCALAR) {
         return 0u;
     }
     blocks_x = ((uint64_t)width + options->block_size - 1u) / options->block_size;
     blocks_y = ((uint64_t)height + options->block_size - 1u) / options->block_size;
     block_count = blocks_x * blocks_y;
     pixel_count = (uint64_t)width * height;
-    return (uint64_t)options->palette_count * options->global_color_count * options->palette_color_bits +
+    {
+        const uint32_t palette_bits = options->channel_mode == BPAL5_CHANNEL_SCALAR
+            ? 8u
+            : options->palette_color_bits;
+        return (uint64_t)options->palette_count * options->global_color_count * palette_bits +
         block_count * integer_log2(options->palette_count) +
         block_count * options->local_color_count * integer_log2(options->global_color_count) +
         (uses_direct_pixel_colors(options->block_size, options->local_color_count)
             ? 0u
             : pixel_count * integer_log2(options->local_color_count));
+    }
 }
 
 int bpal5_rate_guard_accept(
@@ -642,7 +673,8 @@ int bpal5_parse(
         !bit_read(&reader, 9u, &ignored_vector_count) ||
         !bit_read(&reader, 1u, &ignored_color_space) ||
         !bit_read(&reader, 3u, &image.palette_index_bits) ||
-        !bit_read(&reader, 4u, &reserved)) {
+        !bit_read(&reader, 2u, &image.channel_mode) ||
+        !bit_read(&reader, 2u, &reserved)) {
         set_error(error, error_size, "Truncated BPAL v5 header");
         return 0;
     }
@@ -691,7 +723,14 @@ int bpal5_parse(
     palette_entries = (size_t)image.palette_count * image.global_color_count;
     for (index = 0; index < palette_entries; ++index) {
         uint32_t value;
-        if (image.palette_color_bits == 16u) {
+        if (image.channel_mode == BPAL5_CHANNEL_SCALAR) {
+            if (!bit_read(&reader, 8u, &value)) {
+                set_error(error, error_size, "Truncated BPAL scalar palette");
+                bpal5_image_free(&image);
+                return 0;
+            }
+            image.palette_rgba[index] = pack_rgba((uint8_t)value, (uint8_t)value, (uint8_t)value);
+        } else if (image.palette_color_bits == 16u) {
             if (!bit_read(&reader, 16u, &value)) {
                 set_error(error, error_size, "Truncated BPAL palette");
                 bpal5_image_free(&image);
@@ -808,7 +847,8 @@ int bpal5_serialize(
         !bit_write(&writer, 0u, 9u) ||
         !bit_write(&writer, 0u, 1u) ||
         !bit_write(&writer, image->palette_index_bits, 3u) ||
-        !bit_write(&writer, 0u, 4u)) {
+        !bit_write(&writer, image->channel_mode, 2u) ||
+        !bit_write(&writer, 0u, 2u)) {
         set_error(error, error_size, "Could not write BPAL v5 header");
         free(output);
         return 0;
@@ -817,7 +857,13 @@ int bpal5_serialize(
     palette_entries = (size_t)image->palette_count * image->global_color_count;
     for (index = 0; index < palette_entries; ++index) {
         const uint32_t color = image->palette_rgba[index];
-        if (image->palette_color_bits == 16u) {
+        if (image->channel_mode == BPAL5_CHANNEL_SCALAR) {
+            if (!bit_write(&writer, color_red(color), 8u)) {
+                set_error(error, error_size, "Could not write BPAL scalar palette");
+                free(output);
+                return 0;
+            }
+        } else if (image->palette_color_bits == 16u) {
             if (!bit_write(&writer, pack_rgb565(color), 16u)) {
                 set_error(error, error_size, "Could not write BPAL RGB565 palette");
                 free(output);
@@ -1053,6 +1099,51 @@ int bpal5_decode_rgba(
 
     *rgba = (uint8_t *)output;
     *rgba_size = byte_count;
+    return 1;
+}
+
+int bpal5_decode_pixel_rgba(
+    const bpal5_image *image,
+    uint32_t x,
+    uint32_t y,
+    uint32_t *rgba,
+    char *error,
+    size_t error_size
+) {
+    uint32_t block;
+    uint32_t palette_base;
+    uint32_t local;
+    uint32_t global;
+
+    if (rgba == NULL || !validate_image_metadata(image, error, error_size)) {
+        return 0;
+    }
+    if (image->palette_rgba == NULL || image->block_palette_selectors == NULL ||
+        image->block_palette_indices == NULL || image->pixel_indices == NULL) {
+        set_error(error, error_size, "BPAL image arrays are missing");
+        return 0;
+    }
+    if (x >= image->width || y >= image->height) {
+        set_error(error, error_size, "BPAL pixel coordinate is out of range");
+        return 0;
+    }
+    block = (y / image->block_size) * image->blocks_x + x / image->block_size;
+    if (image->block_palette_selectors[block] >= image->palette_count) {
+        set_error(error, error_size, "Invalid BPAL block palette selector");
+        return 0;
+    }
+    palette_base = image->block_palette_selectors[block] * image->global_color_count;
+    local = image->pixel_indices[(size_t)y * image->width + x];
+    if (local >= image->local_color_count) {
+        set_error(error, error_size, "Invalid BPAL pixel index");
+        return 0;
+    }
+    global = image->block_palette_indices[(size_t)block * image->local_color_count + local];
+    if (global >= image->global_color_count) {
+        set_error(error, error_size, "Invalid BPAL block color index");
+        return 0;
+    }
+    *rgba = image->palette_rgba[palette_base + global];
     return 1;
 }
 
@@ -1754,6 +1845,7 @@ int bpal5_prepare_rgb_image_internal(
         !is_power_of_two(options->global_color_count) || options->global_color_count < options->local_color_count || options->global_color_count > 4096u ||
         !is_power_of_two(options->palette_count) || options->palette_count > 128u ||
         (options->palette_color_bits != 16u && options->palette_color_bits != 24u) ||
+        options->channel_mode > BPAL5_CHANNEL_SCALAR ||
         options->kmeans_iterations == 0u || options->kmeans_iterations > 64u || options->refinement_passes > 16u ||
         options->thread_count == 0u || options->thread_count > 256u) {
         set_error(error, error_size, "Invalid BPAL encoder settings");
@@ -1773,7 +1865,10 @@ int bpal5_prepare_rgb_image_internal(
     image.local_color_count = options->local_color_count;
     image.global_color_count = options->global_color_count;
     image.palette_count = options->palette_count;
-    image.palette_color_bits = options->palette_color_bits;
+    image.palette_color_bits = options->channel_mode == BPAL5_CHANNEL_SCALAR
+        ? 24u
+        : options->palette_color_bits;
+    image.channel_mode = options->channel_mode;
     image.local_index_bits = integer_log2(image.local_color_count);
     image.global_index_bits = integer_log2(image.global_color_count);
     image.palette_index_bits = integer_log2(image.palette_count);
@@ -1795,7 +1890,7 @@ int bpal5_prepare_rgb_image_internal(
     return 1;
 }
 
-int bpal5_encode_rgb_with_stats(
+static int bpal5_encode_rgb_prepared_with_stats(
     const uint8_t *rgb,
     uint32_t width,
     uint32_t height,
@@ -1938,6 +2033,68 @@ int bpal5_encode_rgb_with_stats(
 
     *output = image;
     return 1;
+}
+
+int bpal5_encode_rgb_with_stats(
+    const uint8_t *rgb,
+    uint32_t width,
+    uint32_t height,
+    const bpal5_encode_options *options_input,
+    bpal5_image *output,
+    bpal5_encode_stats *stats,
+    char *error,
+    size_t error_size
+) {
+    bpal5_encode_options defaults;
+    const bpal5_encode_options *options = options_input;
+    const uint8_t *prepared = rgb;
+    uint8_t *owned = NULL;
+    size_t pixel_count;
+    size_t pixel;
+    int result;
+
+    if (options == NULL) {
+        bpal5_default_encode_options(&defaults);
+        options = &defaults;
+    }
+    if (rgb == NULL) {
+        set_error(error, error_size, "Invalid BPAL encode arguments");
+        return 0;
+    }
+    pixel_count = (size_t)width * height;
+    if (options->channel_mode == BPAL5_CHANNEL_SCALAR) {
+        if (pixel_count > SIZE_MAX / 3u) {
+            set_error(error, error_size, "BPAL source image is too large");
+            return 0;
+        }
+        owned = (uint8_t *)malloc(pixel_count * 3u);
+        if (owned == NULL) {
+            set_error(error, error_size, "Out of memory preparing BPAL channel mode");
+            return 0;
+        }
+        for (pixel = 0u; pixel < pixel_count; ++pixel) {
+            const uint8_t red = rgb[pixel * 3u];
+            owned[pixel * 3u] = red;
+            owned[pixel * 3u + 1u] = red;
+            owned[pixel * 3u + 2u] = red;
+        }
+        prepared = owned;
+    }
+    result = bpal5_encode_rgb_prepared_with_stats(
+        prepared,
+        width,
+        height,
+        options,
+        output,
+        stats,
+        error,
+        error_size
+    );
+    free(owned);
+    if (result) {
+        finalize_channel_palette(output);
+    }
+    return result;
 }
 
 int bpal5_encode_rgb(
