@@ -96,19 +96,22 @@ a 30-bit byte offset. Pixel lookup is:
 5. read the final mode-palette color.
 
 There is no tree traversal, neighbor dependency, entropy state, or
-data-dependent loop. The shader-equivalent reference path uses aligned 32-bit
-loads and has a fixed upper bound of eight reads per pixel, including packed
-fields that cross word boundaries. The complete synthetic format test compares
-every coordinate with the selected uniform candidate and the GPU-reference
-path.
+data-dependent loop. The production WebGL2 path uploads the aligned BPAV file
+as one `R32UI` atlas, binds layout values as uniforms, and samples it with the
+GLSL ES 3.00 `bpavSample()` helper. It has a fixed upper bound of eight word
+reads per pixel, including packed fields that cross word boundaries. The
+complete synthetic format test compares every coordinate with the scalar
+random-access decoder and the exact R32UI word-atlas sampling path.
 
 ## Tests
 
 - Full `npm test` suite passed.
 - BPAV RGB888 and RGB565 encode/open tests passed.
 - Every pixel in a six-supertile edge-case image matched its selected B4/B8/B16/B32 candidate.
-- The aligned-word GPU reference matched the scalar accessor for every pixel
-  and never exceeded eight reads.
+- The R32UI word-atlas sampler matched the scalar accessor for every pixel and
+  never exceeded eight reads.
+- WebGL2 upload used one `R32UI`/`RED_INTEGER` texture and the uniform binder
+  populated every parameter referenced by the production shader.
 - Invalid modes, offsets, truncation, and nonzero alignment bytes were rejected.
 - Repeated encoding produced byte-identical output.
 
@@ -116,9 +119,9 @@ path.
 
 - Only the 2.5-bpp settings family (L4, G64, P32, RGB888) was measured. Other
   local/global palette sizes need separate RD searches.
-- The JavaScript implementation and aligned-word GPU reference establish the
-  format and sampling algorithm. A production CUDA/GLSL kernel still needs
-  integration and device-specific throughput profiling.
+- The production WebGL2 sampler is exposed as a reusable upload/bind module;
+  the existing cube/viewer UI does not yet select BPAV files automatically.
+  Device-specific throughput profiling is still required.
 - A separate palette table is stored for every used mode. Sharing palette
   tables may improve small-image behavior but was not assumed in these results.
 - BPAV is an experimental side format. The encoder should continue emitting

@@ -59,11 +59,13 @@ Given integer `(x, y)`, a decoder performs these operations:
 5. Load the color from the palette table belonging to the selected mode.
 
 The operation count is independent of image content. The generic implementation
-in `src/palette/adaptive-block-format.js` exposes `getPixel(x, y)`. Its
-`getPixelGpuReference(x, y)` path uses aligned 32-bit word loads and verifies a
-fixed upper bound of eight reads per pixel, including fields that cross word
-boundaries. Header values and section offsets are expected to be uniforms in a
-shader and are not counted per pixel.
+in `src/palette/adaptive-block-format.js` exposes `getPixel(x, y)`.
+`src/palette/adaptive-block-webgl2.js` is the production WebGL2 path: it uploads
+the aligned file as one `R32UI` word atlas, binds the parsed section offsets as
+uniforms, and provides the GLSL ES 3.00 `bpavSample(ivec2)` helper. Packed fields
+use one aligned word load, or two only when crossing a 32-bit boundary. The
+fixed upper bound is eight word reads per pixel. Header values and section
+offsets are uniforms and are not counted per pixel.
 
 An encoder must keep legacy uniform BPAL when BPAV does not improve the chosen
 rate-distortion point. The extra mode palettes make BPAV most useful for large
