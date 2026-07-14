@@ -95,9 +95,12 @@ Encoder options:
 - `--rgb565`: store global palette colours as RGB565 instead of RGB888;
 - `--iterations N`: global k-means iteration limit;
 - `--refine N`: iterative-refinement pass count;
+- `--threads N`: CPU encoder worker count from 1 to 256 (default 4);
 - `--no-simd`: disable AVX2 even when the CPU supports it.
 
-`bpal5cudaenc` accepts the same encoder options and adds `--device N`.
+`--threads` applies to `bpal5enc`; CMake enables the parallel path when the C
+compiler provides OpenMP. Without OpenMP, the CPU encoder uses one worker.
+`bpal5cudaenc` accepts the other encoder options and adds `--device N`.
 `--no-simd` is retained for command-line compatibility; current CUDA palette
 initialization no longer calls the CPU nearest-colour SIMD backend.
 
@@ -121,6 +124,7 @@ separate global palette for each cluster, chooses a compact palette for every
 block, and then refines the result by comparing reconstructed colours with the
 source pixels. Defaults are block size 16, 8 local colours, 32 global colours,
 one global palette, RGB888, 8 k-means iterations, and 4 refinement passes.
+The CPU encoder uses four worker threads by default.
 
 `stb_image.h` and its license are stored in `third_party/stb`. The accompanying
 README records the pinned upstream commit and SHA-256 hash for reproducible
@@ -171,7 +175,7 @@ encoders, use any binary RGB PPM input:
 
 ```powershell
 python native\bpal5_simd\tests\benchmark_cuda.py input.ppm `
-  --build-dir native\bpal5_simd\build-cuda --preset 3 --refine 4
+  --build-dir native\bpal5_simd\build-cuda --preset 3 --refine 4 --threads 4
 ```
 
 The script reports mean and best encode time, output size, decoded MSE, PSNR,
@@ -212,6 +216,52 @@ process (roughly 80-105 ms on this system). It overlaps CPU preparation but
 cannot be eliminated inside a one-image command. Consequently, very short
 low-bpp jobs such as preset 1.5 can still be faster on the CPU; a persistent or
 batch encoder could amortize startup across multiple images.
+
+#### CPU preset 5 optimization
+
+Preset 5 was used for CPU optimization because it was the slowest tested
+preset. The retained implementation applies the CUDA data-flow ideas that are
+also effective on a CPU: each block is read once into separate red, green, and
+blue channel arrays; candidate scoring and best-distance updates operate on
+eight pixels at a time with AVX2; the nearest-colour reduction stays in SIMD
+registers; and independent global palettes and blocks are distributed across
+OpenMP workers. Each worker owns its block scratch buffers, so the hot loop has
+no shared mutable workspace.
+
+On the 330x512 validation PPM with preset 5 and four refinement passes, the
+following paired medians isolated each retained change:
+
+| Change | Before | After | Speedup |
+| --- | ---: | ---: | ---: |
+| AVX2 nearest-colour register reduction | 1471.912 ms | 1347.830 ms | 1.092x |
+| Per-block RGB channel cache | 1362.806 ms | 939.036 ms | 1.451x |
+| AVX2 block candidate scoring | 938.848 ms | 376.405 ms | 2.494x |
+| Parallel global palettes, 8 workers | 371.032 ms | 264.117 ms | 1.405x |
+| Parallel blocks, 8 workers | 263.658 ms | 107.087 ms | 2.462x |
+
+The complete default four-worker encoder improved from 1475.605 ms to
+127.886 ms, or 11.538x. Worker-count scaling, measured with alternating runs,
+was 378.744 ms at one worker, 210.633 ms at two, 131.914 ms at four, and
+111.741 ms at eight. All variants produced the same SHA-256 BPAL digest.
+
+Two CUDA-inspired layouts were measured and rejected: 32-byte-aligned global
+palette loads were 1.9% slower, and expanding the entire RGB24 image into a
+packed 32-bit cache was 15.2% slower. They remain useful on the GPU, where
+coalescing and shared-memory access dominate, but added unpacking or allocation
+cost on this CPU.
+
+With the default four CPU workers, 15 process runs measured 133.295 ms mean for
+SIMD and 139.948 ms for CUDA. CUDA itself used only 12.386 ms mean on the GPU,
+but fresh-process setup made the CPU 1.050x faster end to end for this image.
+Both encoders produced byte-identical 144,902-byte output with MSE 4.1524 and
+PSNR 41.9478 dB.
+
+To compare two CPU builds with alternating order and exact-output validation:
+
+```powershell
+python native\bpal5_simd\tests\benchmark_cpu_variants.py input.ppm `
+  old\bpal5enc.exe new\bpal5enc.exe --preset 5 --refine 4 --threads 4
+```
 
 ## API and compatibility
 
