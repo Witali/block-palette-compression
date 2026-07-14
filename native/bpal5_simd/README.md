@@ -124,11 +124,13 @@ by smaller payload size. Search progress reports bpp, RMSE, and PSNR for every
 eligible candidate. Candidate encodes reuse the same process, including its
 initialized CUDA runtime and driver caches.
 
-`--palettes`, `--iterations`, `--refine`, `--threads`, and `--no-simd` remain
-common to all search candidates. Structural options (`--block`, `--local`,
-`--global`, and `--rgb565`) customize the baseline candidate; the remaining
-candidates deliberately vary those fields. Without `--find-settings`, all
-explicit options continue to override the preset normally.
+`--palettes`, `--rgb565`, `--iterations`, `--refine`, `--threads`, and
+`--no-simd` remain common to all search candidates. In particular, settings
+search never changes the selected RGB565 or RGB888 palette color format.
+Structural options (`--block`, `--local`, and `--global`) customize the
+baseline candidate; the remaining candidates deliberately vary those fields.
+Without `--find-settings`, all explicit options continue to override the
+preset normally.
 
 Presets select RGB888, four refinement passes, and the following BPAL
 structure. Explicit encoder options override the selected preset regardless of

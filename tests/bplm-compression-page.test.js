@@ -92,6 +92,7 @@ test("finds minimum-RMSE settings inside the current preset bpp range", () => {
   assert.match(source, /bitsPerPixelTargets: QUALITY_PRESET_BITS_PER_PIXEL/);
   assert.match(source, /storageWidth: state\.sourceImageData\.width/);
   assert.match(source, /storageHeight: state\.sourceImageData\.height/);
+  assert.match(source, /paletteColorBits: Number\(paletteColorBitsSelect\.value\)/);
   assert.match(source, /baselineProfile: \{/);
   assert.match(optimizerSource, /calculateBitsPerPixelRange\(/);
   assert.match(optimizerSource, /selectHighestQualityCandidate\(matchingCandidates, targetBitsPerPixel\)/);

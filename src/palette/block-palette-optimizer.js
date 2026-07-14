@@ -48,9 +48,13 @@
   ) {
     const searchOptions = options || {};
     const requestedProfiles = searchOptions.profiles || DEFAULT_PROFILES;
-    const profiles = normalizeProfiles(searchOptions.baselineProfile
-      ? [searchOptions.baselineProfile, ...requestedProfiles]
-      : requestedProfiles);
+    const paletteColorBits = normalizePaletteColorBits(searchOptions.paletteColorBits);
+    const profiles = normalizeProfiles(
+      searchOptions.baselineProfile
+        ? [searchOptions.baselineProfile, ...requestedProfiles]
+        : requestedProfiles,
+      paletteColorBits
+    );
     const commonSettings = {
       colorSpace: searchOptions.colorSpace || "oklab",
       clusteringMethod: searchOptions.clusteringMethod || "k-medoids",
@@ -232,6 +236,20 @@
     return normalized;
   }
 
+  function normalizePaletteColorBits(value) {
+    if (value === undefined || value === null) {
+      return null;
+    }
+
+    const normalized = Number(value);
+
+    if (normalized !== 16 && normalized !== 24) {
+      throw new RangeError("Palette color format must be RGB565 or RGB888");
+    }
+
+    return normalized;
+  }
+
   function normalizeTargetBitsPerPixel(value) {
     if (value === undefined || value === null || value === "") {
       return null;
@@ -292,7 +310,7 @@
     return { ...selected, score: bestScore };
   }
 
-  function normalizeProfiles(profiles) {
+  function normalizeProfiles(profiles, paletteColorBits) {
     if (!Array.isArray(profiles) || profiles.length === 0) {
       throw new RangeError("Optimization profiles must be a non-empty array");
     }
@@ -304,7 +322,9 @@
         blockSize: Number(profile.blockSize),
         localColorCount: Number(profile.localColorCount),
         globalColorCount: Number(profile.globalColorCount),
-        paletteColorBits: Number(profile.paletteColorBits),
+        paletteColorBits: paletteColorBits === null
+          ? Number(profile.paletteColorBits)
+          : paletteColorBits,
       };
       const key = [
         normalized.blockSize,

@@ -41,7 +41,6 @@ typedef struct search_profile {
     uint32_t block_size;
     uint32_t local_color_count;
     uint32_t global_color_count;
-    uint32_t palette_color_bits;
 } search_profile;
 
 static const encode_preset QUALITY_PRESETS[] = {
@@ -56,26 +55,24 @@ static const encode_preset QUALITY_PRESETS[] = {
 };
 
 static const search_profile FIND_SETTINGS_PROFILES[] = {
-    { 4u, 16u, 4096u, 24u },
-    { 4u, 16u, 1024u, 24u },
-    { 4u, 8u, 1024u, 24u },
-    { 8u, 16u, 1024u, 24u },
-    { 8u, 8u, 256u, 24u },
-    { 8u, 8u, 256u, 16u },
-    { 8u, 4u, 256u, 16u },
-    { 16u, 16u, 256u, 24u },
-    { 16u, 16u, 256u, 16u },
-    { 16u, 8u, 128u, 16u },
-    { 16u, 4u, 128u, 16u },
-    { 16u, 2u, 64u, 16u },
-    { 32u, 16u, 128u, 16u },
-    { 32u, 8u, 64u, 16u },
-    { 32u, 4u, 64u, 16u },
-    { 32u, 2u, 32u, 16u },
-    { 64u, 16u, 64u, 16u },
-    { 64u, 8u, 32u, 16u },
-    { 64u, 4u, 16u, 16u },
-    { 64u, 2u, 8u, 16u },
+    { 4u, 16u, 4096u },
+    { 4u, 16u, 1024u },
+    { 4u, 8u, 1024u },
+    { 8u, 16u, 1024u },
+    { 8u, 8u, 256u },
+    { 8u, 4u, 256u },
+    { 16u, 16u, 256u },
+    { 16u, 8u, 128u },
+    { 16u, 4u, 128u },
+    { 16u, 2u, 64u },
+    { 32u, 16u, 128u },
+    { 32u, 8u, 64u },
+    { 32u, 4u, 64u },
+    { 32u, 2u, 32u },
+    { 64u, 16u, 64u },
+    { 64u, 8u, 32u },
+    { 64u, 4u, 16u },
+    { 64u, 2u, 8u },
 };
 
 static void set_error(char *error, size_t error_size, const char *message) {
@@ -482,7 +479,6 @@ size_t bpal5_find_settings_candidates(
         candidate.block_size = profile->block_size;
         candidate.local_color_count = profile->local_color_count;
         candidate.global_color_count = profile->global_color_count;
-        candidate.palette_color_bits = profile->palette_color_bits;
         for (candidate_index = 0u; candidate_index < count; ++candidate_index) {
             const bpal5_encode_options *existing = &candidates[candidate_index];
             if (candidate.block_size == existing->block_size &&

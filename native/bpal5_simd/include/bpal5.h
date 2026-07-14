@@ -10,7 +10,7 @@ extern "C" {
 
 #define BPAL5_VERSION 5u
 #define BPAL5_HEADER_BYTES 14u
-#define BPAL5_FIND_SETTINGS_MAX_CANDIDATES 21u
+#define BPAL5_FIND_SETTINGS_MAX_CANDIDATES 19u
 
 typedef struct bpal5_image {
     uint32_t width;

@@ -85,6 +85,7 @@ static int test_find_settings_candidates(void) {
     bpal5_encode_options baseline;
     bpal5_encode_options candidates[BPAL5_FIND_SETTINGS_MAX_CANDIDATES];
     size_t count;
+    size_t index;
 
     bpal5_default_encode_options(&baseline);
     count = bpal5_find_settings_candidates(
@@ -95,6 +96,22 @@ static int test_find_settings_candidates(void) {
     if (count != BPAL5_FIND_SETTINGS_MAX_CANDIDATES ||
         memcmp(&baseline, &candidates[0], sizeof(baseline)) != 0) {
         return fail("settings search candidates mismatch");
+    }
+    for (index = 0u; index < count; ++index) {
+        if (candidates[index].palette_color_bits != baseline.palette_color_bits) {
+            return fail("settings search changed the palette color format");
+        }
+    }
+    baseline.palette_color_bits = 16u;
+    count = bpal5_find_settings_candidates(
+        &baseline,
+        candidates,
+        BPAL5_FIND_SETTINGS_MAX_CANDIDATES
+    );
+    for (index = 0u; index < count; ++index) {
+        if (candidates[index].palette_color_bits != 16u) {
+            return fail("RGB565 settings search changed the palette color format");
+        }
     }
     baseline.block_size = 2u;
     baseline.local_color_count = 2u;

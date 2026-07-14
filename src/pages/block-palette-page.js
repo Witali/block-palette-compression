@@ -1206,11 +1206,11 @@ function optimizeSettings() {
     stage: "searching-settings",
     progress: 0,
     completed: 0,
-    total: 21,
+    total: 19,
   });
 
   const preview = createOptimizationPreview();
-  const worker = new Worker("./src/palette/block-palette-optimizer-worker.js?v=target-bpp-quality-1");
+  const worker = new Worker("./src/palette/block-palette-optimizer-worker.js?v=target-bpp-quality-2");
 
   state.optimizerWorker = worker;
 
@@ -1303,6 +1303,7 @@ function optimizeSettings() {
       diversity: getDiversity(),
       refinementPasses: Number(refinementPassesSelect.value),
       paletteCount: Number(paletteCountSelect.value),
+      paletteColorBits: Number(paletteColorBitsSelect.value),
       paletteMode: "explicit",
       targetBitsPerPixel,
       bitsPerPixelTargets: QUALITY_PRESET_BITS_PER_PIXEL,
