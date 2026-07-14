@@ -15,6 +15,9 @@
 #define BPAL5_MAX_DIMENSION (1u << 24)
 #define BPAL5_MAX_SAMPLE_PIXELS 32768u
 #define BPAL5_BLOCK_DESCRIPTOR_COMPONENTS 6u
+#define BPAL5_FLAG_PACKED_PALETTES 1u
+#define BPAL5_PACKED_PALETTE_HEADER_BYTES 4u
+#define BPAL5_PACKED_PALETTE_DIRECTORY_ENTRY_BYTES 4u
 
 typedef struct bit_reader {
     const uint8_t *bytes;
@@ -42,6 +45,17 @@ typedef struct search_profile {
     uint32_t local_color_count;
     uint32_t global_color_count;
 } search_profile;
+
+typedef struct packed_palette_record {
+    uint8_t base_red;
+    uint8_t base_green;
+    uint8_t base_blue;
+    uint8_t red_bits;
+    uint8_t green_bits;
+    uint8_t blue_bits;
+    size_t byte_count;
+    int use_delta;
+} packed_palette_record;
 
 static const encode_preset QUALITY_PRESETS[] = {
     { "1.5", 1.5, 4u, 2u, 8u, 2u },
@@ -154,6 +168,37 @@ static int checked_multiply_size(size_t left, size_t right, size_t *result) {
     }
     *result = left * right;
     return 1;
+}
+
+static int checked_add_size(size_t left, size_t right, size_t *result) {
+    if (right > SIZE_MAX - left) {
+        return 0;
+    }
+    *result = left + right;
+    return 1;
+}
+
+static uint32_t bits_required_u8(uint32_t value) {
+    uint32_t bits = 0u;
+    while (value != 0u) {
+        value >>= 1u;
+        ++bits;
+    }
+    return bits;
+}
+
+static uint32_t read_u32_be(const uint8_t *bytes) {
+    return ((uint32_t)bytes[0] << 24u) |
+        ((uint32_t)bytes[1] << 16u) |
+        ((uint32_t)bytes[2] << 8u) |
+        (uint32_t)bytes[3];
+}
+
+static void write_u32_be(uint8_t *bytes, uint32_t value) {
+    bytes[0] = (uint8_t)(value >> 24u);
+    bytes[1] = (uint8_t)(value >> 16u);
+    bytes[2] = (uint8_t)(value >> 8u);
+    bytes[3] = (uint8_t)value;
 }
 
 static int bit_read(bit_reader *reader, uint32_t bit_count, uint32_t *value) {
@@ -269,14 +314,168 @@ static int bit_write_u16_values(
     return 1;
 }
 
-static int calculate_file_size(const bpal5_image *image, size_t *total_bytes) {
-    const uint64_t palette_bits = (uint64_t)image->palette_count * image->global_color_count * image->palette_color_bits;
+static void calculate_packed_palette_record(
+    const bpal5_image *image,
+    uint32_t palette_index,
+    packed_palette_record *record
+) {
+    const size_t palette_base = (size_t)palette_index * image->global_color_count;
+    uint32_t minimum_red = 255u;
+    uint32_t minimum_green = 255u;
+    uint32_t minimum_blue = 255u;
+    uint32_t maximum_red = 0u;
+    uint32_t maximum_green = 0u;
+    uint32_t maximum_blue = 0u;
+    uint32_t color_index;
+    size_t raw_bytes;
+    size_t delta_bytes;
+    uint64_t residual_bits;
+
+    for (color_index = 0u; color_index < image->global_color_count; ++color_index) {
+        const uint32_t color = quantize_color(
+            image->palette_rgba[palette_base + color_index],
+            image->palette_color_bits
+        );
+        const uint32_t red = color_red(color);
+        const uint32_t green = color_green(color);
+        const uint32_t blue = color_blue(color);
+        if (red < minimum_red) minimum_red = red;
+        if (green < minimum_green) minimum_green = green;
+        if (blue < minimum_blue) minimum_blue = blue;
+        if (red > maximum_red) maximum_red = red;
+        if (green > maximum_green) maximum_green = green;
+        if (blue > maximum_blue) maximum_blue = blue;
+    }
+
+    record->base_red = (uint8_t)minimum_red;
+    record->base_green = (uint8_t)minimum_green;
+    record->base_blue = (uint8_t)minimum_blue;
+    record->red_bits = (uint8_t)bits_required_u8(maximum_red - minimum_red);
+    record->green_bits = (uint8_t)bits_required_u8(maximum_green - minimum_green);
+    record->blue_bits = (uint8_t)bits_required_u8(maximum_blue - minimum_blue);
+    raw_bytes = 1u + (size_t)image->global_color_count * (image->palette_color_bits / 8u);
+    residual_bits = (uint64_t)image->global_color_count *
+        (record->red_bits + record->green_bits + record->blue_bits);
+    delta_bytes = 5u + (size_t)((residual_bits + 7u) / 8u);
+    record->use_delta = delta_bytes < raw_bytes;
+    record->byte_count = record->use_delta ? delta_bytes : raw_bytes;
+}
+
+static int calculate_packed_palette_size(const bpal5_image *image, size_t *byte_count) {
+    size_t total = BPAL5_PACKED_PALETTE_HEADER_BYTES;
+    size_t directory_bytes;
+    uint32_t palette_index;
+
+    if (!checked_multiply_size(
+            image->palette_count,
+            BPAL5_PACKED_PALETTE_DIRECTORY_ENTRY_BYTES,
+            &directory_bytes) ||
+        !checked_add_size(total, directory_bytes, &total)) {
+        return 0;
+    }
+    for (palette_index = 0u; palette_index < image->palette_count; ++palette_index) {
+        packed_palette_record record;
+        calculate_packed_palette_record(image, palette_index, &record);
+        if (!checked_add_size(total, record.byte_count, &total)) {
+            return 0;
+        }
+    }
+    if (total > UINT32_MAX) {
+        return 0;
+    }
+    *byte_count = total;
+    return 1;
+}
+
+static int write_packed_palette_section(
+    const bpal5_image *image,
+    uint8_t *output,
+    size_t output_size,
+    size_t section_offset,
+    size_t section_size
+) {
+    const size_t records_offset = section_offset + BPAL5_PACKED_PALETTE_HEADER_BYTES +
+        (size_t)image->palette_count * BPAL5_PACKED_PALETTE_DIRECTORY_ENTRY_BYTES;
+    size_t record_offset = records_offset;
+    uint32_t palette_index;
+
+    if (section_offset > output_size || section_size > output_size - section_offset ||
+        records_offset > section_offset + section_size) {
+        return 0;
+    }
+    write_u32_be(output + section_offset, (uint32_t)section_size);
+    for (palette_index = 0u; palette_index < image->palette_count; ++palette_index) {
+        const size_t palette_base = (size_t)palette_index * image->global_color_count;
+        packed_palette_record record;
+        uint32_t color_index;
+
+        calculate_packed_palette_record(image, palette_index, &record);
+        if (record_offset < records_offset || record_offset - records_offset > UINT32_MAX ||
+            record.byte_count > section_offset + section_size - record_offset) {
+            return 0;
+        }
+        write_u32_be(
+            output + section_offset + BPAL5_PACKED_PALETTE_HEADER_BYTES +
+                (size_t)palette_index * BPAL5_PACKED_PALETTE_DIRECTORY_ENTRY_BYTES,
+            (uint32_t)(record_offset - records_offset)
+        );
+
+        if (!record.use_delta) {
+            output[record_offset++] = 0u;
+            for (color_index = 0u; color_index < image->global_color_count; ++color_index) {
+                const uint32_t color = quantize_color(
+                    image->palette_rgba[palette_base + color_index],
+                    image->palette_color_bits
+                );
+                if (image->palette_color_bits == 16u) {
+                    const uint16_t packed = pack_rgb565(color);
+                    output[record_offset++] = (uint8_t)(packed >> 8u);
+                    output[record_offset++] = (uint8_t)packed;
+                } else {
+                    output[record_offset++] = color_red(color);
+                    output[record_offset++] = color_green(color);
+                    output[record_offset++] = color_blue(color);
+                }
+            }
+        } else {
+            bit_writer residual_writer;
+            output[record_offset] = (uint8_t)(0x80u | record.red_bits);
+            output[record_offset + 1u] = (uint8_t)((record.green_bits << 4u) | record.blue_bits);
+            output[record_offset + 2u] = record.base_red;
+            output[record_offset + 3u] = record.base_green;
+            output[record_offset + 4u] = record.base_blue;
+            residual_writer.bytes = output;
+            residual_writer.byte_count = output_size;
+            residual_writer.bit_offset = (uint64_t)(record_offset + 5u) * 8u;
+            for (color_index = 0u; color_index < image->global_color_count; ++color_index) {
+                const uint32_t color = quantize_color(
+                    image->palette_rgba[palette_base + color_index],
+                    image->palette_color_bits
+                );
+                if (!bit_write(&residual_writer, color_red(color) - record.base_red, record.red_bits) ||
+                    !bit_write(&residual_writer, color_green(color) - record.base_green, record.green_bits) ||
+                    !bit_write(&residual_writer, color_blue(color) - record.base_blue, record.blue_bits)) {
+                    return 0;
+                }
+            }
+            record_offset += record.byte_count;
+        }
+    }
+    return record_offset == section_offset + section_size;
+}
+
+static uint64_t non_palette_payload_bits(const bpal5_image *image) {
     const uint64_t selector_bits = (uint64_t)image->block_count * image->palette_index_bits;
     const uint64_t block_bits = (uint64_t)image->block_count * image->local_color_count * image->global_index_bits;
     const uint64_t pixel_bits = uses_direct_pixel_colors(image->block_size, image->local_color_count)
         ? 0u
         : (uint64_t)image->width * image->height * image->local_index_bits;
-    const uint64_t payload_bits = palette_bits + selector_bits + block_bits + pixel_bits;
+    return selector_bits + block_bits + pixel_bits;
+}
+
+static int calculate_file_size(const bpal5_image *image, size_t *total_bytes) {
+    const uint64_t palette_bits = (uint64_t)image->palette_count * image->global_color_count * image->palette_color_bits;
+    const uint64_t payload_bits = palette_bits + non_palette_payload_bits(image);
     const uint64_t bytes = BPAL5_HEADER_BYTES + (payload_bits + 7u) / 8u;
 
     if (bytes > SIZE_MAX) {
@@ -547,6 +746,128 @@ void bpal5_free(void *memory) {
     free(memory);
 }
 
+static int parse_packed_palette_section(
+    const uint8_t *bytes,
+    size_t byte_count,
+    size_t section_offset,
+    size_t section_size,
+    bpal5_image *image,
+    char *error,
+    size_t error_size
+) {
+    const size_t directory_offset = section_offset + BPAL5_PACKED_PALETTE_HEADER_BYTES;
+    const size_t records_offset = directory_offset +
+        (size_t)image->palette_count * BPAL5_PACKED_PALETTE_DIRECTORY_ENTRY_BYTES;
+    const size_t section_end = section_offset + section_size;
+    uint32_t palette_index;
+
+    if (section_size < BPAL5_PACKED_PALETTE_HEADER_BYTES +
+            (size_t)image->palette_count * BPAL5_PACKED_PALETTE_DIRECTORY_ENTRY_BYTES ||
+        section_offset > byte_count || section_size > byte_count - section_offset ||
+        read_u32_be(bytes + section_offset) != section_size) {
+        set_error(error, error_size, "Invalid packed BPAL palette section");
+        return 0;
+    }
+
+    for (palette_index = 0u; palette_index < image->palette_count; ++palette_index) {
+        const uint32_t relative_offset = read_u32_be(
+            bytes + directory_offset +
+                (size_t)palette_index * BPAL5_PACKED_PALETTE_DIRECTORY_ENTRY_BYTES
+        );
+        const uint32_t next_relative_offset = palette_index + 1u < image->palette_count
+            ? read_u32_be(
+                bytes + directory_offset +
+                    (size_t)(palette_index + 1u) * BPAL5_PACKED_PALETTE_DIRECTORY_ENTRY_BYTES
+            )
+            : (uint32_t)(section_end - records_offset);
+        const size_t record_offset = records_offset + relative_offset;
+        const size_t record_end = records_offset + next_relative_offset;
+        const size_t palette_base = (size_t)palette_index * image->global_color_count;
+        uint32_t color_index;
+
+        if ((palette_index == 0u && relative_offset != 0u) ||
+            next_relative_offset <= relative_offset || record_offset >= section_end ||
+            record_end > section_end) {
+            set_error(error, error_size, "Invalid packed BPAL palette directory");
+            return 0;
+        }
+
+        if (bytes[record_offset] == 0u) {
+            const size_t expected_size = 1u +
+                (size_t)image->global_color_count * (image->palette_color_bits / 8u);
+            size_t cursor = record_offset + 1u;
+            if (record_end - record_offset != expected_size) {
+                set_error(error, error_size, "Invalid raw BPAL palette record");
+                return 0;
+            }
+            for (color_index = 0u; color_index < image->global_color_count; ++color_index) {
+                if (image->palette_color_bits == 16u) {
+                    const uint16_t packed = (uint16_t)(((uint16_t)bytes[cursor] << 8u) | bytes[cursor + 1u]);
+                    image->palette_rgba[palette_base + color_index] = unpack_rgb565(packed);
+                    cursor += 2u;
+                } else {
+                    image->palette_rgba[palette_base + color_index] = pack_rgba(
+                        bytes[cursor], bytes[cursor + 1u], bytes[cursor + 2u]
+                    );
+                    cursor += 3u;
+                }
+            }
+        } else {
+            bit_reader residual_reader;
+            uint32_t red_bits;
+            uint32_t green_bits;
+            uint32_t blue_bits;
+            uint32_t base_red;
+            uint32_t base_green;
+            uint32_t base_blue;
+            uint64_t residual_bits;
+            size_t expected_size;
+
+            if (record_end - record_offset < 5u) {
+                set_error(error, error_size, "Truncated delta BPAL palette record");
+                return 0;
+            }
+            red_bits = bytes[record_offset] & 15u;
+            green_bits = bytes[record_offset + 1u] >> 4u;
+            blue_bits = bytes[record_offset + 1u] & 15u;
+            base_red = bytes[record_offset + 2u];
+            base_green = bytes[record_offset + 3u];
+            base_blue = bytes[record_offset + 4u];
+            residual_bits = (uint64_t)image->global_color_count *
+                (red_bits + green_bits + blue_bits);
+            expected_size = 5u + (size_t)((residual_bits + 7u) / 8u);
+            if ((bytes[record_offset] & 0x70u) != 0u || (bytes[record_offset] & 0x80u) == 0u ||
+                red_bits > 8u || green_bits > 8u || blue_bits > 8u ||
+                record_end - record_offset != expected_size) {
+                set_error(error, error_size, "Invalid delta BPAL palette record");
+                return 0;
+            }
+            residual_reader.bytes = bytes;
+            residual_reader.byte_count = record_end;
+            residual_reader.bit_offset = (uint64_t)(record_offset + 5u) * 8u;
+            for (color_index = 0u; color_index < image->global_color_count; ++color_index) {
+                uint32_t red_delta;
+                uint32_t green_delta;
+                uint32_t blue_delta;
+                if (!bit_read(&residual_reader, red_bits, &red_delta) ||
+                    !bit_read(&residual_reader, green_bits, &green_delta) ||
+                    !bit_read(&residual_reader, blue_bits, &blue_delta) ||
+                    base_red + red_delta > 255u || base_green + green_delta > 255u ||
+                    base_blue + blue_delta > 255u) {
+                    set_error(error, error_size, "Invalid BPAL palette residual");
+                    return 0;
+                }
+                image->palette_rgba[palette_base + color_index] = pack_rgba(
+                    (uint8_t)(base_red + red_delta),
+                    (uint8_t)(base_green + green_delta),
+                    (uint8_t)(base_blue + blue_delta)
+                );
+            }
+        }
+    }
+    return 1;
+}
+
 int bpal5_parse(
     const uint8_t *bytes,
     size_t byte_count,
@@ -567,6 +888,8 @@ int bpal5_parse(
     uint32_t ignored_vector_count;
     uint32_t ignored_color_space;
     uint32_t reserved;
+    int packed_palettes;
+    size_t packed_palette_size = 0u;
     size_t expected_bytes;
     size_t index;
     size_t palette_entries;
@@ -609,10 +932,11 @@ int bpal5_parse(
         set_error(error, error_size, "C decoder supports explicit BPAL v5 palettes only");
         return 0;
     }
-    if (reserved != 0u) {
+    if ((reserved & ~BPAL5_FLAG_PACKED_PALETTES) != 0u) {
         set_error(error, error_size, "Unsupported BPAL v5 flags");
         return 0;
     }
+    packed_palettes = (reserved & BPAL5_FLAG_PACKED_PALETTES) != 0u;
 
     image.width = width_minus_one + 1u;
     image.height = height_minus_one + 1u;
@@ -631,8 +955,25 @@ int bpal5_parse(
     }
     image.block_count = image.blocks_x * image.blocks_y;
 
-    if (!validate_image_metadata(&image, error, error_size) ||
-        !calculate_file_size(&image, &expected_bytes)) {
+    if (!validate_image_metadata(&image, error, error_size)) {
+        bpal5_image_free(&image);
+        return 0;
+    }
+    if (packed_palettes) {
+        const uint64_t fixed_bits = non_palette_payload_bits(&image);
+        uint64_t expected;
+        if (byte_count < BPAL5_HEADER_BYTES + BPAL5_PACKED_PALETTE_HEADER_BYTES) {
+            set_error(error, error_size, "Truncated packed BPAL palette section");
+            return 0;
+        }
+        packed_palette_size = read_u32_be(bytes + BPAL5_HEADER_BYTES);
+        expected = (uint64_t)BPAL5_HEADER_BYTES + packed_palette_size + (fixed_bits + 7u) / 8u;
+        if (expected > SIZE_MAX) {
+            set_error(error, error_size, "Packed BPAL file is too large");
+            return 0;
+        }
+        expected_bytes = (size_t)expected;
+    } else if (!calculate_file_size(&image, &expected_bytes)) {
         bpal5_image_free(&image);
         return 0;
     }
@@ -646,25 +987,40 @@ int bpal5_parse(
     }
 
     palette_entries = (size_t)image.palette_count * image.global_color_count;
-    for (index = 0; index < palette_entries; ++index) {
-        uint32_t value;
-        if (image.palette_color_bits == 16u) {
-            if (!bit_read(&reader, 16u, &value)) {
-                set_error(error, error_size, "Truncated BPAL palette");
-                bpal5_image_free(&image);
-                return 0;
+    if (packed_palettes) {
+        if (!parse_packed_palette_section(
+                bytes,
+                byte_count,
+                BPAL5_HEADER_BYTES,
+                packed_palette_size,
+                &image,
+                error,
+                error_size)) {
+            bpal5_image_free(&image);
+            return 0;
+        }
+        reader.bit_offset = (uint64_t)(BPAL5_HEADER_BYTES + packed_palette_size) * 8u;
+    } else {
+        for (index = 0; index < palette_entries; ++index) {
+            uint32_t value;
+            if (image.palette_color_bits == 16u) {
+                if (!bit_read(&reader, 16u, &value)) {
+                    set_error(error, error_size, "Truncated BPAL palette");
+                    bpal5_image_free(&image);
+                    return 0;
+                }
+                image.palette_rgba[index] = unpack_rgb565((uint16_t)value);
+            } else {
+                uint32_t red;
+                uint32_t green;
+                uint32_t blue;
+                if (!bit_read(&reader, 8u, &red) || !bit_read(&reader, 8u, &green) || !bit_read(&reader, 8u, &blue)) {
+                    set_error(error, error_size, "Truncated BPAL palette");
+                    bpal5_image_free(&image);
+                    return 0;
+                }
+                image.palette_rgba[index] = pack_rgba((uint8_t)red, (uint8_t)green, (uint8_t)blue);
             }
-            image.palette_rgba[index] = unpack_rgb565((uint16_t)value);
-        } else {
-            uint32_t red;
-            uint32_t green;
-            uint32_t blue;
-            if (!bit_read(&reader, 8u, &red) || !bit_read(&reader, 8u, &green) || !bit_read(&reader, 8u, &blue)) {
-                set_error(error, error_size, "Truncated BPAL palette");
-                bpal5_image_free(&image);
-                return 0;
-            }
-            image.palette_rgba[index] = pack_rgba((uint8_t)red, (uint8_t)green, (uint8_t)blue);
         }
     }
 
@@ -731,6 +1087,9 @@ int bpal5_serialize(
     size_t block_entries;
     size_t pixel_count;
     size_t index;
+    size_t packed_palette_size = 0u;
+    size_t raw_palette_bytes;
+    int use_packed_palettes = 0;
 
     if (bytes == NULL || byte_count == NULL || image == NULL) {
         set_error(error, error_size, "Invalid BPAL serialize arguments");
@@ -739,8 +1098,28 @@ int bpal5_serialize(
     *bytes = NULL;
     *byte_count = 0;
     if (!validate_image_metadata(image, error, error_size) ||
-        !calculate_file_size(image, &output_size) ||
         !validate_image_data(image, error, error_size)) {
+        return 0;
+    }
+    if (!checked_multiply_size(
+            (size_t)image->palette_count * image->global_color_count,
+            image->palette_color_bits / 8u,
+            &raw_palette_bytes) ||
+        !calculate_packed_palette_size(image, &packed_palette_size)) {
+        set_error(error, error_size, "BPAL palette is too large");
+        return 0;
+    }
+    use_packed_palettes = packed_palette_size < raw_palette_bytes;
+    if (use_packed_palettes) {
+        const uint64_t bytes64 = (uint64_t)BPAL5_HEADER_BYTES + packed_palette_size +
+            (non_palette_payload_bits(image) + 7u) / 8u;
+        if (bytes64 > SIZE_MAX) {
+            set_error(error, error_size, "BPAL file is too large");
+            return 0;
+        }
+        output_size = (size_t)bytes64;
+    } else if (!calculate_file_size(image, &output_size)) {
+        set_error(error, error_size, "BPAL file is too large");
         return 0;
     }
 
@@ -765,27 +1144,41 @@ int bpal5_serialize(
         !bit_write(&writer, 0u, 9u) ||
         !bit_write(&writer, 0u, 1u) ||
         !bit_write(&writer, image->palette_index_bits, 3u) ||
-        !bit_write(&writer, 0u, 4u)) {
+        !bit_write(&writer, use_packed_palettes ? BPAL5_FLAG_PACKED_PALETTES : 0u, 4u)) {
         set_error(error, error_size, "Could not write BPAL v5 header");
         free(output);
         return 0;
     }
 
     palette_entries = (size_t)image->palette_count * image->global_color_count;
-    for (index = 0; index < palette_entries; ++index) {
-        const uint32_t color = image->palette_rgba[index];
-        if (image->palette_color_bits == 16u) {
-            if (!bit_write(&writer, pack_rgb565(color), 16u)) {
-                set_error(error, error_size, "Could not write BPAL RGB565 palette");
+    if (use_packed_palettes) {
+        if (!write_packed_palette_section(
+                image,
+                output,
+                output_size,
+                BPAL5_HEADER_BYTES,
+                packed_palette_size)) {
+            set_error(error, error_size, "Could not write packed BPAL palettes");
+            free(output);
+            return 0;
+        }
+        writer.bit_offset = (uint64_t)(BPAL5_HEADER_BYTES + packed_palette_size) * 8u;
+    } else {
+        for (index = 0; index < palette_entries; ++index) {
+            const uint32_t color = image->palette_rgba[index];
+            if (image->palette_color_bits == 16u) {
+                if (!bit_write(&writer, pack_rgb565(color), 16u)) {
+                    set_error(error, error_size, "Could not write BPAL RGB565 palette");
+                    free(output);
+                    return 0;
+                }
+            } else if (!bit_write(&writer, color_red(color), 8u) ||
+                       !bit_write(&writer, color_green(color), 8u) ||
+                       !bit_write(&writer, color_blue(color), 8u)) {
+                set_error(error, error_size, "Could not write BPAL RGB888 palette");
                 free(output);
                 return 0;
             }
-        } else if (!bit_write(&writer, color_red(color), 8u) ||
-                   !bit_write(&writer, color_green(color), 8u) ||
-                   !bit_write(&writer, color_blue(color), 8u)) {
-            set_error(error, error_size, "Could not write BPAL RGB888 palette");
-            free(output);
-            return 0;
         }
     }
 
@@ -859,6 +1252,256 @@ int bpal5_serialize(
 
     *bytes = output;
     *byte_count = output_size;
+    return 1;
+}
+
+static int read_bits_at(
+    const uint8_t *bytes,
+    size_t byte_count,
+    uint64_t bit_offset,
+    uint32_t bit_count,
+    uint32_t *value
+) {
+    bit_reader reader;
+    reader.bytes = bytes;
+    reader.byte_count = byte_count;
+    reader.bit_offset = bit_offset;
+    return bit_read(&reader, bit_count, value);
+}
+
+int bpal5_sample_file_pixel_rgba(
+    const uint8_t *bytes,
+    size_t byte_count,
+    uint32_t x,
+    uint32_t y,
+    uint32_t *rgba,
+    char *error,
+    size_t error_size
+) {
+    bit_reader header;
+    uint32_t version;
+    uint32_t width_minus_one;
+    uint32_t height_minus_one;
+    uint32_t block_exponent_minus_one;
+    uint32_t local_bits_minus_one;
+    uint32_t global_bits_minus_one;
+    uint32_t color_depth_flag;
+    uint32_t palette_mode;
+    uint32_t ignored;
+    uint32_t palette_index_bits;
+    uint32_t flags;
+    uint32_t width;
+    uint32_t height;
+    uint32_t block_size;
+    uint32_t local_index_bits;
+    uint32_t global_index_bits;
+    uint32_t local_color_count;
+    uint32_t global_color_count;
+    uint32_t palette_count;
+    uint32_t blocks_x;
+    uint32_t blocks_y;
+    uint64_t block_count;
+    uint64_t selector_offset;
+    uint64_t block_palette_offset;
+    uint64_t pixel_index_offset;
+    uint64_t block_index;
+    uint32_t palette_index;
+    uint32_t local_index;
+    uint32_t global_index;
+    uint64_t color_index;
+    size_t palette_section_size = 0u;
+    int packed_palettes;
+
+    if (bytes == NULL || rgba == NULL || byte_count < BPAL5_HEADER_BYTES ||
+        memcmp(bytes, "BPAL", 4u) != 0) {
+        set_error(error, error_size, "Invalid BPAL random-access arguments");
+        return 0;
+    }
+    header.bytes = bytes;
+    header.byte_count = byte_count;
+    header.bit_offset = 32u;
+    if (!bit_read(&header, 4u, &version) || version != BPAL5_VERSION ||
+        !bit_read(&header, 24u, &width_minus_one) ||
+        !bit_read(&header, 24u, &height_minus_one) ||
+        !bit_read(&header, 3u, &block_exponent_minus_one) ||
+        !bit_read(&header, 2u, &local_bits_minus_one) ||
+        !bit_read(&header, 4u, &global_bits_minus_one) ||
+        !bit_read(&header, 1u, &color_depth_flag) ||
+        !bit_read(&header, 1u, &palette_mode) ||
+        !bit_read(&header, 9u, &ignored) ||
+        !bit_read(&header, 1u, &ignored) ||
+        !bit_read(&header, 3u, &palette_index_bits) ||
+        !bit_read(&header, 4u, &flags) || palette_mode != 0u ||
+        (flags & ~BPAL5_FLAG_PACKED_PALETTES) != 0u) {
+        set_error(error, error_size, "Unsupported BPAL random-access format");
+        return 0;
+    }
+    width = width_minus_one + 1u;
+    height = height_minus_one + 1u;
+    block_size = 1u << (block_exponent_minus_one + 1u);
+    local_index_bits = local_bits_minus_one + 1u;
+    global_index_bits = global_bits_minus_one + 1u;
+    local_color_count = 1u << local_index_bits;
+    global_color_count = 1u << global_index_bits;
+    palette_count = 1u << palette_index_bits;
+    if (x >= width || y >= height || block_size < 2u || block_size > 64u ||
+        local_color_count > 16u || global_color_count > 4096u || palette_count > 128u) {
+        set_error(error, error_size, "BPAL random-access coordinate or metadata is invalid");
+        return 0;
+    }
+    blocks_x = (width + block_size - 1u) / block_size;
+    blocks_y = (height + block_size - 1u) / block_size;
+    block_count = (uint64_t)blocks_x * blocks_y;
+    packed_palettes = (flags & BPAL5_FLAG_PACKED_PALETTES) != 0u;
+    if (packed_palettes) {
+        if (byte_count < BPAL5_HEADER_BYTES + BPAL5_PACKED_PALETTE_HEADER_BYTES) {
+            set_error(error, error_size, "Truncated packed BPAL palette section");
+            return 0;
+        }
+        palette_section_size = read_u32_be(bytes + BPAL5_HEADER_BYTES);
+        if (palette_section_size < BPAL5_PACKED_PALETTE_HEADER_BYTES +
+                (size_t)palette_count * BPAL5_PACKED_PALETTE_DIRECTORY_ENTRY_BYTES ||
+            palette_section_size > byte_count - BPAL5_HEADER_BYTES) {
+            set_error(error, error_size, "Invalid packed BPAL palette section");
+            return 0;
+        }
+        selector_offset = (uint64_t)(BPAL5_HEADER_BYTES + palette_section_size) * 8u;
+    } else {
+        selector_offset = (uint64_t)BPAL5_HEADER_BYTES * 8u +
+            (uint64_t)palette_count * global_color_count * (color_depth_flag != 0u ? 24u : 16u);
+    }
+    block_palette_offset = selector_offset + block_count * palette_index_bits;
+    pixel_index_offset = block_palette_offset + block_count * local_color_count * global_index_bits;
+    block_index = (uint64_t)(y / block_size) * blocks_x + x / block_size;
+    if (!read_bits_at(
+            bytes,
+            byte_count,
+            selector_offset + block_index * palette_index_bits,
+            palette_index_bits,
+            &palette_index) || palette_index >= palette_count) {
+        set_error(error, error_size, "Invalid BPAL random-access palette selector");
+        return 0;
+    }
+    if (local_color_count == block_size * block_size) {
+        local_index = (y % block_size) * block_size + x % block_size;
+    } else if (!read_bits_at(
+                   bytes,
+                   byte_count,
+                   pixel_index_offset + ((uint64_t)y * width + x) * local_index_bits,
+                   local_index_bits,
+                   &local_index) || local_index >= local_color_count) {
+        set_error(error, error_size, "Invalid BPAL random-access local index");
+        return 0;
+    }
+    if (!read_bits_at(
+            bytes,
+            byte_count,
+            block_palette_offset + (block_index * local_color_count + local_index) * global_index_bits,
+            global_index_bits,
+            &global_index) || global_index >= global_color_count) {
+        set_error(error, error_size, "Invalid BPAL random-access global index");
+        return 0;
+    }
+    color_index = (uint64_t)palette_index * global_color_count + global_index;
+
+    if (!packed_palettes) {
+        const uint64_t color_bit_offset = (uint64_t)BPAL5_HEADER_BYTES * 8u +
+            color_index * (color_depth_flag != 0u ? 24u : 16u);
+        uint32_t packed_color;
+        if (!read_bits_at(
+                bytes,
+                byte_count,
+                color_bit_offset,
+                color_depth_flag != 0u ? 24u : 16u,
+                &packed_color)) {
+            set_error(error, error_size, "Truncated BPAL random-access color");
+            return 0;
+        }
+        if (color_depth_flag != 0u) {
+            *rgba = pack_rgba(
+                (uint8_t)(packed_color >> 16u),
+                (uint8_t)(packed_color >> 8u),
+                (uint8_t)packed_color
+            );
+        } else {
+            *rgba = unpack_rgb565((uint16_t)packed_color);
+        }
+    } else {
+        const size_t directory_offset = BPAL5_HEADER_BYTES + BPAL5_PACKED_PALETTE_HEADER_BYTES;
+        const size_t records_offset = directory_offset +
+            (size_t)palette_count * BPAL5_PACKED_PALETTE_DIRECTORY_ENTRY_BYTES;
+        const size_t section_end = BPAL5_HEADER_BYTES + palette_section_size;
+        const uint32_t relative = read_u32_be(
+            bytes + directory_offset +
+                (size_t)palette_index * BPAL5_PACKED_PALETTE_DIRECTORY_ENTRY_BYTES
+        );
+        const uint32_t next_relative = palette_index + 1u < palette_count
+            ? read_u32_be(
+                bytes + directory_offset +
+                    (size_t)(palette_index + 1u) * BPAL5_PACKED_PALETTE_DIRECTORY_ENTRY_BYTES
+            )
+            : (uint32_t)(section_end - records_offset);
+        const size_t record_offset = records_offset + relative;
+        const size_t record_end = records_offset + next_relative;
+        if (next_relative <= relative || record_offset >= section_end || record_end > section_end) {
+            set_error(error, error_size, "Invalid BPAL random-access palette directory");
+            return 0;
+        }
+        if (bytes[record_offset] == 0u) {
+            const size_t stride = color_depth_flag != 0u ? 3u : 2u;
+            const size_t entry = record_offset + 1u + (size_t)global_index * stride;
+            if (record_end - record_offset != 1u + (size_t)global_color_count * stride ||
+                entry > record_end || stride > record_end - entry) {
+                set_error(error, error_size, "Truncated BPAL random-access palette record");
+                return 0;
+            }
+            if (color_depth_flag != 0u) {
+                *rgba = pack_rgba(bytes[entry], bytes[entry + 1u], bytes[entry + 2u]);
+            } else {
+                *rgba = unpack_rgb565((uint16_t)(((uint16_t)bytes[entry] << 8u) | bytes[entry + 1u]));
+            }
+        } else {
+            uint32_t red_delta;
+            uint32_t green_delta;
+            uint32_t blue_delta;
+            uint32_t red_bits;
+            uint32_t green_bits;
+            uint32_t blue_bits;
+            uint32_t sum_bits;
+            uint64_t residual_offset;
+            if (record_offset + 5u > section_end) {
+                set_error(error, error_size, "Truncated BPAL random-access delta palette");
+                return 0;
+            }
+            red_bits = bytes[record_offset] & 15u;
+            green_bits = bytes[record_offset + 1u] >> 4u;
+            blue_bits = bytes[record_offset + 1u] & 15u;
+            sum_bits = red_bits + green_bits + blue_bits;
+            if ((bytes[record_offset] & 0xf0u) != 0x80u ||
+                red_bits > 8u || green_bits > 8u || blue_bits > 8u ||
+                record_end - record_offset != 5u +
+                    (size_t)(((uint64_t)global_color_count * sum_bits + 7u) / 8u)) {
+                set_error(error, error_size, "Invalid BPAL random-access delta palette");
+                return 0;
+            }
+            residual_offset = (uint64_t)(record_offset + 5u) * 8u +
+                (uint64_t)global_index * sum_bits;
+            if (!read_bits_at(bytes, byte_count, residual_offset, red_bits, &red_delta) ||
+                !read_bits_at(bytes, byte_count, residual_offset + red_bits, green_bits, &green_delta) ||
+                !read_bits_at(bytes, byte_count, residual_offset + red_bits + green_bits, blue_bits, &blue_delta) ||
+                bytes[record_offset + 2u] + red_delta > 255u ||
+                bytes[record_offset + 3u] + green_delta > 255u ||
+                bytes[record_offset + 4u] + blue_delta > 255u) {
+                set_error(error, error_size, "Invalid BPAL random-access palette residual");
+                return 0;
+            }
+            *rgba = pack_rgba(
+                (uint8_t)(bytes[record_offset + 2u] + red_delta),
+                (uint8_t)(bytes[record_offset + 3u] + green_delta),
+                (uint8_t)(bytes[record_offset + 4u] + blue_delta)
+            );
+        }
+    }
     return 1;
 }
 

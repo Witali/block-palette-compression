@@ -18,6 +18,9 @@
   const BIT_FIELD_HEADER_BITS = 80;
   const HEADER_BYTES = MAGIC_BYTES + BIT_FIELD_HEADER_BITS / 8;
   const MAX_DIMENSION = 1 << 24;
+  const FLAG_PACKED_PALETTES = 1;
+  const PACKED_PALETTE_HEADER_BYTES = 4;
+  const PACKED_PALETTE_DIRECTORY_ENTRY_BYTES = 4;
 
   function encodeBlockPaletteFile(image) {
     const metadata = validateImage(image);
@@ -39,20 +42,24 @@
     writer.write(metadata.paletteMode === "vector" ? metadata.paletteVectorCount - 1 : 0, 9);
     writer.write(metadata.vectorColorSpace === "oklab" ? 1 : 0, 1);
     writer.write(metadata.paletteIndexBits, 3);
-    writer.write(0, 4);
+    writer.write(layout.packedPalettes ? FLAG_PACKED_PALETTES : 0, 4);
 
-    const storedColors = metadata.paletteMode === "vector"
-      ? metadata.paletteVectors.flatMap((vector) => [vector.start, vector.end])
-      : metadata.palette;
+    if (layout.packedPalettes) {
+      writePackedPaletteSection(writer, layout.palettePacking);
+    } else {
+      const storedColors = metadata.paletteMode === "vector"
+        ? metadata.paletteVectors.flatMap((vector) => [vector.start, vector.end])
+        : metadata.palette;
 
-    for (const color of storedColors) {
+      for (const color of storedColors) {
 
-      if (metadata.paletteColorBits === 16) {
-        writer.write(packRgb565(color), 16);
-      } else {
-        writer.write(color.r, 8);
-        writer.write(color.g, 8);
-        writer.write(color.b, 8);
+        if (metadata.paletteColorBits === 16) {
+          writer.write(packRgb565(color), 16);
+        } else {
+          writer.write(color.r, 8);
+          writer.write(color.g, 8);
+          writer.write(color.b, 8);
+        }
       }
     }
 
@@ -124,8 +131,12 @@
     const localColorCount = 2 ** localIndexBits;
     const globalColorCount = 2 ** globalIndexBits;
 
-    if (reserved !== 0) {
+    if ((reserved & ~FLAG_PACKED_PALETTES) !== 0) {
       throw new RangeError(`Unsupported BPAL v${version} flags`);
+    }
+    const packedPalettes = (reserved & FLAG_PACKED_PALETTES) !== 0;
+    if (packedPalettes && paletteMode !== "explicit") {
+      throw new RangeError("Packed BPAL palettes must use explicit mode");
     }
 
     validateMetadata({
@@ -144,6 +155,9 @@
     const blocksY = Math.ceil(height / blockSize);
     const blockCount = blocksX * blocksY;
     const directPixelColors = version === VERSION && localColorCount === blockSize * blockSize;
+    const packedPaletteBytes = packedPalettes
+      ? readUint32Be(bytes, HEADER_BYTES)
+      : 0;
     const layout = calculateLayout(
       width,
       height,
@@ -155,7 +169,8 @@
       paletteMode,
       paletteVectorCount,
       BIT_FIELD_HEADER_BITS,
-      directPixelColors
+      directPixelColors,
+      packedPaletteBytes
     );
 
     if (bytes.length !== layout.totalBytes) {
@@ -165,7 +180,16 @@
     let palette;
     let paletteVectors = [];
 
-    if (paletteMode === "vector") {
+    if (packedPalettes) {
+      palette = readPackedPaletteSection(
+        bytes,
+        reader,
+        paletteCount,
+        globalColorCount,
+        paletteColorBits,
+        packedPaletteBytes
+      );
+    } else if (paletteMode === "vector") {
       paletteVectors = new Array(paletteVectorCount);
 
       for (let index = 0; index < paletteVectorCount; index += 1) {
@@ -246,6 +270,7 @@
       pixelIndices,
       pixels,
       storage: layout,
+      packedPalettes,
     };
   }
 
@@ -254,7 +279,16 @@
       ? Math.ceil(image.width / image.blockSize) * Math.ceil(image.height / image.blockSize)
       : image.blockCount;
 
-    return calculateLayout(
+    const palettePacking = image.paletteMode !== "vector" && Array.isArray(image.palette)
+      ? createPackedPalettePlan(image)
+      : null;
+    const rawPaletteBytes = (image.paletteMode === "vector"
+      ? (image.paletteVectorCount || 0) * 2
+      : (image.paletteCount || 1) * image.globalColorCount) * image.paletteColorBits / 8;
+    const selectedPacking = palettePacking && palettePacking.byteCount < rawPaletteBytes
+      ? palettePacking
+      : null;
+    const layout = calculateLayout(
       image.width,
       image.height,
       blockCount,
@@ -265,8 +299,12 @@
       image.paletteMode || "explicit",
       image.paletteVectorCount || 0,
       BIT_FIELD_HEADER_BITS,
-      image.localColorCount === image.blockSize * image.blockSize
+      image.localColorCount === image.blockSize * image.blockSize,
+      selectedPacking ? selectedPacking.byteCount : 0
     );
+    layout.packedPalettes = Boolean(selectedPacking);
+    layout.palettePacking = selectedPacking;
+    return layout;
   }
 
   function calculateLayout(
@@ -280,7 +318,8 @@
     paletteMode,
     paletteVectorCount,
     bitFieldHeaderBits,
-    directPixelColors
+    directPixelColors,
+    packedPaletteBytes = 0
   ) {
     const localIndexBits = Math.log2(localColorCount);
     const globalIndexBits = Math.log2(globalColorCount);
@@ -288,7 +327,9 @@
     const storedColorCount = paletteMode === "vector"
       ? paletteVectorCount * 2
       : paletteCount * globalColorCount;
-    const globalPaletteBits = storedColorCount * paletteColorBits;
+    const globalPaletteBits = packedPaletteBytes > 0
+      ? packedPaletteBytes * 8
+      : storedColorCount * paletteColorBits;
     const blockPaletteSelectorBits = blockCount * paletteIndexBits;
     const blockPaletteBits = blockCount * localColorCount * globalIndexBits;
     const pixelDataBits = directPixelColors ? 0 : width * height * localIndexBits;
@@ -308,6 +349,8 @@
       payloadBytes,
       paddingBits: payloadBytes * 8 - payloadBits,
       totalBytes: MAGIC_BYTES + bitFieldHeaderBits / 8 + payloadBytes,
+      packedPalettes: packedPaletteBytes > 0,
+      packedPaletteBytes,
     };
   }
 
@@ -443,6 +486,353 @@
         pixelIndices[y * width + x] = y % blockSize * blockSize + x % blockSize;
       }
     }
+  }
+
+  function createPackedPalettePlan(image) {
+    const records = [];
+    let recordsByteCount = 0;
+
+    for (let paletteIndex = 0; paletteIndex < image.paletteCount; paletteIndex += 1) {
+      const colors = image.palette.slice(
+        paletteIndex * image.globalColorCount,
+        (paletteIndex + 1) * image.globalColorCount
+      ).map((color) => image.paletteColorBits === 16
+        ? unpackRgb565(packRgb565(color))
+        : createColor(color.r, color.g, color.b));
+      const minimum = [255, 255, 255];
+      const maximum = [0, 0, 0];
+
+      colors.forEach((color) => {
+        [color.r, color.g, color.b].forEach((value, channel) => {
+          minimum[channel] = Math.min(minimum[channel], value);
+          maximum[channel] = Math.max(maximum[channel], value);
+        });
+      });
+      const widths = minimum.map((value, channel) =>
+        bitsRequired(maximum[channel] - value)
+      );
+      const residualBits = image.globalColorCount * widths.reduce((sum, value) => sum + value, 0);
+      const deltaBytes = 5 + Math.ceil(residualBits / 8);
+      const rawBytes = 1 + image.globalColorCount * image.paletteColorBits / 8;
+      const useDelta = deltaBytes < rawBytes;
+      const byteCount = useDelta ? deltaBytes : rawBytes;
+
+      records.push({
+        offset: recordsByteCount,
+        colors,
+        minimum,
+        widths,
+        useDelta,
+        byteCount,
+      });
+      recordsByteCount += byteCount;
+    }
+
+    return {
+      byteCount: PACKED_PALETTE_HEADER_BYTES +
+        image.paletteCount * PACKED_PALETTE_DIRECTORY_ENTRY_BYTES + recordsByteCount,
+      paletteColorBits: image.paletteColorBits,
+      records,
+    };
+  }
+
+  function writePackedPaletteSection(writer, plan) {
+    writeUint32Be(writer, plan.byteCount);
+    plan.records.forEach((record) => writeUint32Be(writer, record.offset));
+
+    plan.records.forEach((record) => {
+      if (!record.useDelta) {
+        writer.write(0, 8);
+        record.colors.forEach((color) => {
+          if (plan.paletteColorBits === 16) {
+            writer.write(packRgb565(color), 16);
+          } else {
+            writer.write(color.r, 8);
+            writer.write(color.g, 8);
+            writer.write(color.b, 8);
+          }
+        });
+        return;
+      }
+
+      writer.write(0x80 | record.widths[0], 8);
+      writer.write(record.widths[1] << 4 | record.widths[2], 8);
+      writer.write(record.minimum[0], 8);
+      writer.write(record.minimum[1], 8);
+      writer.write(record.minimum[2], 8);
+      record.colors.forEach((color) => {
+        writer.write(color.r - record.minimum[0], record.widths[0]);
+        writer.write(color.g - record.minimum[1], record.widths[1]);
+        writer.write(color.b - record.minimum[2], record.widths[2]);
+      });
+      writer.bitOffset = Math.ceil(writer.bitOffset / 8) * 8;
+    });
+  }
+
+  function readPackedPaletteSection(
+    bytes,
+    reader,
+    paletteCount,
+    globalColorCount,
+    paletteColorBits,
+    sectionByteCount
+  ) {
+    const directoryOffset = HEADER_BYTES + PACKED_PALETTE_HEADER_BYTES;
+    const recordsOffset = directoryOffset + paletteCount * PACKED_PALETTE_DIRECTORY_ENTRY_BYTES;
+    const sectionEnd = HEADER_BYTES + sectionByteCount;
+    const palette = [];
+
+    if (
+      sectionByteCount < PACKED_PALETTE_HEADER_BYTES +
+        paletteCount * PACKED_PALETTE_DIRECTORY_ENTRY_BYTES ||
+      sectionEnd > bytes.length ||
+      readUint32Be(bytes, HEADER_BYTES) !== sectionByteCount
+    ) {
+      throw new RangeError("Invalid packed BPAL palette section");
+    }
+
+    for (let paletteIndex = 0; paletteIndex < paletteCount; paletteIndex += 1) {
+      const relativeOffset = readUint32Be(
+        bytes,
+        directoryOffset + paletteIndex * PACKED_PALETTE_DIRECTORY_ENTRY_BYTES
+      );
+      const nextRelativeOffset = paletteIndex + 1 < paletteCount
+        ? readUint32Be(
+          bytes,
+          directoryOffset + (paletteIndex + 1) * PACKED_PALETTE_DIRECTORY_ENTRY_BYTES
+        )
+        : sectionEnd - recordsOffset;
+      const recordOffset = recordsOffset + relativeOffset;
+      const recordEnd = recordsOffset + nextRelativeOffset;
+
+      if (
+        (paletteIndex === 0 && relativeOffset !== 0) ||
+        nextRelativeOffset <= relativeOffset ||
+        recordOffset >= sectionEnd || recordEnd > sectionEnd
+      ) {
+        throw new RangeError("Invalid packed BPAL palette directory");
+      }
+
+      if (bytes[recordOffset] === 0) {
+        const stride = paletteColorBits / 8;
+        if (recordEnd - recordOffset !== 1 + globalColorCount * stride) {
+          throw new RangeError("Invalid raw BPAL palette record");
+        }
+        const recordReader = new BitReader(bytes, (recordOffset + 1) * 8);
+        for (let index = 0; index < globalColorCount; index += 1) {
+          palette.push(readColor(recordReader, paletteColorBits));
+        }
+        continue;
+      }
+
+      if (recordEnd - recordOffset < 5) {
+        throw new RangeError("Truncated delta BPAL palette record");
+      }
+      const redBits = bytes[recordOffset] & 15;
+      const greenBits = bytes[recordOffset + 1] >> 4;
+      const blueBits = bytes[recordOffset + 1] & 15;
+      const widths = [redBits, greenBits, blueBits];
+      const minimum = [
+        bytes[recordOffset + 2],
+        bytes[recordOffset + 3],
+        bytes[recordOffset + 4],
+      ];
+      const expectedBytes = 5 + Math.ceil(
+        globalColorCount * widths.reduce((sum, value) => sum + value, 0) / 8
+      );
+      if (
+        (bytes[recordOffset] & 0xf0) !== 0x80 ||
+        widths.some((value) => value > 8) ||
+        recordEnd - recordOffset !== expectedBytes
+      ) {
+        throw new RangeError("Invalid delta BPAL palette record");
+      }
+      const residualReader = new BitReader(bytes, (recordOffset + 5) * 8);
+      for (let index = 0; index < globalColorCount; index += 1) {
+        const channels = widths.map((width, channel) =>
+          minimum[channel] + residualReader.read(width)
+        );
+        if (channels.some((value) => value > 255)) {
+          throw new RangeError("Invalid BPAL palette residual");
+        }
+        palette.push(createColor(channels[0], channels[1], channels[2]));
+      }
+    }
+    reader.bitOffset = sectionEnd * 8;
+    return palette;
+  }
+
+  function bitsRequired(value) {
+    return value === 0 ? 0 : Math.floor(Math.log2(value)) + 1;
+  }
+
+  function writeUint32Be(writer, value) {
+    writer.write(Math.floor(value / 2 ** 24) & 255, 8);
+    writer.write(Math.floor(value / 2 ** 16) & 255, 8);
+    writer.write(Math.floor(value / 2 ** 8) & 255, 8);
+    writer.write(value & 255, 8);
+  }
+
+  function readUint32Be(bytes, offset) {
+    if (offset < 0 || offset + 4 > bytes.length) {
+      throw new RangeError("Truncated BPAL 32-bit field");
+    }
+    return bytes[offset] * 2 ** 24 + bytes[offset + 1] * 2 ** 16 +
+      bytes[offset + 2] * 2 ** 8 + bytes[offset + 3];
+  }
+
+  function sampleBlockPaletteFilePixel(input, x, y) {
+    const bytes = asUint8Array(input);
+    if (bytes.length < HEADER_BYTES || MAGIC.some((value, index) => bytes[index] !== value)) {
+      throw new RangeError("Invalid or truncated BPAL file");
+    }
+    const header = new BitReader(bytes, MAGIC_BYTES * 8);
+    const version = header.read(4);
+    const width = header.read(24) + 1;
+    const height = header.read(24) + 1;
+    const blockSize = 2 ** (header.read(3) + 1);
+    const localIndexBits = header.read(2) + 1;
+    const globalIndexBits = header.read(4) + 1;
+    const paletteColorBits = header.read(1) === 1 ? 24 : 16;
+    const paletteMode = header.read(1);
+    header.read(9);
+    header.read(1);
+    const paletteIndexBits = header.read(3);
+    const flags = header.read(4);
+    const localColorCount = 2 ** localIndexBits;
+    const globalColorCount = 2 ** globalIndexBits;
+    const paletteCount = 2 ** paletteIndexBits;
+    const packedPalettes = (flags & FLAG_PACKED_PALETTES) !== 0;
+
+    if (
+      version !== VERSION || paletteMode !== 0 ||
+      (flags & ~FLAG_PACKED_PALETTES) !== 0 ||
+      !Number.isInteger(x) || !Number.isInteger(y) ||
+      x < 0 || x >= width || y < 0 || y >= height
+    ) {
+      throw new RangeError("Unsupported BPAL file or invalid pixel coordinate");
+    }
+
+    const blocksX = Math.ceil(width / blockSize);
+    const blocksY = Math.ceil(height / blockSize);
+    const blockCount = blocksX * blocksY;
+    const paletteSectionBytes = packedPalettes ? readUint32Be(bytes, HEADER_BYTES) : 0;
+    if (
+      packedPalettes &&
+      (paletteSectionBytes < PACKED_PALETTE_HEADER_BYTES +
+        paletteCount * PACKED_PALETTE_DIRECTORY_ENTRY_BYTES ||
+        HEADER_BYTES + paletteSectionBytes > bytes.length)
+    ) {
+      throw new RangeError("Invalid packed BPAL palette section");
+    }
+    const selectorBitOffset = packedPalettes
+      ? (HEADER_BYTES + paletteSectionBytes) * 8
+      : HEADER_BYTES * 8 + paletteCount * globalColorCount * paletteColorBits;
+    const blockPaletteBitOffset = selectorBitOffset + blockCount * paletteIndexBits;
+    const pixelIndexBitOffset = blockPaletteBitOffset +
+      blockCount * localColorCount * globalIndexBits;
+    const blockIndex = Math.floor(y / blockSize) * blocksX + Math.floor(x / blockSize);
+    const paletteIndex = readBitsAt(
+      bytes,
+      selectorBitOffset + blockIndex * paletteIndexBits,
+      paletteIndexBits
+    );
+    const localIndex = localColorCount === blockSize * blockSize
+      ? y % blockSize * blockSize + x % blockSize
+      : readBitsAt(
+        bytes,
+        pixelIndexBitOffset + (y * width + x) * localIndexBits,
+        localIndexBits
+      );
+    const globalIndex = readBitsAt(
+      bytes,
+      blockPaletteBitOffset +
+        (blockIndex * localColorCount + localIndex) * globalIndexBits,
+      globalIndexBits
+    );
+
+    if (paletteIndex >= paletteCount || localIndex >= localColorCount || globalIndex >= globalColorCount) {
+      throw new RangeError("Invalid BPAL random-access index");
+    }
+
+    if (!packedPalettes) {
+      const colorValue = readBitsAt(
+        bytes,
+        HEADER_BYTES * 8 +
+          (paletteIndex * globalColorCount + globalIndex) * paletteColorBits,
+        paletteColorBits
+      );
+      return paletteColorBits === 16
+        ? unpackRgb565(colorValue)
+        : createColor(colorValue >> 16, colorValue >> 8 & 255, colorValue & 255);
+    }
+
+    const directoryOffset = HEADER_BYTES + PACKED_PALETTE_HEADER_BYTES;
+    const recordsOffset = directoryOffset +
+      paletteCount * PACKED_PALETTE_DIRECTORY_ENTRY_BYTES;
+    const sectionEnd = HEADER_BYTES + paletteSectionBytes;
+    const relativeOffset = readUint32Be(
+      bytes,
+      directoryOffset + paletteIndex * PACKED_PALETTE_DIRECTORY_ENTRY_BYTES
+    );
+    const nextRelativeOffset = paletteIndex + 1 < paletteCount
+      ? readUint32Be(
+        bytes,
+        directoryOffset + (paletteIndex + 1) * PACKED_PALETTE_DIRECTORY_ENTRY_BYTES
+      )
+      : sectionEnd - recordsOffset;
+    const recordOffset = recordsOffset + relativeOffset;
+    const recordEnd = recordsOffset + nextRelativeOffset;
+    if (nextRelativeOffset <= relativeOffset || recordOffset >= sectionEnd || recordEnd > sectionEnd) {
+      throw new RangeError("Invalid BPAL random-access palette directory");
+    }
+    if (bytes[recordOffset] === 0) {
+      const stride = paletteColorBits / 8;
+      const entryOffset = recordOffset + 1 + globalIndex * stride;
+      if (
+        recordEnd - recordOffset !== 1 + globalColorCount * stride ||
+        entryOffset + stride > recordEnd
+      ) {
+        throw new RangeError("Truncated BPAL random-access palette record");
+      }
+      return paletteColorBits === 16
+        ? unpackRgb565(bytes[entryOffset] << 8 | bytes[entryOffset + 1])
+        : createColor(bytes[entryOffset], bytes[entryOffset + 1], bytes[entryOffset + 2]);
+    }
+    if (recordOffset + 5 > sectionEnd || (bytes[recordOffset] & 0xf0) !== 0x80) {
+      throw new RangeError("Invalid BPAL random-access delta palette");
+    }
+    const widths = [
+      bytes[recordOffset] & 15,
+      bytes[recordOffset + 1] >> 4,
+      bytes[recordOffset + 1] & 15,
+    ];
+    if (widths.some((value) => value > 8)) {
+      throw new RangeError("Invalid BPAL random-access residual width");
+    }
+    const expectedRecordBytes = 5 + Math.ceil(
+      globalColorCount * widths.reduce((sum, value) => sum + value, 0) / 8
+    );
+    if (recordEnd - recordOffset !== expectedRecordBytes) {
+      throw new RangeError("Invalid BPAL random-access delta palette size");
+    }
+    const residualBitOffset = (recordOffset + 5) * 8 +
+      globalIndex * widths.reduce((sum, value) => sum + value, 0);
+    let channelBitOffset = residualBitOffset;
+    const channels = widths.map((widthBits, channel) => {
+      const value = bytes[recordOffset + 2 + channel] +
+        readBitsAt(bytes, channelBitOffset, widthBits);
+      channelBitOffset += widthBits;
+      return value;
+    });
+    if (channels.some((value) => value > 255)) {
+      throw new RangeError("Invalid BPAL random-access palette residual");
+    }
+    return createColor(channels[0], channels[1], channels[2]);
+  }
+
+  function readBitsAt(bytes, bitOffset, bitCount) {
+    return new BitReader(bytes, bitOffset).read(bitCount);
   }
 
   function validatePaletteVectorCount(paletteMode, paletteVectorCount, globalColorCount) {
@@ -762,6 +1152,7 @@
     HEADER_BYTES,
     encodeBlockPaletteFile,
     decodeBlockPaletteFile,
+    sampleBlockPaletteFilePixel,
     getBlockPaletteFileLayout,
   };
 });

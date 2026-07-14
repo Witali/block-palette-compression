@@ -225,6 +225,23 @@ int main(void) {
         result = fail("scalar and SIMD decode results differ");
         goto cleanup;
     }
+    for (pixel = 0u; pixel < pixel_count; ++pixel) {
+        uint32_t sampled;
+        const uint32_t x = (uint32_t)(pixel % width);
+        const uint32_t y = (uint32_t)(pixel / width);
+        if (!bpal5_sample_file_pixel_rgba(
+                bytes,
+                byte_count,
+                x,
+                y,
+                &sampled,
+                error,
+                sizeof(error)) ||
+            memcmp(&sampled, scalar + pixel * 4u, sizeof(sampled)) != 0) {
+            result = fail("direct pixel sampling differs from full decode");
+            goto cleanup;
+        }
+    }
     {
         uint64_t decoded_error = 0u;
         for (pixel = 0; pixel < pixel_count; ++pixel) {

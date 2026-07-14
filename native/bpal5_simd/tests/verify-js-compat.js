@@ -53,6 +53,20 @@ function makeImage(width, height) {
   return rgba;
 }
 
+function makeNarrowImage(width, height) {
+  const rgba = new Uint8ClampedArray(width * height * 4);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const offset = (y * width + x) * 4;
+      rgba[offset] = 64 + (x + y) % 16;
+      rgba[offset + 1] = 96 + (x * 3 + y) % 16;
+      rgba[offset + 2] = 128 + (x + y * 5) % 16;
+      rgba[offset + 3] = 255;
+    }
+  }
+  return rgba;
+}
+
 function rgbaToRgb(rgba) {
   const rgb = Buffer.alloc(rgba.length / 4 * 3);
 
@@ -115,12 +129,17 @@ try {
   const cBpalPath = path.join(temporaryDirectory, "from-c.bpal");
   const cPresetBpalPath = path.join(temporaryDirectory, "from-c-preset.bpal");
   const cDecodedPpmPath = path.join(temporaryDirectory, "from-c.ppm");
+  const narrowSourcePpmPath = path.join(temporaryDirectory, "narrow-source.ppm");
+  const cPackedBpalPath = path.join(temporaryDirectory, "from-c-packed.bpal");
+  const cPackedDecodedPpmPath = path.join(temporaryDirectory, "from-c-packed.ppm");
   const cRgb565BpalPath = path.join(temporaryDirectory, "from-c-rgb565-128.bpal");
   const cRgb565DecodedPpmPath = path.join(temporaryDirectory, "from-c-rgb565-128.ppm");
   const jsBpalPath = path.join(temporaryDirectory, "from-js.bpal");
   const jsDecodedPpmPath = path.join(temporaryDirectory, "from-js.ppm");
 
   writePpm(sourcePpmPath, width, height, rgba);
+  const narrowRgba = makeNarrowImage(width, height);
+  writePpm(narrowSourcePpmPath, width, height, narrowRgba);
   run(encoderPath, [
     sourcePpmPath,
     cBpalPath,
@@ -161,6 +180,32 @@ try {
   assertDecodedRgb(readPpm(cDecodedPpmPath), cDecodedByJs);
 
   run(encoderPath, [
+    narrowSourcePpmPath,
+    cPackedBpalPath,
+    "--block", "8",
+    "--local", "4",
+    "--global", "64",
+    "--palettes", "32",
+    "--iterations", "2",
+    "--refine", "1",
+  ]);
+  const cPackedBytes = fs.readFileSync(cPackedBpalPath);
+  const cPackedDecodedByJs = format.decodeBlockPaletteFile(cPackedBytes);
+  assert.equal(cPackedDecodedByJs.packedPalettes, true);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const sampled = format.sampleBlockPaletteFilePixel(cPackedBytes, x, y);
+      const offset = (y * width + x) * 4;
+      assert.deepEqual(
+        [sampled.r, sampled.g, sampled.b],
+        Array.from(cPackedDecodedByJs.pixels.slice(offset, offset + 3))
+      );
+    }
+  }
+  run(decoderPath, [cPackedBpalPath, cPackedDecodedPpmPath]);
+  assertDecodedRgb(readPpm(cPackedDecodedPpmPath), cPackedDecodedByJs);
+
+  run(encoderPath, [
     sourcePpmPath,
     cRgb565BpalPath,
     "--block", "4",
@@ -178,11 +223,11 @@ try {
   run(decoderPath, [cRgb565BpalPath, cRgb565DecodedPpmPath]);
   assertDecodedRgb(readPpm(cRgb565DecodedPpmPath), cRgb565DecodedByJs);
 
-  const jsCompressed = codec.compressImage(rgba, width, height, {
+  const jsCompressed = codec.compressImage(narrowRgba, width, height, {
     blockSize: 4,
     localColorCount: 4,
-    globalColorCount: 8,
-    paletteCount: 4,
+    globalColorCount: 64,
+    paletteCount: 32,
     paletteColorBits: 24,
     paletteMode: "explicit",
     colorSpace: "rgb",
@@ -195,6 +240,7 @@ try {
   run(decoderPath, [jsBpalPath, jsDecodedPpmPath]);
 
   const jsDecodedByJs = format.decodeBlockPaletteFile(fs.readFileSync(jsBpalPath));
+  assert.equal(jsDecodedByJs.packedPalettes, true);
   assertDecodedRgb(readPpm(jsDecodedPpmPath), jsDecodedByJs);
   process.stdout.write("C/JavaScript BPAL v5 compatibility passed\n");
 } finally {
