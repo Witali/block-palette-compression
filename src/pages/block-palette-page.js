@@ -114,12 +114,14 @@ const PROGRESS_STAGE_KEYS = {
   "searching-settings": "block.progressStageSearching",
 };
 const QUALITY_PRESETS = Object.freeze({
+  "1.5": { blockSize: 4, localColorCount: 2, globalColorCount: 8, paletteCount: 2 },
   "2": { blockSize: 4, localColorCount: 2, globalColorCount: 128, paletteCount: 2 },
   "2.5": { blockSize: 8, localColorCount: 4, globalColorCount: 64, paletteCount: 32 },
   "3": { blockSize: 8, localColorCount: 4, globalColorCount: 256, paletteCount: 64 },
   "4": { blockSize: 8, localColorCount: 8, globalColorCount: 128, paletteCount: 16 },
   "5": { blockSize: 16, localColorCount: 16, globalColorCount: 256, paletteCount: 64 },
   "6": { blockSize: 8, localColorCount: 16, globalColorCount: 128, paletteCount: 32 },
+  "8": { blockSize: 4, localColorCount: 8, globalColorCount: 256, paletteCount: 64 },
 });
 
 controls.addEventListener("submit", (event) => {
