@@ -1,0 +1,191 @@
+{
+  "schemaVersion": 1,
+  "downloadRoot": ".benchmark-corpus/downloads",
+  "datasets": [
+    {
+      "id": "dtd-r1.0.1",
+      "name": "Describable Textures Dataset r1.0.1",
+      "homepage": "https://www.robots.ox.ac.uk/~vgg/data/dtd/",
+      "terms": "Research purposes; see the dataset homepage.",
+      "purpose": "Natural texture diversity across 47 perceptual classes.",
+      "archives": [
+        {
+          "file": "dtd-r1.0.1.tar.gz",
+          "url": "https://www.robots.ox.ac.uk/~vgg/data/dtd/download/dtd-r1.0.1.tar.gz",
+          "sha256": "e42855a52a4950a3b59612834602aa253914755c95b0cff9ead6d07395f8e205",
+          "sizeBytes": 625239812,
+          "format": "tar.gz",
+          "extractTo": ".benchmark-corpus/dtd-r1.0.1",
+          "expected": {
+            "pattern": "*.jpg",
+            "count": 5640
+          }
+        }
+      ]
+    },
+    {
+      "id": "kylberg-v1-small",
+      "name": "Kylberg Texture Dataset v1.0, 6-class subset",
+      "homepage": "https://user.it.uu.se/~gusky180/texture/",
+      "terms": "Copyrighted research dataset; cite the dataset report.",
+      "purpose": "Controlled lossless grayscale textures for repeated-pattern tests.",
+      "archives": [
+        {
+          "file": "kylberg-v1-small.zip",
+          "url": "https://user.it.uu.se/~gusky180/texture/data/subsetOfKylbergTextureDataset-6classes-40samples.zip",
+          "sha256": "3dbab1b49cde3b8ae4be4c9eda10ab1c6e9d364ba7fd05b69ca1b487a7a09af0",
+          "sizeBytes": 52449708,
+          "format": "zip",
+          "extractTo": ".benchmark-corpus/kylberg-v1-small",
+          "expected": {
+            "pattern": "*.png",
+            "count": 240
+          }
+        }
+      ]
+    },
+    {
+      "id": "ambientcg-pbr-2k-png",
+      "name": "ambientCG PBR 2K PNG pinned selection",
+      "homepage": "https://ambientcg.com/",
+      "license": "https://docs.ambientcg.com/license/",
+      "terms": "CC0 1.0 Universal",
+      "purpose": "Production-style PBR color, scalar, normal, opacity, and metalness maps.",
+      "selectionPolicy": "One established material from each of 12 distinct surface classes, downloaded as lossless 2K PNG packs.",
+      "archives": [
+        {
+          "materialId": "Bricks060",
+          "materialClass": "bricks",
+          "file": "Bricks060_2K-PNG.zip",
+          "url": "https://ambientcg.com/get?file=Bricks060_2K-PNG.zip",
+          "sha256": "75495e0e0990823cf0cb051ea237f8b5a09aa9a6f01d1c1f0916e23ed1590226",
+          "sizeBytes": 63153758,
+          "format": "zip",
+          "extractTo": ".benchmark-corpus/ambientcg-2k-png/Bricks060",
+          "expected": { "pattern": "*.png", "count": 7 }
+        },
+        {
+          "materialId": "Wood051",
+          "materialClass": "wood",
+          "file": "Wood051_2K-PNG.zip",
+          "url": "https://ambientcg.com/get?file=Wood051_2K-PNG.zip",
+          "sha256": "70e5ff0263341b051d0e386cb1dc0ad62ed3b52a410e91b9eaf70fd684387eb3",
+          "sizeBytes": 56889576,
+          "format": "zip",
+          "extractTo": ".benchmark-corpus/ambientcg-2k-png/Wood051",
+          "expected": { "pattern": "*.png", "count": 6 }
+        },
+        {
+          "materialId": "Metal032",
+          "materialClass": "metal",
+          "file": "Metal032_2K-PNG.zip",
+          "url": "https://ambientcg.com/get?file=Metal032_2K-PNG.zip",
+          "sha256": "5505e02e68cebc0d496f3c1d8c3d67ec8b9f6f9cacb7c905897f52c7311359a2",
+          "sizeBytes": 51323783,
+          "format": "zip",
+          "extractTo": ".benchmark-corpus/ambientcg-2k-png/Metal032",
+          "expected": { "pattern": "*.png", "count": 7 }
+        },
+        {
+          "materialId": "Fabric019",
+          "materialClass": "fabric-with-opacity",
+          "file": "Fabric019_2K-PNG.zip",
+          "url": "https://ambientcg.com/get?file=Fabric019_2K-PNG.zip",
+          "sha256": "34dbe9bdee449978dfefad42fd041d494a6ade930110d61fc68addb6cb90d317",
+          "sizeBytes": 56753613,
+          "format": "zip",
+          "extractTo": ".benchmark-corpus/ambientcg-2k-png/Fabric019",
+          "expected": { "pattern": "*.png", "count": 7 }
+        },
+        {
+          "materialId": "Rock035",
+          "materialClass": "rock",
+          "file": "Rock035_2K-PNG.zip",
+          "url": "https://ambientcg.com/get?file=Rock035_2K-PNG.zip",
+          "sha256": "bd649a13a7571ab69a465f261dd91dbaad66087e69a5b40149016d91c979ad62",
+          "sizeBytes": 67677382,
+          "format": "zip",
+          "extractTo": ".benchmark-corpus/ambientcg-2k-png/Rock035",
+          "expected": { "pattern": "*.png", "count": 7 }
+        },
+        {
+          "materialId": "Ground037",
+          "materialClass": "ground",
+          "file": "Ground037_2K-PNG.zip",
+          "url": "https://ambientcg.com/get?file=Ground037_2K-PNG.zip",
+          "sha256": "d36d714948dcb1eb075785f207132b333d8b4a508f539e20d981d53946c4dfed",
+          "sizeBytes": 72439572,
+          "format": "zip",
+          "extractTo": ".benchmark-corpus/ambientcg-2k-png/Ground037",
+          "expected": { "pattern": "*.png", "count": 7 }
+        },
+        {
+          "materialId": "Concrete034",
+          "materialClass": "concrete",
+          "file": "Concrete034_2K-PNG.zip",
+          "url": "https://ambientcg.com/get?file=Concrete034_2K-PNG.zip",
+          "sha256": "7c722c87a3b0b62d4a09a9457443ce98b420c5267728d917bf8cec41b7976254",
+          "sizeBytes": 28322068,
+          "format": "zip",
+          "extractTo": ".benchmark-corpus/ambientcg-2k-png/Concrete034",
+          "expected": { "pattern": "*.png", "count": 6 }
+        },
+        {
+          "materialId": "Tiles107",
+          "materialClass": "tiles",
+          "file": "Tiles107_2K-PNG.zip",
+          "url": "https://ambientcg.com/get?file=Tiles107_2K-PNG.zip",
+          "sha256": "b11357fb73e3f5b67e9bbb989f9ced356ac7d77703695a38404901880486699d",
+          "sizeBytes": 26905547,
+          "format": "zip",
+          "extractTo": ".benchmark-corpus/ambientcg-2k-png/Tiles107",
+          "expected": { "pattern": "*.png", "count": 7 }
+        },
+        {
+          "materialId": "Leather037",
+          "materialClass": "leather",
+          "file": "Leather037_2K-PNG.zip",
+          "url": "https://ambientcg.com/get?file=Leather037_2K-PNG.zip",
+          "sha256": "055968fef7b4f1b401f30e9fa952e1b0ade2dfb27c82f297cef8e75eb67e3dc7",
+          "sizeBytes": 57088064,
+          "format": "zip",
+          "extractTo": ".benchmark-corpus/ambientcg-2k-png/Leather037",
+          "expected": { "pattern": "*.png", "count": 6 }
+        },
+        {
+          "materialId": "Grass001",
+          "materialClass": "grass",
+          "file": "Grass001_2K-PNG.zip",
+          "url": "https://ambientcg.com/get?file=Grass001_2K-PNG.zip",
+          "sha256": "d6fd8aad96d39e582f234b4a3d668f5dc9f660fa0cf7b7e7e62f8cfdd623418f",
+          "sizeBytes": 72206077,
+          "format": "zip",
+          "extractTo": ".benchmark-corpus/ambientcg-2k-png/Grass001",
+          "expected": { "pattern": "*.png", "count": 7 }
+        },
+        {
+          "materialId": "PaintedPlaster017",
+          "materialClass": "painted-plaster",
+          "file": "PaintedPlaster017_2K-PNG.zip",
+          "url": "https://ambientcg.com/get?file=PaintedPlaster017_2K-PNG.zip",
+          "sha256": "37273fc6baf6c3ea81626fa1b0d3b5444cfed7e1dbd8dafe6aeaaed037c3d650",
+          "sizeBytes": 32656875,
+          "format": "zip",
+          "extractTo": ".benchmark-corpus/ambientcg-2k-png/PaintedPlaster017",
+          "expected": { "pattern": "*.png", "count": 6 }
+        },
+        {
+          "materialId": "Marble012",
+          "materialClass": "marble",
+          "file": "Marble012_2K-PNG.zip",
+          "url": "https://ambientcg.com/get?file=Marble012_2K-PNG.zip",
+          "sha256": "969c795f2fcb0ce2dd793a3bac31f2f07f70911bb6692cbcda794efebb88678b",
+          "sizeBytes": 49387235,
+          "format": "zip",
+          "extractTo": ".benchmark-corpus/ambientcg-2k-png/Marble012",
+          "expected": { "pattern": "*.png", "count": 6 }
+        }
+      ]
+    }
+  ]
+}

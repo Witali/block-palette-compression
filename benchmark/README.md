@@ -103,6 +103,28 @@ The 129 MB archive and extracted images are stored only under
 official URL, license URL, checksum, deterministic selection rule, and result
 tables, but not the dataset itself.
 
+Download the pinned texture-specific datasets separately:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools/setup-texture-datasets.ps1
+```
+
+The texture suite is defined in `benchmark/texture-datasets.json` and contains:
+
+- all 5,640 images from Describable Textures Dataset r1.0.1;
+- the 240-image, six-class lossless subset of Kylberg Texture Dataset v1.0;
+- 12 ambientCG materials as lossless 2K PNG PBR packs, spanning bricks, wood,
+  metal, fabric, rock, ground, concrete, tiles, leather, grass, painted plaster,
+  and marble.
+
+Every archive has a pinned byte size and SHA-256 digest. The setup script is
+idempotent, verifies existing downloads before using them, checks the extracted
+image count, and leaves all dataset files under the Git-ignored
+`.benchmark-corpus/` directory. DTD is supplied for research purposes, Kylberg
+requires its dataset report to be cited, and the selected ambientCG assets are
+CC0 1.0 Universal. Review the source links in the manifest before distributing
+any dataset files.
+
 ## Run
 
 Build the native C/SIMD codec first:
