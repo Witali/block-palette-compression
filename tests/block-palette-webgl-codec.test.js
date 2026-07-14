@@ -29,7 +29,7 @@ test("falls back to the CPU codec when WebGL2 is unavailable", () => {
   assert.equal(result.pixels.length, source.length);
 });
 
-test("uses a truthful CPU fallback for multi-palette compression", () => {
+test("attempts WebGL2 acceleration for multi-palette compression before falling back", () => {
   const source = new Uint8ClampedArray(4 * 2 * 4);
 
   for (let pixel = 0; pixel < 8; pixel += 1) {
@@ -51,7 +51,8 @@ test("uses a truthful CPU fallback for multi-palette compression", () => {
   assert.equal(result.algorithm, "cpu-fallback");
   assert.equal(result.paletteCount, 2);
   assert.deepEqual(result.acceleratedStages, []);
-  assert.match(result.fallbackReason, /one shared palette/);
+  assert.match(result.fallbackReason, /OffscreenCanvas/);
+  assert.doesNotMatch(result.fallbackReason, /one shared palette/);
 });
 
 function test(name, callback) {

@@ -302,7 +302,7 @@ function processImage() {
   const sourceCopy = new Uint8ClampedArray(state.sourceImageData.data);
   const processingId = ++state.processingId;
   const workerUrl = settings.algorithm === "webgl"
-    ? "./src/palette/block-palette-webgl-worker.js?v=iterative-refinement-1"
+    ? "./src/palette/block-palette-webgl-worker.js?v=multi-palette-gpu-2"
     : "./src/palette/block-palette-worker.js?v=iterative-refinement-1";
   const worker = new Worker(workerUrl);
 

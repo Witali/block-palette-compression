@@ -65,11 +65,44 @@
 
     uniform sampler2D u_source;
     uniform sampler2D u_palette;
-    uniform int u_paletteSize;
+    uniform sampler2D u_blockSelectors;
+    uniform sampler2D u_activePaletteCounts;
+    uniform int u_blockSize;
+    uniform int u_blocksX;
+    uniform int u_globalColorCount;
+    uniform int u_paletteWidth;
+    uniform int u_blockSelectorWidth;
+    uniform int u_activePaletteCountWidth;
     uniform int u_colorSpace;
     out vec4 outputColor;
 
     ${COLOR_FUNCTIONS}
+
+    int readBlockSelector(int linearIndex) {
+      ivec2 coordinate = ivec2(
+        linearIndex % u_blockSelectorWidth,
+        linearIndex / u_blockSelectorWidth
+      );
+      ivec4 encoded = ivec4(round(texelFetch(u_blockSelectors, coordinate, 0) * 255.0));
+      return encoded.r | (encoded.g << 8);
+    }
+
+    int readActivePaletteCount(int linearIndex) {
+      ivec2 coordinate = ivec2(
+        linearIndex % u_activePaletteCountWidth,
+        linearIndex / u_activePaletteCountWidth
+      );
+      ivec4 encoded = ivec4(round(texelFetch(u_activePaletteCounts, coordinate, 0) * 255.0));
+      return encoded.r | (encoded.g << 8);
+    }
+
+    vec3 readPaletteColor(int linearIndex) {
+      ivec2 coordinate = ivec2(
+        linearIndex % u_paletteWidth,
+        linearIndex / u_paletteWidth
+      );
+      return texelFetch(u_palette, coordinate, 0).rgb;
+    }
 
     void main() {
       ivec2 coordinate = ivec2(gl_FragCoord.xy);
@@ -81,16 +114,20 @@
       }
 
       vec3 sourcePoint = colorPoint(sourceColor.rgb, u_colorSpace);
+      int blockIndex = (coordinate.y / u_blockSize) * u_blocksX + coordinate.x / u_blockSize;
+      int paletteIndex = readBlockSelector(blockIndex);
+      int paletteSize = readActivePaletteCount(paletteIndex);
+      int paletteBase = paletteIndex * u_globalColorCount;
       int bestIndex = 0;
-      vec3 firstColor = texelFetch(u_palette, ivec2(0, 0), 0).rgb;
+      vec3 firstColor = readPaletteColor(paletteBase);
       float bestDistance = colorDistance(sourcePoint, colorPoint(firstColor, u_colorSpace));
 
       for (int index = 1; index < 4096; index += 1) {
-        if (index >= u_paletteSize) {
+        if (index >= paletteSize) {
           break;
         }
 
-        vec3 paletteColor = texelFetch(u_palette, ivec2(index, 0), 0).rgb;
+        vec3 paletteColor = readPaletteColor(paletteBase + index);
         float distance = colorDistance(sourcePoint, colorPoint(paletteColor, u_colorSpace));
 
         if (distance < bestDistance) {
@@ -115,11 +152,14 @@
     uniform sampler2D u_source;
     uniform sampler2D u_palette;
     uniform sampler2D u_blockPalettes;
-    uniform int u_width;
+    uniform sampler2D u_blockSelectors;
     uniform int u_blockSize;
     uniform int u_blocksX;
     uniform int u_localColorCount;
+    uniform int u_globalColorCount;
+    uniform int u_paletteWidth;
     uniform int u_blockPaletteWidth;
+    uniform int u_blockSelectorWidth;
     uniform int u_colorSpace;
     uniform int u_dithering;
     layout(location = 0) out vec4 outputPixel;
@@ -143,6 +183,23 @@
       );
       ivec4 encoded = ivec4(round(texelFetch(u_blockPalettes, coordinate, 0) * 255.0));
       return encoded.r | (encoded.g << 8);
+    }
+
+    int readPaletteIndex(int blockIndex) {
+      ivec2 coordinate = ivec2(
+        blockIndex % u_blockSelectorWidth,
+        blockIndex / u_blockSelectorWidth
+      );
+      ivec4 encoded = ivec4(round(texelFetch(u_blockSelectors, coordinate, 0) * 255.0));
+      return encoded.r | (encoded.g << 8);
+    }
+
+    vec3 readPaletteColor(int linearIndex) {
+      ivec2 coordinate = ivec2(
+        linearIndex % u_paletteWidth,
+        linearIndex / u_paletteWidth
+      );
+      return texelFetch(u_palette, coordinate, 0).rgb;
     }
 
     float patternThreshold(ivec2 coordinate) {
@@ -178,9 +235,10 @@
       int blockX = coordinate.x / u_blockSize;
       int blockY = coordinate.y / u_blockSize;
       int blockIndex = blockY * u_blocksX + blockX;
+      int paletteBase = readPaletteIndex(blockIndex) * u_globalColorCount;
       int bestLocalIndex = 0;
       int bestGlobalIndex = readGlobalIndex(blockIndex, 0);
-      vec3 bestColor = texelFetch(u_palette, ivec2(bestGlobalIndex, 0), 0).rgb;
+      vec3 bestColor = readPaletteColor(paletteBase + bestGlobalIndex);
       float bestDistance = colorDistance(sourcePoint, colorPoint(bestColor, u_colorSpace));
 
       for (int localIndex = 1; localIndex < 16; localIndex += 1) {
@@ -189,7 +247,7 @@
         }
 
         int globalIndex = readGlobalIndex(blockIndex, localIndex);
-        vec3 paletteColor = texelFetch(u_palette, ivec2(globalIndex, 0), 0).rgb;
+        vec3 paletteColor = readPaletteColor(paletteBase + globalIndex);
         float distance = colorDistance(sourcePoint, colorPoint(paletteColor, u_colorSpace));
 
         if (distance < bestDistance) {
@@ -209,22 +267,6 @@
     const options = settings || {};
     let accelerator = null;
 
-    if (Number(options.paletteCount || 1) > 1) {
-      const reason = "WebGL2 compression acceleration currently supports one shared palette";
-
-      if (options.webglFallback === false) {
-        throw new RangeError(reason);
-      }
-
-      const result = blockPaletteCodec.compressImage(sourcePixels, width, height, options);
-
-      result.algorithm = "cpu-fallback";
-      result.acceleratedStages = [];
-      result.fallbackReason = reason;
-
-      return result;
-    }
-
     try {
       accelerator = createWebGLAccelerator(width, height);
       const result = blockPaletteCodec.compressImage(sourcePixels, width, height, {
@@ -233,11 +275,25 @@
       });
 
       const usesCpuErrorDiffusion = options.dithering === "floyd-steinberg";
+      const refinementPasses = options.refinementPasses === undefined
+        ? 4
+        : Number(options.refinementPasses);
+      const acceleratedStages = ["global-assignments"];
+
+      if (!usesCpuErrorDiffusion) {
+        acceleratedStages.push("block-encoding");
+      }
+
+      if (refinementPasses > 0) {
+        acceleratedStages.push("refinement-assignments");
+
+        if (!usesCpuErrorDiffusion) {
+          acceleratedStages.push("refinement-encoding");
+        }
+      }
 
       result.algorithm = usesCpuErrorDiffusion ? "webgl-hybrid" : "webgl";
-      result.acceleratedStages = usesCpuErrorDiffusion
-        ? ["global-assignments"]
-        : ["global-assignments", "block-encoding"];
+      result.acceleratedStages = acceleratedStages;
 
       return result;
     } catch (error) {
@@ -294,14 +350,94 @@
       throw new RangeError(`Image exceeds WebGL2 texture limit ${maximumTextureSize}`);
     }
 
+    const programs = {};
+    const textureCache = {};
+
+    function getProgram(name, fragmentSource) {
+      if (!programs[name]) {
+        programs[name] = createProgram(gl, fragmentSource);
+      }
+
+      return programs[name];
+    }
+
+    function getCachedTexture(name, key, create) {
+      const cached = textureCache[name];
+
+      if (cached && cached.key === key) {
+        return cached.value;
+      }
+
+      if (cached) {
+        gl.deleteTexture(cached.value.texture || cached.value);
+      }
+
+      const value = create();
+
+      textureCache[name] = { key, value };
+      return value;
+    }
+
     return {
       mapGlobalAssignments(args) {
-        return mapGlobalAssignments(gl, maximumTextureSize, args);
+        return mapGlobalAssignments(gl, args, {
+          program: getProgram("globalAssignments", GLOBAL_ASSIGNMENT_SHADER),
+          sourceTexture: getCachedTexture(
+            "source",
+            args.sourcePixels,
+            () => createTexture(gl, args.width, args.height, args.sourcePixels)
+          ),
+          palette: getCachedTexture(
+            "palette",
+            args.palette,
+            () => createPaletteTexture(gl, maximumTextureSize, args.palette)
+          ),
+          blockSelectors: getCachedTexture(
+            "blockSelectors",
+            args.blockPaletteSelectors,
+            () => createIndexTexture(gl, maximumTextureSize, args.blockPaletteSelectors)
+          ),
+          activePaletteCounts: getCachedTexture(
+            "activePaletteCounts",
+            args.activePaletteCounts,
+            () => createIndexTexture(gl, maximumTextureSize, args.activePaletteCounts)
+          ),
+        });
       },
       encodeBlocks(args) {
-        return encodeBlocks(gl, maximumTextureSize, args);
+        return encodeBlocks(gl, args, {
+          program: getProgram("blockEncoding", BLOCK_ENCODING_SHADER),
+          sourceTexture: getCachedTexture(
+            "source",
+            args.sourcePixels,
+            () => createTexture(gl, args.width, args.height, args.sourcePixels)
+          ),
+          palette: getCachedTexture(
+            "palette",
+            args.palette,
+            () => createPaletteTexture(gl, maximumTextureSize, args.palette)
+          ),
+          blockPalette: getCachedTexture(
+            "blockPalette",
+            args.blockPaletteIndices,
+            () => createIndexTexture(gl, maximumTextureSize, args.blockPaletteIndices)
+          ),
+          blockSelectors: getCachedTexture(
+            "blockSelectors",
+            args.blockPaletteSelectors,
+            () => createIndexTexture(gl, maximumTextureSize, args.blockPaletteSelectors)
+          ),
+        });
       },
       dispose() {
+        for (const cached of Object.values(textureCache)) {
+          gl.deleteTexture(cached.value.texture || cached.value);
+        }
+
+        for (const program of Object.values(programs)) {
+          gl.deleteProgram(program);
+        }
+
         const loseContext = gl.getExtension("WEBGL_lose_context");
 
         if (loseContext) {
@@ -311,16 +447,23 @@
     };
   }
 
-  function mapGlobalAssignments(gl, maximumTextureSize, args) {
-    const { sourcePixels, width, height, palette, colorSpace } = args;
+  function mapGlobalAssignments(gl, args, resources) {
+    const {
+      width,
+      height,
+      blockSize,
+      blocksX,
+      globalColorCount,
+      colorSpace,
+    } = args;
 
-    if (palette.length > maximumTextureSize) {
-      throw new RangeError("Global palette exceeds WebGL2 texture width");
-    }
-
-    const program = createProgram(gl, GLOBAL_ASSIGNMENT_SHADER);
-    const sourceTexture = createTexture(gl, width, height, sourcePixels);
-    const paletteTexture = createPaletteTexture(gl, palette);
+    const {
+      program,
+      sourceTexture,
+      palette: packedPalette,
+      blockSelectors: packedBlockSelectors,
+      activePaletteCounts: packedActivePaletteCounts,
+    } = resources;
     const outputTexture = createRenderTexture(gl, width, height);
     const framebuffer = createFramebuffer(gl, [outputTexture]);
     const output = new Uint8Array(width * height * 4);
@@ -329,8 +472,21 @@
       gl.viewport(0, 0, width, height);
       gl.useProgram(program);
       bindTexture(gl, program, "u_source", sourceTexture, 0);
-      bindTexture(gl, program, "u_palette", paletteTexture, 1);
-      gl.uniform1i(gl.getUniformLocation(program, "u_paletteSize"), palette.length);
+      bindTexture(gl, program, "u_palette", packedPalette.texture, 1);
+      bindTexture(gl, program, "u_blockSelectors", packedBlockSelectors.texture, 2);
+      bindTexture(gl, program, "u_activePaletteCounts", packedActivePaletteCounts.texture, 3);
+      gl.uniform1i(gl.getUniformLocation(program, "u_blockSize"), blockSize);
+      gl.uniform1i(gl.getUniformLocation(program, "u_blocksX"), blocksX);
+      gl.uniform1i(gl.getUniformLocation(program, "u_globalColorCount"), globalColorCount);
+      gl.uniform1i(gl.getUniformLocation(program, "u_paletteWidth"), packedPalette.width);
+      gl.uniform1i(
+        gl.getUniformLocation(program, "u_blockSelectorWidth"),
+        packedBlockSelectors.width
+      );
+      gl.uniform1i(
+        gl.getUniformLocation(program, "u_activePaletteCountWidth"),
+        packedActivePaletteCounts.width
+      );
       gl.uniform1i(gl.getUniformLocation(program, "u_colorSpace"), colorSpace === "oklab" ? 1 : 0);
       gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
       gl.drawBuffers([gl.COLOR_ATTACHMENT0]);
@@ -348,33 +504,33 @@
 
       return assignments;
     } finally {
-      deleteResources(gl, [sourceTexture, paletteTexture, outputTexture], framebuffer, program);
+      deleteResources(
+        gl,
+        [outputTexture],
+        framebuffer,
+        null
+      );
     }
   }
 
-  function encodeBlocks(gl, maximumTextureSize, args) {
+  function encodeBlocks(gl, args, resources) {
     const {
-      sourcePixels,
       width,
       height,
       blockSize,
       blocksX,
       localColorCount,
-      blockPaletteIndices,
-      palette,
+      globalColorCount,
       colorSpace,
       dithering,
     } = args;
-    const program = createProgram(gl, BLOCK_ENCODING_SHADER);
-    const sourceTexture = createTexture(gl, width, height, sourcePixels);
-    const paletteTexture = createPaletteTexture(gl, palette);
-    const packedBlockPalette = packIndexTexture(blockPaletteIndices, maximumTextureSize);
-    const blockPaletteTexture = createTexture(
-      gl,
-      packedBlockPalette.width,
-      packedBlockPalette.height,
-      packedBlockPalette.data
-    );
+    const {
+      program,
+      sourceTexture,
+      palette: packedPalette,
+      blockPalette: packedBlockPalette,
+      blockSelectors: packedBlockSelectors,
+    } = resources;
     const pixelTexture = createRenderTexture(gl, width, height);
     const indexTexture = createRenderTexture(gl, width, height);
     const framebuffer = createFramebuffer(gl, [pixelTexture, indexTexture]);
@@ -385,13 +541,19 @@
       gl.viewport(0, 0, width, height);
       gl.useProgram(program);
       bindTexture(gl, program, "u_source", sourceTexture, 0);
-      bindTexture(gl, program, "u_palette", paletteTexture, 1);
-      bindTexture(gl, program, "u_blockPalettes", blockPaletteTexture, 2);
-      gl.uniform1i(gl.getUniformLocation(program, "u_width"), width);
+      bindTexture(gl, program, "u_palette", packedPalette.texture, 1);
+      bindTexture(gl, program, "u_blockPalettes", packedBlockPalette.texture, 2);
+      bindTexture(gl, program, "u_blockSelectors", packedBlockSelectors.texture, 3);
       gl.uniform1i(gl.getUniformLocation(program, "u_blockSize"), blockSize);
       gl.uniform1i(gl.getUniformLocation(program, "u_blocksX"), blocksX);
       gl.uniform1i(gl.getUniformLocation(program, "u_localColorCount"), localColorCount);
+      gl.uniform1i(gl.getUniformLocation(program, "u_globalColorCount"), globalColorCount);
+      gl.uniform1i(gl.getUniformLocation(program, "u_paletteWidth"), packedPalette.width);
       gl.uniform1i(gl.getUniformLocation(program, "u_blockPaletteWidth"), packedBlockPalette.width);
+      gl.uniform1i(
+        gl.getUniformLocation(program, "u_blockSelectorWidth"),
+        packedBlockSelectors.width
+      );
       gl.uniform1i(gl.getUniformLocation(program, "u_colorSpace"), colorSpace === "oklab" ? 1 : 0);
       gl.uniform1i(gl.getUniformLocation(program, "u_dithering"), getDitheringCode(dithering));
       gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
@@ -415,9 +577,9 @@
     } finally {
       deleteResources(
         gl,
-        [sourceTexture, paletteTexture, blockPaletteTexture, pixelTexture, indexTexture],
+        [pixelTexture, indexTexture],
         framebuffer,
-        program
+        null
       );
     }
   }
@@ -487,40 +649,54 @@
     return createTexture(gl, width, height, null);
   }
 
-  function createPaletteTexture(gl, palette) {
-    const data = new Uint8Array(palette.length * 4);
+  function createPaletteTexture(gl, maximumTextureSize, palette) {
+    const packed = createPackedTextureData(palette.length, maximumTextureSize);
 
     for (let index = 0; index < palette.length; index += 1) {
       const offset = index * 4;
 
-      data[offset] = palette[index].r;
-      data[offset + 1] = palette[index].g;
-      data[offset + 2] = palette[index].b;
-      data[offset + 3] = 255;
+      packed.data[offset] = palette[index].r;
+      packed.data[offset + 1] = palette[index].g;
+      packed.data[offset + 2] = palette[index].b;
+      packed.data[offset + 3] = 255;
     }
 
-    return createTexture(gl, palette.length, 1, data);
+    return {
+      ...packed,
+      texture: createTexture(gl, packed.width, packed.height, packed.data),
+    };
   }
 
-  function packIndexTexture(indices, maximumTextureSize) {
-    const width = Math.min(maximumTextureSize, 2048, Math.max(1, indices.length));
-    const height = Math.ceil(indices.length / width);
-
-    if (height > maximumTextureSize) {
-      throw new RangeError("Block palettes exceed WebGL2 texture capacity");
-    }
-
-    const data = new Uint8Array(width * height * 4);
+  function createIndexTexture(gl, maximumTextureSize, indices) {
+    const packed = createPackedTextureData(indices.length, maximumTextureSize);
 
     for (let index = 0; index < indices.length; index += 1) {
       const offset = index * 4;
 
-      data[offset] = indices[index] & 255;
-      data[offset + 1] = indices[index] >> 8 & 255;
-      data[offset + 3] = 255;
+      packed.data[offset] = indices[index] & 255;
+      packed.data[offset + 1] = indices[index] >> 8 & 255;
+      packed.data[offset + 3] = 255;
     }
 
-    return { width, height, data };
+    return {
+      ...packed,
+      texture: createTexture(gl, packed.width, packed.height, packed.data),
+    };
+  }
+
+  function createPackedTextureData(length, maximumTextureSize) {
+    const width = Math.min(maximumTextureSize, 2048, Math.max(1, length));
+    const height = Math.max(1, Math.ceil(length / width));
+
+    if (height > maximumTextureSize) {
+      throw new RangeError("Packed data exceeds WebGL2 texture capacity");
+    }
+
+    return {
+      width,
+      height,
+      data: new Uint8Array(width * height * 4),
+    };
   }
 
   function createFramebuffer(gl, textures) {
@@ -558,7 +734,10 @@
     }
 
     gl.deleteFramebuffer(framebuffer);
-    gl.deleteProgram(program);
+
+    if (program) {
+      gl.deleteProgram(program);
+    }
   }
 
   function getDitheringCode(dithering) {

@@ -103,6 +103,63 @@ test("assigns blocks with different color distributions to separate global palet
   assert.equal(result.storage.payloadBits, 110);
 });
 
+test("uses accelerated pixel passes for multiple palettes and refinement", () => {
+  const source = pixels([
+    [127, 127, 127, 255], [128, 128, 128, 255], [0, 0, 0, 255], [255, 255, 255, 255],
+    [128, 128, 128, 255], [127, 127, 127, 255], [255, 255, 255, 255], [0, 0, 0, 255],
+  ]);
+  const calls = { assignments: 0, encoding: 0 };
+  const accelerator = {
+    mapGlobalAssignments(args) {
+      calls.assignments += 1;
+      assert.equal(args.palette.length, 4);
+      assert.deepEqual(args.activePaletteCounts, [2, 2]);
+      assert.equal(args.blockPaletteSelectors.length, 2);
+      return new Uint16Array(args.width * args.height);
+    },
+    encodeBlocks(args) {
+      calls.encoding += 1;
+      assert.equal(args.globalColorCount, 2);
+      assert.equal(args.blockPaletteSelectors.length, 2);
+
+      const output = new Uint8ClampedArray(args.sourcePixels.length);
+      const pixelIndices = new Uint8Array(args.width * args.height);
+
+      for (let y = 0; y < args.height; y += 1) {
+        for (let x = 0; x < args.width; x += 1) {
+          const pixel = y * args.width + x;
+          const offset = pixel * 4;
+          const blockIndex = Math.floor(y / args.blockSize) * args.blocksX +
+            Math.floor(x / args.blockSize);
+          const paletteBase = args.blockPaletteSelectors[blockIndex] * args.globalColorCount;
+          const globalIndex = args.blockPaletteIndices[blockIndex * args.localColorCount];
+          const color = args.palette[paletteBase + globalIndex];
+
+          output[offset] = color.r;
+          output[offset + 1] = color.g;
+          output[offset + 2] = color.b;
+          output[offset + 3] = args.sourcePixels[offset + 3];
+        }
+      }
+
+      return { pixels: output, pixelIndices };
+    },
+  };
+  const result = compressImage(source, 4, 2, {
+    blockSize: 2,
+    localColorCount: 2,
+    globalColorCount: 2,
+    paletteCount: 2,
+    colorSpace: "rgb",
+    refinementPasses: 1,
+    accelerator,
+  });
+
+  assert.equal(result.paletteCount, 2);
+  assert.equal(calls.assignments, 2);
+  assert.equal(calls.encoding, 2);
+});
+
 test("reports real multi-stage compression progress", () => {
   const source = pixels([
     [255, 0, 0, 255], [220, 20, 20, 255], [0, 0, 255, 255], [20, 20, 220, 255],

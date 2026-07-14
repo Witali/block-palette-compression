@@ -120,12 +120,17 @@
       total: width * height,
     });
 
-    if (paletteCount === 1 && accelerator && typeof accelerator.mapGlobalAssignments === "function") {
+    if (accelerator && typeof accelerator.mapGlobalAssignments === "function") {
       globalAssignments = accelerator.mapGlobalAssignments({
         sourcePixels,
         width,
         height,
-        palette: activePalettes[0],
+        blockSize,
+        blocksX,
+        globalColorCount,
+        activePaletteCounts,
+        blockPaletteSelectors,
+        palette,
         colorSpace,
       });
 
@@ -142,7 +147,12 @@
           continue;
         }
 
-        if (globalAssignments[pixel] >= activePalettes[0].length) {
+        const x = pixel % width;
+        const y = Math.floor(pixel / width);
+        const blockIndex = Math.floor(y / blockSize) * blocksX + Math.floor(x / blockSize);
+        const paletteIndex = blockPaletteSelectors[blockIndex];
+
+        if (globalAssignments[pixel] >= activePaletteCounts[paletteIndex]) {
           throw new RangeError("Accelerated global assignment is outside the active palette");
         }
 
@@ -251,7 +261,6 @@
 
     if (
       dithering !== "floyd-steinberg" &&
-      paletteCount === 1 &&
       accelerator &&
       typeof accelerator.encodeBlocks === "function"
     ) {
@@ -263,6 +272,8 @@
         blocksX,
         blocksY,
         localColorCount,
+        globalColorCount,
+        blockPaletteSelectors,
         blockPaletteIndices,
         palette,
         colorSpace,
@@ -299,8 +310,9 @@
 
           const blockIndex = Math.floor(y / blockSize) * blocksX + Math.floor(x / blockSize);
           const globalIndex = blockPaletteIndices[blockIndex * localColorCount + localIndex];
+          const paletteBase = blockPaletteSelectors[blockIndex] * globalColorCount;
 
-          resultUsage[globalIndex] += 1;
+          resultUsage[paletteBase + globalIndex] += 1;
         }
       }
 
@@ -398,6 +410,7 @@
       sourcePointByColor,
       refinementPasses,
       initialMeanSquaredError,
+      accelerator,
       onProgress,
     });
 
@@ -1524,6 +1537,7 @@
       sourcePointByColor,
       refinementPasses,
       initialMeanSquaredError,
+      accelerator,
       onProgress,
     } = options;
     let currentOutputPixels = outputPixels;
@@ -1590,6 +1604,7 @@
         palette: candidatePalette,
         colorSpace,
         sourcePointByColor,
+        accelerator,
       });
       const candidateEncoding = encodeImageWithBlockPalettes({
         sourcePixels,
@@ -1607,6 +1622,7 @@
         colorSpace,
         dithering,
         sourcePointByColor,
+        accelerator,
       });
       const candidateError = meanSquaredError(sourcePixels, candidateEncoding.outputPixels);
       const improved = candidateError < currentError;
@@ -1732,6 +1748,7 @@
       palette,
       colorSpace,
       sourcePointByColor,
+      accelerator,
     } = options;
     const palettePoints = palette.map((color) =>
       colorPoint(color.r, color.g, color.b, colorSpace)
@@ -1752,42 +1769,63 @@
       paletteNeighborCaches.push(new Map());
     }
 
-    const globalAssignments = new Uint16Array(width * height);
-    const assignmentCache = new Map();
+    let globalAssignments;
 
-    for (let pixel = 0; pixel < width * height; pixel += 1) {
-      const offset = pixel * 4;
+    if (accelerator && typeof accelerator.mapGlobalAssignments === "function") {
+      globalAssignments = accelerator.mapGlobalAssignments({
+        sourcePixels,
+        width,
+        height,
+        blockSize,
+        blocksX,
+        globalColorCount,
+        activePaletteCounts,
+        blockPaletteSelectors,
+        palette,
+        colorSpace,
+      });
 
-      if (sourcePixels[offset + 3] === 0) {
-        continue;
+      if (!(globalAssignments instanceof Uint16Array) || globalAssignments.length !== width * height) {
+        throw new TypeError("Accelerated global assignments have an invalid format");
       }
+    } else {
+      globalAssignments = new Uint16Array(width * height);
+      const assignmentCache = new Map();
 
-      const x = pixel % width;
-      const y = Math.floor(pixel / width);
-      const blockIndex = Math.floor(y / blockSize) * blocksX + Math.floor(x / blockSize);
-      const paletteIndex = blockPaletteSelectors[blockIndex];
-      const key = colorKey(sourcePixels[offset], sourcePixels[offset + 1], sourcePixels[offset + 2]);
-      const assignmentKey = paletteIndex * 0x1000000 + key;
-      let globalIndex = assignmentCache.get(assignmentKey);
+      for (let pixel = 0; pixel < width * height; pixel += 1) {
+        const offset = pixel * 4;
 
-      if (globalIndex === undefined) {
-        let point = sourcePointByColor.get(key);
-
-        if (!point) {
-          point = colorPoint(
-            sourcePixels[offset],
-            sourcePixels[offset + 1],
-            sourcePixels[offset + 2],
-            colorSpace
-          );
-          sourcePointByColor.set(key, point);
+        if (sourcePixels[offset + 3] === 0) {
+          continue;
         }
 
-        globalIndex = nearestPointIndex(point, activePalettePoints[paletteIndex]);
-        assignmentCache.set(assignmentKey, globalIndex);
-      }
+        const x = pixel % width;
+        const y = Math.floor(pixel / width);
+        const blockIndex = Math.floor(y / blockSize) * blocksX + Math.floor(x / blockSize);
+        const paletteIndex = blockPaletteSelectors[blockIndex];
+        const key = colorKey(sourcePixels[offset], sourcePixels[offset + 1], sourcePixels[offset + 2]);
+        const assignmentKey = paletteIndex * 0x1000000 + key;
+        let globalIndex = assignmentCache.get(assignmentKey);
 
-      globalAssignments[pixel] = globalIndex;
+        if (globalIndex === undefined) {
+          let point = sourcePointByColor.get(key);
+
+          if (!point) {
+            point = colorPoint(
+              sourcePixels[offset],
+              sourcePixels[offset + 1],
+              sourcePixels[offset + 2],
+              colorSpace
+            );
+            sourcePointByColor.set(key, point);
+          }
+
+          globalIndex = nearestPointIndex(point, activePalettePoints[paletteIndex]);
+          assignmentCache.set(assignmentKey, globalIndex);
+        }
+
+        globalAssignments[pixel] = globalIndex;
+      }
     }
 
     const nextBlockPaletteIndices = new Uint16Array(blockCount * localColorCount);
@@ -1839,12 +1877,69 @@
       colorSpace,
       dithering,
       sourcePointByColor,
+      accelerator,
     } = options;
-    const outputPixels = new Uint8ClampedArray(sourcePixels.length);
-    const pixelIndices = new Uint8Array(width * height);
+    let outputPixels = new Uint8ClampedArray(sourcePixels.length);
+    let pixelIndices = new Uint8Array(width * height);
     const resultUsage = new Uint32Array(palette.length);
 
-    if (dithering === "floyd-steinberg") {
+    if (
+      dithering !== "floyd-steinberg" &&
+      accelerator &&
+      typeof accelerator.encodeBlocks === "function"
+    ) {
+      const encoded = accelerator.encodeBlocks({
+        sourcePixels,
+        width,
+        height,
+        blockSize,
+        blocksX,
+        blocksY,
+        localColorCount,
+        globalColorCount,
+        blockPaletteSelectors,
+        blockPaletteIndices,
+        palette,
+        colorSpace,
+        dithering,
+      });
+
+      if (
+        !encoded ||
+        !(encoded.pixels instanceof Uint8ClampedArray) ||
+        encoded.pixels.length !== sourcePixels.length ||
+        !(encoded.pixelIndices instanceof Uint8Array) ||
+        encoded.pixelIndices.length !== width * height
+      ) {
+        throw new TypeError("Accelerated block encoding has an invalid format");
+      }
+
+      outputPixels = encoded.pixels;
+      pixelIndices = encoded.pixelIndices;
+
+      for (let y = 0; y < height; y += 1) {
+        for (let x = 0; x < width; x += 1) {
+          const pixel = y * width + x;
+          const offset = pixel * 4;
+
+          if (sourcePixels[offset + 3] === 0) {
+            continue;
+          }
+
+          const blockIndex = Math.floor(y / blockSize) * blocksX + Math.floor(x / blockSize);
+          const localIndex = pixelIndices[pixel];
+
+          if (localIndex >= localColorCount) {
+            throw new RangeError("Accelerated local index is outside the block palette");
+          }
+
+          const globalIndex = blockPaletteIndices[blockIndex * localColorCount + localIndex];
+          const paletteBase = blockPaletteSelectors[blockIndex] * globalColorCount;
+
+          resultUsage[paletteBase + globalIndex] += 1;
+        }
+      }
+    } else if (dithering === "floyd-steinberg") {
       applyBlockFloydSteinbergDithering(
         sourcePixels,
         outputPixels,
