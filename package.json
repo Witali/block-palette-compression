@@ -9,6 +9,8 @@
     "test": "node tests/run-tests.js",
     "generate:bpal-manifest": "node tools/generate-bpal-manifest.js",
     "benchmark:textures": "python tools/texture_codec_benchmark.py",
+    "benchmark:patterns": "node tools/pattern-dictionary-benchmark.js",
+    "benchmark:patterns:clic": "node tools/pattern-dictionary-clic-benchmark.js",
     "benchmark:textures:test": "python -m unittest benchmark.test_metrics"
   }
 }
