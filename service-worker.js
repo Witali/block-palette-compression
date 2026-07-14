@@ -1,6 +1,6 @@
 "use strict";
 
-const CACHE_VERSION = "v1";
+const CACHE_VERSION = "v2";
 const SHELL_CACHE = `bpal-shell-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `bpal-runtime-${CACHE_VERSION}`;
 const CURRENT_CACHES = new Set([SHELL_CACHE, RUNTIME_CACHE]);
@@ -112,13 +112,19 @@ async function networkFirst(request) {
 }
 
 async function cacheWhileRevalidate(request, updatePromise) {
-  const cachedResponse = await matchCachedRequest(request);
+  const exactCachedResponse = await caches.match(request);
 
-  if (cachedResponse) {
-    return cachedResponse;
+  if (exactCachedResponse) {
+    return exactCachedResponse;
   }
 
-  return (await updatePromise) || Response.error();
+  const networkResponse = await updatePromise;
+
+  if (networkResponse) {
+    return networkResponse;
+  }
+
+  return (await matchCachedRequest(request)) || Response.error();
 }
 
 async function fetchAndCache(request) {

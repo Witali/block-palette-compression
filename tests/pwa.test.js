@@ -8,6 +8,7 @@ const root = path.resolve(__dirname, "..");
 const manifest = JSON.parse(read("app.webmanifest"));
 const serviceWorker = read("service-worker.js");
 const registration = read("src/pwa/register-service-worker.js");
+const viewerSource = read("src/pages/bpal-viewer-page.js");
 const htmlPages = [
   "index.html",
   "block-palette.html",
@@ -55,6 +56,21 @@ test("registers the root service worker without breaking project-page paths", ()
   assert.match(registration, /updateViaCache: "none"/);
 });
 
+test("associates installed desktop PWAs with BPAL and BPLM files", () => {
+  assert.deepEqual(manifest.file_handlers, [
+    {
+      action: "./bpal-viewer.html",
+      accept: {
+        "application/octet-stream": [".bpal", ".bplm"],
+      },
+    },
+  ]);
+  assert.match(viewerSource, /window\.launchQueue\.setConsumer/);
+  assert.match(viewerSource, /const file = await fileHandle\.getFile\(\)/);
+  assert.match(viewerSource, /await loadFile\(file\)/);
+  assert.match(viewerSource, /fileLaunchReceived \|\| initializationId !== state\.loadId/);
+});
+
 test("uses network-first navigations and runtime caching for large assets", () => {
   assert.match(serviceWorker, /request\.mode === "navigate"/);
   assert.match(serviceWorker, /networkFirst\(request\)/);
@@ -62,6 +78,16 @@ test("uses network-first navigations and runtime caching for large assets", () =
   assert.match(serviceWorker, /url\.origin !== self\.location\.origin/);
   assert.doesNotMatch(serviceWorker, /"\.\/assets\/bpal\//);
   assert.doesNotMatch(serviceWorker, /"\.\/assets\/benchmark-jpegs\//);
+});
+
+test("honors cache-busting queries before using the offline shell fallback", () => {
+  const exactLookup = serviceWorker.indexOf("const exactCachedResponse = await caches.match(request)");
+  const networkLookup = serviceWorker.indexOf("const networkResponse = await updatePromise");
+  const fallbackLookup = serviceWorker.indexOf("return (await matchCachedRequest(request)) || Response.error()");
+
+  assert.ok(exactLookup >= 0);
+  assert.ok(networkLookup > exactLookup);
+  assert.ok(fallbackLookup > networkLookup);
 });
 
 test("serves web manifests with their registered content type locally", () => {

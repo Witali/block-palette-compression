@@ -101,6 +101,12 @@ HTML navigations use the network first so deployments remain fresh, with a
 cached page as the offline fallback. Static resources return from the cache
 immediately and are refreshed in the background.
 
+When installed by a Chromium-based desktop browser, the PWA registers as a
+handler for `.bpal` and `.bplm` files. Opening either file type from the
+operating system launches BPAL Viewer and passes the selected file to it. On
+platforms without the File Handling API, the viewer's file picker and drag and
+drop support remain available.
+
 ## Test
 
 ```powershell

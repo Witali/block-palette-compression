@@ -28,5 +28,16 @@
       "type": "image/png",
       "purpose": "maskable"
     }
+  ],
+  "file_handlers": [
+    {
+      "action": "./bpal-viewer.html",
+      "accept": {
+        "application/octet-stream": [
+          ".bpal",
+          ".bplm"
+        ]
+      }
+    }
   ]
 }
