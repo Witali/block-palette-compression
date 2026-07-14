@@ -90,6 +90,17 @@ and `.bplm` files before starting the server. The GitHub Pages workflow runs
 the same generator before uploading the site artifact, so the viewer catalog
 does not need to be maintained by hand.
 
+## Install as an app
+
+The GitHub Pages site is an installable Progressive Web App. Supporting
+browsers can install it from their address bar or application menu. The app
+shell is available offline after the service worker finishes installing;
+large images and BPAL/BPLM examples are cached only after they are opened.
+
+HTML navigations use the network first so deployments remain fresh, with a
+cached page as the offline fallback. Static resources return from the cache
+immediately and are refreshed in the background.
+
 ## Test
 
 ```powershell

@@ -1,0 +1,94 @@
+"use strict";
+
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+
+const root = path.resolve(__dirname, "..");
+const manifest = JSON.parse(read("app.webmanifest"));
+const serviceWorker = read("service-worker.js");
+const registration = read("src/pwa/register-service-worker.js");
+const htmlPages = [
+  "index.html",
+  "block-palette.html",
+  "bpal-viewer.html",
+  "cube.html",
+  "cube-bpal-sampler.html",
+];
+
+test("defines a subpath-safe installable web app manifest", () => {
+  assert.equal(manifest.name, "Block Palette Compression");
+  assert.equal(manifest.short_name, "BPAL");
+  assert.equal(manifest.id, "./");
+  assert.equal(manifest.start_url, "./");
+  assert.equal(manifest.scope, "./");
+  assert.equal(manifest.display, "standalone");
+  assert.equal(manifest.theme_color, "#101318");
+  assert.equal(manifest.background_color, "#101318");
+
+  const iconSizes = new Set(manifest.icons.map((icon) => icon.sizes));
+
+  assert.ok(iconSizes.has("192x192"));
+  assert.ok(iconSizes.has("512x512"));
+  assert.ok(manifest.icons.some((icon) => icon.purpose === "maskable"));
+});
+
+test("provides valid PNG application icons", () => {
+  assertPngDimensions("assets/icons/app-icon-192.png", 192, 192);
+  assertPngDimensions("assets/icons/app-icon-512.png", 512, 512);
+  assertPngDimensions("assets/icons/app-icon-maskable-512.png", 512, 512);
+});
+
+test("connects every application page to the PWA", () => {
+  for (const page of htmlPages) {
+    const html = read(page);
+
+    assert.match(html, /<meta name="theme-color" content="#101318">/);
+    assert.match(html, /<link rel="manifest" href="\.\/app\.webmanifest">/);
+    assert.match(html, /<link rel="apple-touch-icon" href="\.\/assets\/icons\/app-icon-192\.png">/);
+    assert.match(html, /<script src="\.\/src\/pwa\/register-service-worker\.js\?v=1"><\/script>/);
+  }
+});
+
+test("registers the root service worker without breaking project-page paths", () => {
+  assert.match(registration, /navigator\.serviceWorker\.register\("\.\/service-worker\.js"/);
+  assert.match(registration, /updateViaCache: "none"/);
+});
+
+test("uses network-first navigations and runtime caching for large assets", () => {
+  assert.match(serviceWorker, /request\.mode === "navigate"/);
+  assert.match(serviceWorker, /networkFirst\(request\)/);
+  assert.match(serviceWorker, /cacheWhileRevalidate\(request, updatePromise\)/);
+  assert.match(serviceWorker, /url\.origin !== self\.location\.origin/);
+  assert.doesNotMatch(serviceWorker, /"\.\/assets\/bpal\//);
+  assert.doesNotMatch(serviceWorker, /"\.\/assets\/benchmark-jpegs\//);
+});
+
+test("serves web manifests with their registered content type locally", () => {
+  assert.match(
+    read("tools/serve.js"),
+    /\["\.webmanifest", "application\/manifest\+json; charset=utf-8"\]/
+  );
+});
+
+function assertPngDimensions(fileName, expectedWidth, expectedHeight) {
+  const bytes = fs.readFileSync(path.join(root, fileName));
+
+  assert.deepEqual([...bytes.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+  assert.equal(bytes.readUInt32BE(16), expectedWidth);
+  assert.equal(bytes.readUInt32BE(20), expectedHeight);
+}
+
+function read(fileName) {
+  return fs.readFileSync(path.join(root, fileName), "utf8");
+}
+
+function test(name, callback) {
+  try {
+    callback();
+    console.log(`ok - ${name}`);
+  } catch (error) {
+    console.error(`not ok - ${name}`);
+    throw error;
+  }
+}

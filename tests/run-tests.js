@@ -14,3 +14,4 @@ require("./bplm-webgl-pages.test.js");
 require("./bpal-texture-decoder.test.js");
 require("./block-palette-optimizer.test.js");
 require("./block-palette-webgl-codec.test.js");
+require("./pwa.test.js");
