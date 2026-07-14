@@ -137,6 +137,25 @@ test("pans both compression previews by dragging", () => {
   assert.doesNotMatch(source, /resultCanvas\.addEventListener\("click"/);
 });
 
+test("offers the viewer zoom controls for both compression previews", () => {
+  assert.match(html, /id="zoom-out"[^>]*disabled/);
+  assert.match(html, /id="zoom-in"[^>]*disabled/);
+  assert.match(html, /id="actual-size"[^>]*aria-pressed="false"[^>]*disabled/);
+  assert.match(html, /id="fit-image"[^>]*aria-pressed="true"[^>]*disabled/);
+  assert.match(source, /viewMode: "fit"/);
+  assert.match(source, /zoomOutButton\.addEventListener\("click", \(\) => setZoom\(state\.zoom \/ ZOOM_FACTOR\)\)/);
+  assert.match(source, /zoomInButton\.addEventListener\("click", \(\) => setZoom\(state\.zoom \* ZOOM_FACTOR\)\)/);
+  assert.match(source, /actualSizeButton\.addEventListener\("click", showActualSize\)/);
+  assert.match(source, /fitImageButton\.addEventListener\("click", fitImage\)/);
+  assert.match(source, /setViewMode\("actual"\)/);
+  assert.match(source, /setViewMode\("fit"\)/);
+  assert.match(source, /setViewMode\("custom"\)/);
+  assert.match(source, /state\.imageWidth \* state\.zoom/);
+  assert.doesNotMatch(source, /displayBaseScale/);
+  assert.match(css, /#actual-size\[aria-pressed="true"\]/);
+  assert.match(css, /#fit-image\[aria-pressed="true"\]/);
+});
+
 test("highlights the selected block even when the grid is hidden", () => {
   assert.match(source, /if \(showGridInput\.checked\) \{/);
   assert.doesNotMatch(source, /if \(!result \|\| !showGridInput\.checked\)/);

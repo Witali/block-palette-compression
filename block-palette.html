@@ -215,7 +215,13 @@
           <figcaption class="result-caption">
             <span data-i18n="block.restoredPreview">Restored BPAL preview</span>
             <span class="result-caption-controls">
-              <output id="zoom-level" title="Ctrl + mouse wheel to zoom" data-i18n-title="block.zoomTitle">100%</output>
+              <span class="zoom-controls" aria-label="Zoom" data-i18n-aria-label="viewer.zoom">
+                <button id="zoom-out" type="button" title="Zoom out" data-i18n-title="viewer.zoomOut" disabled>−</button>
+                <output id="zoom-level" aria-label="Current zoom" data-i18n-aria-label="viewer.currentZoom">100%</output>
+                <button id="zoom-in" type="button" title="Zoom in" data-i18n-title="viewer.zoomIn" disabled>+</button>
+                <button id="actual-size" class="text-button" type="button" title="Show at actual size" data-i18n-title="viewer.actualSizeTitle" aria-pressed="false" disabled>1:1</button>
+                <button id="fit-image" class="text-button" type="button" title="Fit image to viewport" data-i18n="viewer.fit" data-i18n-title="viewer.fitTitle" aria-pressed="true" disabled>Fit</button>
+              </span>
               <label><input id="show-grid" type="checkbox"><span data-i18n="block.grid">Block grid</span></label>
             </span>
           </figcaption>
@@ -285,7 +291,7 @@
     <script src="./src/i18n/en.js?v=k-medoids-1"></script>
     <script src="./src/i18n/ru.js?v=k-medoids-1"></script>
     <script src="./src/i18n/i18n.js"></script>
-    <script src="./src/pages/block-palette-page.js?v=k-medoids-1"></script>
+    <script src="./src/pages/block-palette-page.js?v=zoom-controls-1"></script>
     <script src="./src/pwa/register-service-worker.js?v=1"></script>
   </body>
 </html>

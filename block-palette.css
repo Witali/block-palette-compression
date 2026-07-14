@@ -228,8 +228,19 @@ figcaption {
 }
 
 .result-caption { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-.result-caption-controls { display: flex; align-items: center; gap: 14px; }
-.result-caption output { color: #69b5ff; font: 700 12px/1 ui-monospace, Consolas, monospace; }
+.result-caption-controls, .zoom-controls { display: flex; align-items: center; gap: 8px; }
+.result-caption-controls { flex-wrap: wrap; justify-content: flex-end; }
+.zoom-controls button { min-width: 34px; min-height: 34px; padding: 0 9px; }
+.zoom-controls .text-button { min-width: auto; }
+#zoom-level {
+  min-width: 56px;
+  color: #69b5ff;
+  font: 700 12px/1 ui-monospace, Consolas, monospace;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+#actual-size[aria-pressed="true"],
+#fit-image[aria-pressed="true"] { border-color: #4d96ed; background: #203651; }
 .result-caption label {
   display: inline-flex;
   align-items: center;
@@ -282,6 +293,7 @@ canvas {
   line-height: 0;
 }
 .canvas-stage canvas { width: 100%; height: 100%; }
+.canvas-stage.is-magnified canvas { image-rendering: pixelated; }
 .result-stage canvas { grid-area: 1 / 1; }
 #result-canvas { cursor: crosshair; }
 #grid-canvas { z-index: 1; pointer-events: none; box-shadow: none; }
@@ -405,6 +417,7 @@ canvas {
 @media (max-width: 430px) {
   .metrics { grid-template-columns: 1fr; }
   .result-caption { align-items: start; flex-direction: column; }
+  .result-caption-controls { justify-content: flex-start; width: 100%; }
   .block-swatch { width: 100%; }
   .progress-statistics { grid-template-columns: 1fr; }
 }
