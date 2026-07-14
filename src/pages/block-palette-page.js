@@ -85,6 +85,8 @@ const state = {
   viewMode: "fit",
   synchronizingScroll: false,
   viewportDrag: null,
+  touches: new Map(),
+  pinch: null,
   optimizationApplied: false,
   progress: null,
 };
@@ -208,11 +210,11 @@ resultViewport.addEventListener("scroll", () => synchronizeScroll(resultViewport
 sourceViewport.addEventListener("wheel", zoomFromWheel, { passive: false });
 resultViewport.addEventListener("wheel", zoomFromWheel, { passive: false });
 for (const viewport of [sourceViewport, resultViewport]) {
-  viewport.addEventListener("pointerdown", startViewportDrag);
-  viewport.addEventListener("pointermove", moveViewportDrag);
-  viewport.addEventListener("pointerup", finishViewportDrag);
-  viewport.addEventListener("pointercancel", finishViewportDrag);
-  viewport.addEventListener("lostpointercapture", finishViewportDrag);
+  viewport.addEventListener("pointerdown", startViewportPointer);
+  viewport.addEventListener("pointermove", moveViewportPointer);
+  viewport.addEventListener("pointerup", finishViewportPointer);
+  viewport.addEventListener("pointercancel", finishViewportPointer);
+  viewport.addEventListener("lostpointercapture", finishViewportPointer);
 }
 window.addEventListener("beforeunload", () => {
   stopWorker();
@@ -846,6 +848,151 @@ function synchronizeScroll(source, target) {
   });
 }
 
+function startViewportPointer(event) {
+  if (event.pointerType === "touch") {
+    startViewportTouch(event);
+    return;
+  }
+
+  startViewportDrag(event);
+}
+
+function moveViewportPointer(event) {
+  if (state.touches.has(event.pointerId)) {
+    moveViewportTouch(event);
+    return;
+  }
+
+  moveViewportDrag(event);
+}
+
+function finishViewportPointer(event) {
+  if (state.touches.has(event.pointerId)) {
+    finishViewportTouch(event);
+    return;
+  }
+
+  finishViewportDrag(event);
+}
+
+function startViewportTouch(event) {
+  if (!state.imageWidth || !state.imageHeight) {
+    return;
+  }
+
+  const viewport = event.currentTarget;
+  const [activeTouch] = state.touches.values();
+
+  if ((activeTouch && activeTouch.viewport !== viewport) || state.touches.size >= 2) {
+    event.preventDefault();
+    return;
+  }
+
+  state.touches.set(event.pointerId, {
+    id: event.pointerId,
+    viewport,
+    x: event.clientX,
+    y: event.clientY,
+  });
+
+  if (state.touches.size === 1) {
+    startViewportDrag(event);
+  } else {
+    try {
+      viewport.setPointerCapture(event.pointerId);
+    } catch (_error) {
+      // Synthetic pointer events used by tests may not have a capturable pointer.
+    }
+
+    startViewportPinch(viewport);
+  }
+
+  event.preventDefault();
+}
+
+function moveViewportTouch(event) {
+  const touch = state.touches.get(event.pointerId);
+
+  touch.x = event.clientX;
+  touch.y = event.clientY;
+
+  if (state.pinch && state.pinch.viewport === event.currentTarget && state.touches.size === 2) {
+    const [first, second] = state.touches.values();
+    const distance = Math.max(1, getTouchDistance(first, second));
+    const center = getTouchCenter(first, second);
+    const nextZoom = state.pinch.startZoom * distance / state.pinch.startDistance;
+
+    setZoom(nextZoom, state.pinch.viewport, center.x, center.y, false, {
+      x: state.pinch.imageX,
+      y: state.pinch.imageY,
+    });
+  } else {
+    moveViewportDrag(event);
+  }
+
+  event.preventDefault();
+}
+
+function startViewportPinch(viewport) {
+  const [first, second] = state.touches.values();
+  const center = getTouchCenter(first, second);
+  const stage = viewport === sourceViewport ? sourceStage : resultStage;
+  const stageBounds = stage.getBoundingClientRect();
+
+  state.viewportDrag = null;
+  state.pinch = {
+    viewport,
+    startDistance: Math.max(1, getTouchDistance(first, second)),
+    startZoom: state.zoom,
+    imageX: (center.x - stageBounds.left) / state.zoom,
+    imageY: (center.y - stageBounds.top) / state.zoom,
+  };
+  viewport.classList.add("is-dragging");
+}
+
+function finishViewportTouch(event) {
+  const touch = state.touches.get(event.pointerId);
+  const viewport = touch.viewport;
+
+  state.touches.delete(event.pointerId);
+
+  if (state.pinch && state.pinch.viewport === viewport) {
+    state.pinch = null;
+    state.viewportDrag = null;
+    viewport.classList.remove("is-dragging");
+
+    if (state.touches.size === 1) {
+      const [remainingTouch] = state.touches.values();
+
+      beginViewportDrag(
+        viewport,
+        remainingTouch.id,
+        remainingTouch.x,
+        remainingTouch.y,
+        event.timeStamp - DRAG_DELAY_MS
+      );
+    }
+  } else if (state.viewportDrag && state.viewportDrag.pointerId === event.pointerId) {
+    state.viewportDrag = null;
+    viewport.classList.remove("is-dragging");
+  }
+
+  if (event.type !== "lostpointercapture" && viewport.hasPointerCapture(event.pointerId)) {
+    viewport.releasePointerCapture(event.pointerId);
+  }
+}
+
+function getTouchDistance(first, second) {
+  return Math.hypot(second.x - first.x, second.y - first.y);
+}
+
+function getTouchCenter(first, second) {
+  return {
+    x: (first.x + second.x) / 2,
+    y: (first.y + second.y) / 2,
+  };
+}
+
 function startViewportDrag(event) {
   if (event.button !== 0 || !state.imageWidth || !state.imageHeight) {
     return;
@@ -857,22 +1004,32 @@ function startViewportDrag(event) {
     selectBlockFromPointer(event);
   }
 
-  state.viewportDrag = {
+  beginViewportDrag(
     viewport,
-    pointerId: event.pointerId,
-    startX: event.clientX,
-    startY: event.clientY,
-    startedAt: event.timeStamp,
-    scrollLeft: viewport.scrollLeft,
-    scrollTop: viewport.scrollTop,
-    active: false,
-    moved: false,
-  };
+    event.pointerId,
+    event.clientX,
+    event.clientY,
+    event.timeStamp
+  );
   try {
     viewport.setPointerCapture(event.pointerId);
   } catch (_error) {
     // Synthetic pointer events used by tests may not have a capturable pointer.
   }
+}
+
+function beginViewportDrag(viewport, pointerId, startX, startY, startedAt) {
+  state.viewportDrag = {
+    viewport,
+    pointerId,
+    startX,
+    startY,
+    startedAt,
+    scrollLeft: viewport.scrollLeft,
+    scrollTop: viewport.scrollTop,
+    active: false,
+    moved: false,
+  };
 }
 
 function moveViewportDrag(event) {
