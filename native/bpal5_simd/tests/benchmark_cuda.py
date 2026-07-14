@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import math
+import re
 import statistics
 import subprocess
 import sys
@@ -76,14 +77,14 @@ def read_ppm(path: Path) -> tuple[int, int, bytes]:
     return width, height, pixels
 
 
-def run(command: list[str]) -> float:
+def run(command: list[str]) -> tuple[float, str]:
     started = time.perf_counter()
     result = subprocess.run(command, capture_output=True, text=True, check=False)
     elapsed_ms = (time.perf_counter() - started) * 1000.0
     if result.returncode != 0:
         details = result.stderr.strip() or result.stdout.strip()
         raise RuntimeError(f"command failed ({result.returncode}): {' '.join(command)}\n{details}")
-    return elapsed_ms
+    return elapsed_ms, result.stdout
 
 
 def quality(reference: bytes, candidate: bytes) -> tuple[float, float]:
@@ -130,7 +131,8 @@ def main() -> int:
 
             for _ in range(args.warmup):
                 run(command)
-            timings = [run(command) for _ in range(args.runs)]
+            measured = [run(command) for _ in range(args.runs)]
+            timings = [elapsed for elapsed, _ in measured]
             run([str(decoder), str(encoded), str(decoded)])
             decoded_width, decoded_height, decoded_pixels = read_ppm(decoded)
             if (decoded_width, decoded_height) != (width, height):
@@ -142,6 +144,14 @@ def main() -> int:
                 "mse": mse,
                 "psnr": psnr,
             }
+            if label == "CUDA":
+                gpu_timings = []
+                for _, output in measured:
+                    match = re.search(r"GPU ([0-9.]+) ms", output)
+                    if match is None:
+                        raise RuntimeError("could not parse the CUDA GPU-phase timing")
+                    gpu_timings.append(float(match.group(1)))
+                results[label]["gpu_timings"] = gpu_timings
 
     print(f"Image: {source} ({width}x{height})")
     print(f"Settings: preset {args.preset}, refinement {args.refine}, {args.runs} measured runs")
@@ -159,8 +169,10 @@ def main() -> int:
         )
     cpu_mean = statistics.mean(results["CPU"]["timings"])
     cuda_mean = statistics.mean(results["CUDA"]["timings"])
+    cuda_gpu_mean = statistics.mean(results["CUDA"]["gpu_timings"])
     print()
     print(f"CUDA wall-clock speedup: {cpu_mean / cuda_mean:.3f}x")
+    print(f"CUDA GPU phase: {cuda_gpu_mean:.3f} ms mean")
     return 0
 
 

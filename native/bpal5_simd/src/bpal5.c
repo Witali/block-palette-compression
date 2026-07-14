@@ -136,7 +136,7 @@ static int bit_read(bit_reader *reader, uint32_t bit_count, uint32_t *value) {
 }
 
 static int bit_write(bit_writer *writer, uint32_t value, uint32_t bit_count) {
-    uint32_t bit;
+    uint32_t remaining = bit_count;
 
     if (bit_count > 32u || writer->bit_offset + bit_count > (uint64_t)writer->byte_count * 8u) {
         return 0;
@@ -144,12 +144,89 @@ static int bit_write(bit_writer *writer, uint32_t value, uint32_t bit_count) {
     if (bit_count < 32u && value >= (1u << bit_count)) {
         return 0;
     }
-    for (bit = bit_count; bit > 0u; --bit) {
+
+    while (remaining != 0u) {
         const size_t byte_index = (size_t)(writer->bit_offset >> 3u);
-        const uint32_t bit_in_byte = 7u - (uint32_t)(writer->bit_offset & 7u);
-        const uint32_t bit_value = (value >> (bit - 1u)) & 1u;
-        writer->bytes[byte_index] |= (uint8_t)(bit_value << bit_in_byte);
-        ++writer->bit_offset;
+        const uint32_t used_bits = (uint32_t)(writer->bit_offset & 7u);
+        const uint32_t available_bits = 8u - used_bits;
+        const uint32_t chunk_bits = remaining < available_bits ? remaining : available_bits;
+        const uint32_t value_shift = remaining - chunk_bits;
+        const uint32_t byte_shift = available_bits - chunk_bits;
+        const uint32_t mask = (1u << chunk_bits) - 1u;
+        const uint32_t chunk = (value >> value_shift) & mask;
+        writer->bytes[byte_index] |= (uint8_t)(chunk << byte_shift);
+        writer->bit_offset += chunk_bits;
+        remaining -= chunk_bits;
+    }
+    return 1;
+}
+
+static int bit_write_u8_values(
+    bit_writer *writer,
+    const uint8_t *values,
+    size_t value_count,
+    uint32_t bit_count,
+    uint32_t value_limit
+) {
+    size_t index = 0u;
+
+    if (bit_count == 0u) {
+        for (index = 0u; index < value_count; ++index) {
+            if (values[index] >= value_limit) {
+                return 0;
+            }
+        }
+        return 1;
+    }
+    while (index < value_count) {
+        const size_t remaining = value_count - index;
+        const size_t values_per_word = 32u / bit_count;
+        const size_t chunk_count = remaining < values_per_word ? remaining : values_per_word;
+        uint32_t packed = 0u;
+        size_t chunk;
+
+        for (chunk = 0u; chunk < chunk_count; ++chunk) {
+            const uint32_t value = values[index + chunk];
+            if (value >= value_limit) {
+                return 0;
+            }
+            packed = (packed << bit_count) | value;
+        }
+        if (!bit_write(writer, packed, (uint32_t)chunk_count * bit_count)) {
+            return 0;
+        }
+        index += chunk_count;
+    }
+    return 1;
+}
+
+static int bit_write_u16_values(
+    bit_writer *writer,
+    const uint16_t *values,
+    size_t value_count,
+    uint32_t bit_count,
+    uint32_t value_limit
+) {
+    size_t index = 0u;
+
+    while (index < value_count) {
+        const size_t remaining = value_count - index;
+        const size_t values_per_word = 32u / bit_count;
+        const size_t chunk_count = remaining < values_per_word ? remaining : values_per_word;
+        uint32_t packed = 0u;
+        size_t chunk;
+
+        for (chunk = 0u; chunk < chunk_count; ++chunk) {
+            const uint32_t value = values[index + chunk];
+            if (value >= value_limit) {
+                return 0;
+            }
+            packed = (packed << bit_count) | value;
+        }
+        if (!bit_write(writer, packed, (uint32_t)chunk_count * bit_count)) {
+            return 0;
+        }
+        index += chunk_count;
     }
     return 1;
 }
@@ -554,33 +631,39 @@ int bpal5_serialize(
         }
     }
 
-    for (index = 0; index < image->block_count; ++index) {
-        if (image->block_palette_selectors[index] >= image->palette_count ||
-            !bit_write(&writer, image->block_palette_selectors[index], image->palette_index_bits)) {
-            set_error(error, error_size, "Invalid BPAL block palette selector");
-            free(output);
-            return 0;
-        }
+    if (!bit_write_u8_values(
+            &writer,
+            image->block_palette_selectors,
+            image->block_count,
+            image->palette_index_bits,
+            image->palette_count)) {
+        set_error(error, error_size, "Invalid BPAL block palette selector");
+        free(output);
+        return 0;
     }
 
     block_entries = (size_t)image->block_count * image->local_color_count;
-    for (index = 0; index < block_entries; ++index) {
-        if (image->block_palette_indices[index] >= image->global_color_count ||
-            !bit_write(&writer, image->block_palette_indices[index], image->global_index_bits)) {
-            set_error(error, error_size, "Invalid BPAL block color index");
-            free(output);
-            return 0;
-        }
+    if (!bit_write_u16_values(
+            &writer,
+            image->block_palette_indices,
+            block_entries,
+            image->global_index_bits,
+            image->global_color_count)) {
+        set_error(error, error_size, "Invalid BPAL block color index");
+        free(output);
+        return 0;
     }
 
     pixel_count = (size_t)image->width * image->height;
-    for (index = 0; index < pixel_count; ++index) {
-        if (image->pixel_indices[index] >= image->local_color_count ||
-            !bit_write(&writer, image->pixel_indices[index], image->local_index_bits)) {
-            set_error(error, error_size, "Invalid BPAL pixel index");
-            free(output);
-            return 0;
-        }
+    if (!bit_write_u8_values(
+            &writer,
+            image->pixel_indices,
+            pixel_count,
+            image->local_index_bits,
+            image->local_color_count)) {
+        set_error(error, error_size, "Invalid BPAL pixel index");
+        free(output);
+        return 0;
     }
 
     *bytes = output;

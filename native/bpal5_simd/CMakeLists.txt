@@ -43,6 +43,9 @@ add_executable(bpal5dec src/bpal5dec.c)
 target_include_directories(bpal5dec PRIVATE src)
 target_link_libraries(bpal5dec PRIVATE bpal5)
 
+add_executable(bpal5_serialize_benchmark EXCLUDE_FROM_ALL tests/benchmark_serialization.c)
+target_link_libraries(bpal5_serialize_benchmark PRIVATE bpal5)
+
 if(BPAL5_BUILD_CUDA)
     check_language(CUDA)
     if(CMAKE_CUDA_COMPILER)
