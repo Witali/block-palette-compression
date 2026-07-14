@@ -2,29 +2,29 @@
 
 ## Result
 
-The benchmark used **60 textures** and **480 encoded operating points**.
+The benchmark used **200 textures** and **1600 encoded operating points**.
 Palette packing is lossless: every packed output was decoded alongside its byte-equivalent legacy representation.
-All **480 decoded pixel buffers were byte-identical**.
+All **1600 decoded pixel buffers were byte-identical**.
 
 | Subset | Records | Legacy bytes | Packed bytes | Saved | File reduction |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| all | 480 | 379,371,095 | 378,332,505 | 1,038,590 | 0.274% |
-| dtd | 160 | 20,743,725 | 20,545,711 | 198,014 | 0.955% |
-| kylberg | 160 | 27,600,202 | 27,481,850 | 118,352 | 0.429% |
-| ambientcg | 160 | 331,027,168 | 330,304,944 | 722,224 | 0.218% |
+| all | 1600 | 1,028,694,147 | 1,025,550,443 | 3,143,704 | 0.306% |
+| dtd | 800 | 100,250,186 | 99,429,608 | 820,578 | 0.819% |
+| kylberg | 360 | 62,078,617 | 61,809,803 | 268,814 | 0.433% |
+| ambientcg | 440 | 866,365,344 | 864,311,032 | 2,054,312 | 0.237% |
 
 ## By target rate
 
 | Target | Legacy bpp | Packed bpp | File reduction | Packed files | Delta palettes |
 | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1.5 | 1.4380 | 1.4380 | 0.000% | 1/60 | 2 |
-| 2 | 2.0697 | 2.0695 | 0.007% | 19/60 | 31 |
-| 2.5 | 2.5606 | 2.5564 | 0.163% | 40/60 | 919 |
-| 3 | 3.2859 | 3.2785 | 0.226% | 37/60 | 1709 |
-| 4 | 4.1262 | 4.1237 | 0.060% | 38/60 | 397 |
-| 5 | 4.6572 | 4.6364 | 0.446% | 42/60 | 1906 |
-| 6 | 6.4265 | 6.4131 | 0.208% | 50/60 | 941 |
-| 8 | 7.9406 | 7.9000 | 0.511% | 59/60 | 2477 |
+| 1.5 | 1.4381 | 1.4381 | 0.000% | 3/200 | 6 |
+| 2 | 2.0756 | 2.0754 | 0.007% | 57/200 | 97 |
+| 2.5 | 2.5750 | 2.5705 | 0.177% | 125/200 | 2812 |
+| 3 | 3.2966 | 3.2871 | 0.287% | 128/200 | 5574 |
+| 4 | 4.1379 | 4.1351 | 0.069% | 117/200 | 1218 |
+| 5 | 4.6788 | 4.6559 | 0.488% | 146/200 | 6063 |
+| 6 | 6.4444 | 6.4301 | 0.222% | 153/200 | 2932 |
+| 8 | 7.9150 | 7.8696 | 0.573% | 193/200 | 7824 |
 
 ## Decoder constraints
 
@@ -37,8 +37,9 @@ All **480 decoded pixel buffers were byte-identical**.
 
 ## Methodology
 
-- 20 stratified images from each of DTD, Kylberg, and ambientCG.
+- Deterministic stratified sample: 100 DTD, 45 Kylberg, and 55 ambientCG images.
 - All eight CUDA `--find-settings` targets from 1.5 through 8 bpp.
 - Full file size includes the 14-byte BPAL header and all packing metadata.
-- Existing CUDA settings were reproduced for 480/480 records.
+- Existing CUDA settings were reproduced for 1600/1600 records.
+- JSONL resume reused 1600 records; 0 were encoded in this run.
 - Quality is unchanged by construction and by byte-identical decoded output, so PSNR delta is exactly 0 dB.

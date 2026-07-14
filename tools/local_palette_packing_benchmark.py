@@ -17,6 +17,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 MAIN_ROOT = ROOT.parents[1] if ROOT.parent.name == ".tmp" else ROOT
 TARGETS = ("1.5", "2", "2.5", "3", "4", "5", "6", "8")
+BENCHMARK_VERSION = 2
+DEFAULT_DATASET_COUNTS = {"dtd": 100, "kylberg": 45, "ambientcg": 55}
 PROFILE_IDS = {target: f"bpal-cuda-find-{target.replace('.', '_')}" for target in TARGETS}
 SETTINGS_RE = re.compile(
     r"block (?P<block>\d+), local (?P<local>\d+), "
@@ -26,7 +28,11 @@ SETTINGS_RE = re.compile(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--sample-per-dataset", type=int, default=20)
+    parser.add_argument(
+        "--sample-per-dataset",
+        type=int,
+        help="diagnostic override; select this many images from each dataset",
+    )
     parser.add_argument("--device", type=int, default=0)
     parser.add_argument(
         "--records",
@@ -67,73 +73,95 @@ def main() -> int:
         if not path.is_file():
             raise SystemExit(f"Required input is missing: {path}")
     images, prior = load_images(args.records)
-    selected = select_stratified(images, args.sample_per_dataset)
+    selected = select_images(images, args.sample_per_dataset)
     args.work_dir.mkdir(parents=True, exist_ok=True)
+    records_path = args.work_dir / "records.jsonl"
+    completed = load_resume_records(records_path)
     artifact = args.work_dir / "texture.bpal"
     legacy_artifact = args.work_dir / "texture-legacy.bpal"
     packed_ppm = args.work_dir / "packed.ppm"
     legacy_ppm = args.work_dir / "legacy.ppm"
     rows: list[dict[str, object]] = []
+    resumed_count = 0
+    new_count = 0
     started = time.perf_counter()
 
     print(f"Selected {len(selected)} images; {len(selected) * len(TARGETS)} encodes", flush=True)
-    for image_index, image in enumerate(selected, start=1):
-        file_id = hashlib.sha256(str(image["imageId"]).encode("utf-8")).hexdigest()[:20]
-        source = args.source_dir / f"{file_id}.png"
-        if not source.is_file():
-            raise SystemExit(f"Normalized source is missing: {source}")
-        for target in TARGETS:
-            command = [
-                str(args.encoder), str(source), str(artifact),
-                "--preset", target, "--find-settings", "--device", str(args.device),
-            ]
-            output = run(command)
-            match = SETTINGS_RE.search(output)
-            if match is None:
-                raise RuntimeError(f"Could not parse encoder settings:\n{output}")
-            packed_bytes = artifact.read_bytes()
-            legacy_bytes, palette = make_legacy_file(packed_bytes)
-            legacy_artifact.write_bytes(legacy_bytes)
-            run([str(args.decoder), str(artifact), str(packed_ppm)])
-            run([str(args.decoder), str(legacy_artifact), str(legacy_ppm)])
-            if packed_ppm.read_bytes() != legacy_ppm.read_bytes():
-                raise RuntimeError(f"Decoded pixels differ for {image['imageId']} at {target} bpp")
+    with records_path.open("a", encoding="utf-8") as record_stream:
+        for image_index, image in enumerate(selected, start=1):
+            file_id = hashlib.sha256(str(image["imageId"]).encode("utf-8")).hexdigest()[:20]
+            source = args.source_dir / f"{file_id}.png"
+            if not source.is_file():
+                raise SystemExit(f"Normalized source is missing: {source}")
+            for target in TARGETS:
+                key = (str(image["imageId"]), target)
+                resumed = completed.get(key)
+                if is_reusable_record(resumed, image):
+                    rows.append(resumed)
+                    resumed_count += 1
+                    continue
 
-            previous = prior.get((image["imageId"], PROFILE_IDS[target]))
-            current_settings = {
-                "blockSize": int(match.group("block")),
-                "localColorCount": int(match.group("local")),
-                "paletteCount": int(match.group("palettes")),
-                "globalColorCount": int(match.group("global")),
-                "paletteColorBits": 16 if match.group("rgb") == "565" else 24,
-            }
-            settings_match = previous is not None and all(
-                previous["effectiveSettings"].get(key) == value
-                for key, value in current_settings.items()
+                command = [
+                    str(args.encoder), str(source), str(artifact),
+                    "--preset", target, "--find-settings", "--device", str(args.device),
+                ]
+                output = run(command)
+                match = SETTINGS_RE.search(output)
+                if match is None:
+                    raise RuntimeError(f"Could not parse encoder settings:\n{output}")
+                packed_bytes = artifact.read_bytes()
+                legacy_bytes, palette = make_legacy_file(packed_bytes)
+                legacy_artifact.write_bytes(legacy_bytes)
+                run([str(args.decoder), str(artifact), str(packed_ppm)])
+                run([str(args.decoder), str(legacy_artifact), str(legacy_ppm)])
+                decoded_identical = packed_ppm.read_bytes() == legacy_ppm.read_bytes()
+                if not decoded_identical:
+                    raise RuntimeError(f"Decoded pixels differ for {image['imageId']} at {target} bpp")
+
+                previous = prior.get((image["imageId"], PROFILE_IDS[target]))
+                current_settings = {
+                    "blockSize": int(match.group("block")),
+                    "localColorCount": int(match.group("local")),
+                    "paletteCount": int(match.group("palettes")),
+                    "globalColorCount": int(match.group("global")),
+                    "paletteColorBits": 16 if match.group("rgb") == "565" else 24,
+                }
+                settings_match = previous is not None and all(
+                    previous["effectiveSettings"].get(setting) == value
+                    for setting, value in current_settings.items()
+                )
+                row = {
+                    "benchmarkVersion": BENCHMARK_VERSION,
+                    "dataset": image["dataset"],
+                    "imageId": image["imageId"],
+                    "sourceSha256": image["sourceSha256"],
+                    "target": target,
+                    "pixelCount": image["pixelCount"],
+                    "packedBytes": len(packed_bytes),
+                    "legacyBytes": len(legacy_bytes),
+                    "savedBytes": len(legacy_bytes) - len(packed_bytes),
+                    "packedPalettes": palette["packed"],
+                    "paletteCount": palette["paletteCount"],
+                    "deltaRecordCount": palette["deltaRecordCount"],
+                    "settingsMatch": settings_match,
+                    "decodedIdentical": decoded_identical,
+                    "psnrRgb": previous.get("psnrRgb") if previous else None,
+                }
+                rows.append(row)
+                completed[key] = row
+                record_stream.write(json.dumps(row, ensure_ascii=False, separators=(",", ":")) + "\n")
+                record_stream.flush()
+                new_count += 1
+
+            elapsed = time.perf_counter() - started
+            print(
+                f"[{image_index}/{len(selected)}] {image['dataset']} {image['imageId']} "
+                f"({elapsed:.1f}s; resumed {resumed_count}, new {new_count})",
+                flush=True,
             )
-            rows.append({
-                "dataset": image["dataset"],
-                "imageId": image["imageId"],
-                "target": target,
-                "pixelCount": image["pixelCount"],
-                "packedBytes": len(packed_bytes),
-                "legacyBytes": len(legacy_bytes),
-                "savedBytes": len(legacy_bytes) - len(packed_bytes),
-                "packedPalettes": palette["packed"],
-                "paletteCount": palette["paletteCount"],
-                "deltaRecordCount": palette["deltaRecordCount"],
-                "settingsMatch": settings_match,
-                "psnrRgb": previous.get("psnrRgb") if previous else None,
-            })
 
-        elapsed = time.perf_counter() - started
-        print(
-            f"[{image_index}/{len(selected)}] {image['dataset']} {image['imageId']} "
-            f"({elapsed:.1f}s)",
-            flush=True,
-        )
-
-    summary = build_summary(selected, rows)
+    summary = build_summary(selected, rows, resumed_count, new_count)
+    validate_summary(summary)
     args.report.parent.mkdir(parents=True, exist_ok=True)
     args.report.write_text(render_report(summary), encoding="utf-8")
     (args.work_dir / "summary.json").write_text(
@@ -166,8 +194,21 @@ def load_images(path: Path) -> tuple[list[dict[str, object]], dict[tuple[str, st
     return list(images.values()), records
 
 
-def select_stratified(images: list[dict[str, object]], per_dataset: int) -> list[dict[str, object]]:
+def select_images(
+    images: list[dict[str, object]], per_dataset: int | None
+) -> list[dict[str, object]]:
     selected: list[dict[str, object]] = []
+    available = collections.Counter(str(image["dataset"]) for image in images)
+    quotas = (
+        {dataset: min(per_dataset, available[dataset]) for dataset in DEFAULT_DATASET_COUNTS}
+        if per_dataset is not None
+        else DEFAULT_DATASET_COUNTS
+    )
+    if per_dataset is not None and per_dataset < 1:
+        raise SystemExit("--sample-per-dataset must be positive")
+    for dataset, quota in quotas.items():
+        if available[dataset] < quota:
+            raise SystemExit(f"Dataset {dataset} has {available[dataset]} images; {quota} required")
     for dataset in ("dtd", "kylberg", "ambientcg"):
         subset = [image for image in images if image["dataset"] == dataset]
         key = "imageClass" if dataset == "ambientcg" else "contentClass"
@@ -177,17 +218,49 @@ def select_stratified(images: list[dict[str, object]], per_dataset: int) -> list
         for group in groups.values():
             group.sort(key=lambda image: hashlib.sha256(str(image["imageId"]).encode()).digest())
         ordered_groups = sorted(groups.items())
-        while len([image for image in selected if image["dataset"] == dataset]) < min(per_dataset, len(subset)):
+        selected_count = 0
+        while selected_count < quotas[dataset]:
             progressed = False
             for _, group in ordered_groups:
                 if group:
                     selected.append(group.pop(0))
+                    selected_count += 1
                     progressed = True
-                    if len([image for image in selected if image["dataset"] == dataset]) >= min(per_dataset, len(subset)):
+                    if selected_count >= quotas[dataset]:
                         break
             if not progressed:
                 break
     return selected
+
+
+def load_resume_records(path: Path) -> dict[tuple[str, str], dict[str, object]]:
+    records: dict[tuple[str, str], dict[str, object]] = {}
+    if not path.is_file():
+        return records
+    with path.open("r", encoding="utf-8") as stream:
+        for line_number, line in enumerate(stream, start=1):
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+                records[(str(row["imageId"]), str(row["target"]))] = row
+            except (json.JSONDecodeError, KeyError) as error:
+                raise SystemExit(f"Invalid resume record at {path}:{line_number}: {error}") from error
+    return records
+
+
+def is_reusable_record(row: dict[str, object] | None, image: dict[str, object]) -> bool:
+    saved_bytes = row.get("savedBytes") if row else None
+    return bool(
+        row
+        and row.get("benchmarkVersion") == BENCHMARK_VERSION
+        and row.get("sourceSha256") == image["sourceSha256"]
+        and row.get("pixelCount") == image["pixelCount"]
+        and row.get("settingsMatch") is True
+        and row.get("decodedIdentical") is True
+        and isinstance(saved_bytes, int)
+        and saved_bytes >= 0
+    )
 
 
 def make_legacy_file(data: bytes) -> tuple[bytes, dict[str, object]]:
@@ -281,7 +354,12 @@ def run(command: list[str]) -> str:
     return completed.stdout
 
 
-def build_summary(images: list[dict[str, object]], rows: list[dict[str, object]]) -> dict[str, object]:
+def build_summary(
+    images: list[dict[str, object]],
+    rows: list[dict[str, object]],
+    resumed_count: int,
+    new_count: int,
+) -> dict[str, object]:
     groups = []
     for label, subset in [("all", rows)] + [
         (dataset, [row for row in rows if row["dataset"] == dataset])
@@ -293,12 +371,27 @@ def build_summary(images: list[dict[str, object]], rows: list[dict[str, object]]
         "schemaVersion": 1,
         "method": "lossless per-palette raw or base+fixed-width RGB residual records with uint32 directory",
         "imageCount": len(images),
+        "datasetCounts": dict(collections.Counter(str(image["dataset"]) for image in images)),
         "recordCount": len(rows),
-        "decodedEqualityChecks": len(rows),
+        "decodedEqualityChecks": sum(bool(row["decodedIdentical"]) for row in rows),
         "settingsMatchCount": sum(bool(row["settingsMatch"]) for row in rows),
+        "resumedRecordCount": resumed_count,
+        "newRecordCount": new_count,
         "groups": groups,
         "targets": targets,
     }
+
+
+def validate_summary(summary: dict[str, object]) -> None:
+    if summary["recordCount"] != summary["imageCount"] * len(TARGETS):
+        raise RuntimeError("Benchmark record matrix is incomplete")
+    if summary["decodedEqualityChecks"] != summary["recordCount"]:
+        raise RuntimeError("Not every packed/legacy decoded buffer is identical")
+    if summary["settingsMatchCount"] != summary["recordCount"]:
+        raise RuntimeError("Not every CUDA settings result matches the reference run")
+    for group in summary["groups"]:
+        if group["savedBytes"] < 0 or group["savingPercent"] < 0:
+            raise RuntimeError(f"Palette packing regressed {group['label']}")
 
 
 def aggregate(label: str, rows: list[dict[str, object]]) -> dict[str, object]:
@@ -363,10 +456,13 @@ def render_report(summary: dict[str, object]) -> str:
         "",
         "## Methodology",
         "",
-        "- 20 stratified images from each of DTD, Kylberg, and ambientCG.",
+        f"- Deterministic stratified sample: "
+        f"{summary['datasetCounts']['dtd']} DTD, {summary['datasetCounts']['kylberg']} Kylberg, "
+        f"and {summary['datasetCounts']['ambientcg']} ambientCG images.",
         "- All eight CUDA `--find-settings` targets from 1.5 through 8 bpp.",
         "- Full file size includes the 14-byte BPAL header and all packing metadata.",
         f"- Existing CUDA settings were reproduced for {summary['settingsMatchCount']}/{summary['recordCount']} records.",
+        f"- JSONL resume reused {summary['resumedRecordCount']} records; {summary['newRecordCount']} were encoded in this run.",
         "- Quality is unchanged by construction and by byte-identical decoded output, so PSNR delta is exactly 0 dB.",
         "",
     ])

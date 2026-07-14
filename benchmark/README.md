@@ -178,7 +178,7 @@ resumable under `benchmark/work/specialized-pbr/`; the tracked report is
 
 After building `native/bpal5_simd/build-local/bpal5cudaenc.exe`, compare the
 GPU-friendly independent palette records against the byte-equivalent legacy
-layout on a stratified 60-texture sample:
+layout on the deterministic 200-texture sample:
 
 ```powershell
 python tools/local_palette_packing_benchmark.py
@@ -186,7 +186,9 @@ python tools/local_palette_packing_benchmark.py
 
 The benchmark covers all eight CUDA `--find-settings` targets, includes every
 directory and record byte in file-size totals, and verifies byte-identical
-decoded output for packed and legacy files.
+decoded output for packed and legacy files. Completed image/target records are
+appended to `benchmark/work/local-palette-packing/records.jsonl`, so the same
+command safely resumes an interrupted run.
 
 ## Run
 
