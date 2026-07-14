@@ -98,7 +98,8 @@ Encoder options:
 - `--no-simd`: disable AVX2 even when the CPU supports it.
 
 `bpal5cudaenc` accepts the same encoder options and adds `--device N`.
-`--no-simd` controls the CPU initialization stage of the CUDA encoder.
+`--no-simd` is retained for command-line compatibility; current CUDA palette
+initialization no longer calls the CPU nearest-colour SIMD backend.
 
 Presets select RGB888, four refinement passes, and the following BPAL
 structure. Explicit encoder options override the selected preset regardless of
@@ -127,34 +128,43 @@ offline builds.
 
 ## CUDA pipeline and quality guarantees
 
-The CUDA encoder deliberately reuses the CPU encoder for block clustering and
-initial global-palette construction. The compact RGB24 input crosses the PCIe
-boundary once and is expanded by a CUDA kernel into an aligned 32-bit RGB
-cache. The palette, block-local tables, pixel indices, and aligned source then
-stay on the GPU while CUDA kernels perform:
+The CUDA encoder keeps block-descriptor clustering on the CPU, but moves the
+expensive global-palette construction and initial block encoding to CUDA. CUDA
+context initialization runs concurrently with CPU block clustering and palette
+sample grouping, hiding most or all of that remaining CPU work. The compact
+RGB24 input, block selectors, and packed palette samples cross the PCIe
+boundary once. A CUDA kernel expands RGB24 into an aligned 32-bit RGB cache,
+after which the palettes and index arrays stay on the GPU while kernels
+perform:
 
-- exact RGB error measurement;
+- farthest-first global-palette seeding;
+- global-palette k-means assignment and centroid updates;
+- initial block-local palette selection and pixel assignment;
 - shared-palette centroid accumulation and update;
 - block-local palette selection;
 - final pixel-index assignment.
 
 Block-local palette selection processes every local slot in one kernel. It
-keeps per-block best distances and selected colours in shared memory instead
+first finds the same nearest-colour candidate set and preserves the same tie
+order as the CPU encoder. Candidate flags, per-pixel nearest colours,
+per-block best distances, and selected colours stay in shared memory instead
 of repeatedly writing a full-image scratch array to global GPU memory. The
 only per-pass GPU-to-CPU value is the 64-bit candidate error needed for early
 termination; final palette and index arrays are downloaded once.
 
 Every candidate refinement pass is measured using the same integer RGB squared
 error as the CPU encoder. A pass is accepted only when it lowers the error, so
-CUDA refinement cannot reduce the quality of the initialized image. The CUDA
-block search considers every colour in the selected shared palette; it can
-therefore produce a slightly lower MSE than the CPU refinement search while
-keeping the exact same BPAL file layout and size.
+CUDA refinement cannot reduce the quality of the initialized image. GPU
+farthest-first seeding, k-means rounding, candidate order, and RGB565
+quantization match the CPU implementation. The validation image produced
+byte-identical CPU and CUDA BPAL files for every preset from 1.5 through 8 bpp
+and for RGB565.
 
-The summary printed by `bpal5cudaenc` separates CPU initialization time from
-GPU time and reports accepted/requested passes, final MSE, and the selected
-device. End-to-end acceleration depends on image and preset because initial
-palette construction remains on the CPU.
+The summary printed by `bpal5cudaenc` reports CPU block clustering and sample
+grouping, CUDA setup, GPU palette construction, initial block encoding,
+refinement, accepted/requested passes, final MSE, and the selected device.
+CPU preparation overlaps CUDA setup, so those reported stage times do not sum
+to wall-clock time.
 
 To reproduce a wall-clock and decoded-quality comparison between both
 encoders, use any binary RGB PPM input:
@@ -165,7 +175,8 @@ python native\bpal5_simd\tests\benchmark_cuda.py input.ppm `
 ```
 
 The script reports mean and best encode time, output size, decoded MSE, PSNR,
-CUDA kernel time, and CUDA speedup. It uses only the Python standard library.
+the detailed CUDA stage breakdown, and CUDA speedup. It uses only the Python
+standard library.
 
 The packed BPAL serializer also batches aligned `uint8_t` and `uint16_t`
 indices into 32-bit words before emitting the continuous MSB-first stream.
@@ -179,19 +190,28 @@ native\bpal5_simd\build-cuda\bpal5_serialize_benchmark.exe input.bpal 2000
 
 ### Optimization validation
 
-On an RTX 5060 Ti, a 330x512 PPM with preset 3 and four refinement passes was
-measured with 15 alternating runs of the original and optimized executables.
-The output was byte-identical for every preset from 1.5 through 8 bpp and for
-RGB565.
+On an RTX 5060 Ti, a 330x512 PPM with preset 3 and four refinement passes first
+showed this pre-migration CPU profile: 22 ms block clustering, 246 ms global
+palette construction, and 51 ms initial block encoding. Palette construction
+was 77% of the 319 ms CPU initialization phase.
 
-| Measurement | Original | Optimized | Speedup |
+After moving palette seeding, k-means, and initial block encoding to CUDA, a
+representative run reported 20.8 ms of overlapping CPU preparation, 5.6 ms of
+GPU palette construction, 0.7 ms of GPU initial block encoding, and 3.8 ms of
+GPU refinement. Ten measured process runs produced the following result:
+
+| Measurement | Before GPU palette construction | After | Speedup |
 | --- | ---: | ---: | ---: |
-| CUDA phase, mean | 4.103 ms | 3.575 ms | 1.148x |
-| Full process, mean | 436.756 ms | 430.667 ms | 1.014x |
+| CPU initialization work | 319.055 ms | 20.824 ms | 15.322x |
+| Full CUDA process, mean | 430.667 ms | 126.489 ms | 3.405x |
+| Current CPU vs CUDA process, mean | 535.638 ms | 126.489 ms | 4.235x |
 | BPAL serialization, mean | 0.873 ms | 0.308 ms | 2.84x |
 
-End-to-end improvement is smaller because initial global-palette construction
-still dominates this preset on the CPU.
+CUDA driver/context startup remains the largest single stage in a fresh
+process (roughly 80-105 ms on this system). It overlaps CPU preparation but
+cannot be eliminated inside a one-image command. Consequently, very short
+low-bpp jobs such as preset 1.5 can still be faster on the CPU; a persistent or
+batch encoder could amortize startup across multiple images.
 
 ## API and compatibility
 
