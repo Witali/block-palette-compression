@@ -9,6 +9,8 @@ async function runTests() {
   require("./palette-quantizer.test.js");
   require("./block-palette-codec.test.js");
   require("./block-palette-format.test.js");
+  require("./adaptive-block-format.test.js");
+  require("./adaptive-block-webgl2.test.js");
   require("./block-pattern-dictionary.test.js");
   require("./block-pattern-dictionary-webgl2.test.js");
   require("./bplm-format.test.js");
