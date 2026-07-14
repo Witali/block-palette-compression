@@ -172,7 +172,9 @@ int main(int argc, char **argv) {
 
     std::printf(
         "Encoded %ux%u image to BPAL v5: block %u, local %u, %u x %u shared colors, "
-        "RGB%u, CUDA refinements %u/%u, MSE %.6f, CPU init %.3f ms, GPU %.3f ms, %s\n",
+        "RGB%u, CUDA refinements %u/%u, MSE %.6f, CPU init %.3f ms "
+        "(clusters %.3f, samples %.3f), CUDA setup %.3f ms, GPU %.3f ms "
+        "(palettes %.3f, initial blocks %.3f, refine %.3f), %s\n",
         width,
         height,
         options.block_size,
@@ -184,7 +186,13 @@ int main(int argc, char **argv) {
         stats.requested_refinement_passes,
         static_cast<double>(stats.final_error) / (static_cast<double>(width) * height * 3.0),
         stats.cpu_initialization_milliseconds,
+        stats.cpu_block_clustering_milliseconds,
+        stats.cpu_sample_grouping_milliseconds,
+        stats.cuda_setup_milliseconds,
         stats.gpu_milliseconds,
+        stats.gpu_palette_building_milliseconds,
+        stats.gpu_initial_encoding_milliseconds,
+        stats.gpu_refinement_milliseconds,
         stats.device_name
     );
     result = 0;

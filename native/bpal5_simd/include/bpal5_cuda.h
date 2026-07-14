@@ -16,7 +16,13 @@ typedef struct bpal5_cuda_encode_stats {
     uint32_t accepted_refinement_passes;
     uint64_t initial_error;
     uint64_t final_error;
+    double cuda_setup_milliseconds;
     double cpu_initialization_milliseconds;
+    double cpu_block_clustering_milliseconds;
+    double cpu_sample_grouping_milliseconds;
+    double gpu_palette_building_milliseconds;
+    double gpu_initial_encoding_milliseconds;
+    double gpu_refinement_milliseconds;
     double gpu_milliseconds;
 } bpal5_cuda_encode_stats;
 

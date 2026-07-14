@@ -20,10 +20,13 @@ int run_roundtrip(
     const size_t pixel_count = static_cast<size_t>(width) * height;
     bpal5_encode_options options;
     bpal5_image encoded{};
+    bpal5_image cpu_encoded{};
     bpal5_image parsed{};
     bpal5_cuda_encode_stats stats{};
     uint8_t *bytes = nullptr;
+    uint8_t *cpu_bytes = nullptr;
     size_t byte_count = 0u;
+    size_t cpu_byte_count = 0u;
     uint8_t *decoded = nullptr;
     size_t decoded_size = 0u;
     uint64_t decoded_error = 0u;
@@ -57,10 +60,26 @@ int run_roundtrip(
         result = fail("invalid CUDA encode statistics");
         goto cleanup;
     }
+    if (!bpal5_encode_rgb(
+            source.data(),
+            width,
+            height,
+            &options,
+            &cpu_encoded,
+            error,
+            sizeof(error))) {
+        std::fprintf(stderr, "test_cuda_roundtrip: %s\n", error);
+        goto cleanup;
+    }
     if (!bpal5_serialize(&encoded, &bytes, &byte_count, error, sizeof(error)) ||
+        !bpal5_serialize(&cpu_encoded, &cpu_bytes, &cpu_byte_count, error, sizeof(error)) ||
         !bpal5_parse(bytes, byte_count, &parsed, error, sizeof(error)) ||
         !bpal5_decode_rgba(&parsed, 1, &decoded, &decoded_size, error, sizeof(error))) {
         std::fprintf(stderr, "test_cuda_roundtrip: %s\n", error);
+        goto cleanup;
+    }
+    if (byte_count != cpu_byte_count || std::memcmp(bytes, cpu_bytes, byte_count) != 0) {
+        result = fail("CPU and CUDA BPAL output differs");
         goto cleanup;
     }
     if (decoded_size != pixel_count * 4u || parsed.width != width || parsed.height != height ||
@@ -97,8 +116,10 @@ int run_roundtrip(
 
 cleanup:
     bpal5_free(bytes);
+    bpal5_free(cpu_bytes);
     bpal5_free(decoded);
     bpal5_image_free(&encoded);
+    bpal5_image_free(&cpu_encoded);
     bpal5_image_free(&parsed);
     return result;
 }

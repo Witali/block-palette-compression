@@ -42,6 +42,13 @@ typedef struct bpal5_encode_options {
     int use_simd;
 } bpal5_encode_options;
 
+typedef struct bpal5_encode_stats {
+    double block_clustering_milliseconds;
+    double palette_building_milliseconds;
+    double block_encoding_milliseconds;
+    double refinement_milliseconds;
+} bpal5_encode_stats;
+
 void bpal5_default_encode_options(bpal5_encode_options *options);
 int bpal5_apply_quality_preset(const char *name, bpal5_encode_options *options);
 int bpal5_cpu_has_avx2(void);
@@ -53,6 +60,17 @@ int bpal5_encode_rgb(
     uint32_t height,
     const bpal5_encode_options *options,
     bpal5_image *output,
+    char *error,
+    size_t error_size
+);
+
+int bpal5_encode_rgb_with_stats(
+    const uint8_t *rgb,
+    uint32_t width,
+    uint32_t height,
+    const bpal5_encode_options *options,
+    bpal5_image *output,
+    bpal5_encode_stats *stats,
     char *error,
     size_t error_size
 );

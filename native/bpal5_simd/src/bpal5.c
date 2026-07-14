@@ -1,10 +1,12 @@
 #include "bpal5.h"
+#include "bpal5_encode_internal.h"
 #include "bpal5_simd_internal.h"
 
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #define BPAL5_MAX_DIMENSION (1u << 24)
 #define BPAL5_MAX_SAMPLE_PIXELS 32768u
@@ -1408,34 +1410,27 @@ static int update_palette_centroids(
     return 1;
 }
 
-int bpal5_encode_rgb(
+int bpal5_prepare_rgb_image_internal(
     const uint8_t *rgb,
     uint32_t width,
     uint32_t height,
-    const bpal5_encode_options *options_input,
+    const bpal5_encode_options *options,
     bpal5_image *output,
+    double *block_clustering_milliseconds,
     char *error,
     size_t error_size
 ) {
-    bpal5_encode_options defaults;
-    const bpal5_encode_options *options = options_input;
     bpal5_image image;
-    bpal5_nearest_fn nearest;
-    uint64_t current_error;
-    uint32_t pass;
-    size_t palette_entries;
-    size_t block_entries;
-    size_t pixel_count;
+    clock_t stage_started;
 
-    if (output == NULL || rgb == NULL) {
+    if (output == NULL || rgb == NULL || options == NULL) {
         set_error(error, error_size, "Invalid BPAL encode arguments");
         return 0;
     }
     memset(output, 0, sizeof(*output));
     memset(&image, 0, sizeof(image));
-    if (options == NULL) {
-        bpal5_default_encode_options(&defaults);
-        options = &defaults;
+    if (block_clustering_milliseconds != NULL) {
+        *block_clustering_milliseconds = 0.0;
     }
     if (width == 0u || width > BPAL5_MAX_DIMENSION || height == 0u || height > BPAL5_MAX_DIMENSION ||
         !is_power_of_two(options->block_size) || options->block_size < 2u || options->block_size > 64u ||
@@ -1469,12 +1464,74 @@ int bpal5_encode_rgb(
     if (!allocate_image_arrays(&image, error, error_size)) {
         return 0;
     }
-    nearest = bpal5_select_nearest(options->use_simd);
-    if (!assign_block_palettes(rgb, &image, error, error_size) ||
-        !build_global_palettes(rgb, &image, options, nearest, error, error_size)) {
+    stage_started = clock();
+    if (!assign_block_palettes(rgb, &image, error, error_size)) {
         bpal5_image_free(&image);
         return 0;
     }
+    if (block_clustering_milliseconds != NULL) {
+        *block_clustering_milliseconds =
+            (double)(clock() - stage_started) * 1000.0 / CLOCKS_PER_SEC;
+    }
+
+    *output = image;
+    return 1;
+}
+
+int bpal5_encode_rgb_with_stats(
+    const uint8_t *rgb,
+    uint32_t width,
+    uint32_t height,
+    const bpal5_encode_options *options_input,
+    bpal5_image *output,
+    bpal5_encode_stats *stats,
+    char *error,
+    size_t error_size
+) {
+    bpal5_encode_options defaults;
+    const bpal5_encode_options *options = options_input;
+    bpal5_image image;
+    bpal5_nearest_fn nearest;
+    uint64_t current_error;
+    uint32_t pass;
+    size_t palette_entries;
+    size_t block_entries;
+    size_t pixel_count;
+    clock_t stage_started;
+
+    if (stats != NULL) {
+        memset(stats, 0, sizeof(*stats));
+    }
+    if (output == NULL || rgb == NULL) {
+        set_error(error, error_size, "Invalid BPAL encode arguments");
+        return 0;
+    }
+    if (options == NULL) {
+        bpal5_default_encode_options(&defaults);
+        options = &defaults;
+    }
+    if (!bpal5_prepare_rgb_image_internal(
+            rgb,
+            width,
+            height,
+            options,
+            &image,
+            stats != NULL ? &stats->block_clustering_milliseconds : NULL,
+            error,
+            error_size)) {
+        return 0;
+    }
+    nearest = bpal5_select_nearest(options->use_simd);
+    stage_started = clock();
+    if (!build_global_palettes(rgb, &image, options, nearest, error, error_size)) {
+        bpal5_image_free(&image);
+        return 0;
+    }
+    if (stats != NULL) {
+        stats->palette_building_milliseconds =
+            (double)(clock() - stage_started) * 1000.0 / CLOCKS_PER_SEC;
+    }
+    stage_started = clock();
     current_error = encode_blocks(
         rgb,
         &image,
@@ -1489,10 +1546,15 @@ int bpal5_encode_rgb(
         bpal5_image_free(&image);
         return 0;
     }
+    if (stats != NULL) {
+        stats->block_encoding_milliseconds =
+            (double)(clock() - stage_started) * 1000.0 / CLOCKS_PER_SEC;
+    }
 
     palette_entries = (size_t)image.palette_count * image.global_color_count;
     block_entries = (size_t)image.block_count * image.local_color_count;
     pixel_count = (size_t)image.width * image.height;
+    stage_started = clock();
     for (pass = 0; pass < options->refinement_passes; ++pass) {
         uint32_t *candidate_palette = (uint32_t *)malloc(palette_entries * sizeof(uint32_t));
         uint16_t *candidate_blocks = (uint16_t *)malloc(block_entries * sizeof(uint16_t));
@@ -1546,7 +1608,32 @@ int bpal5_encode_rgb(
         free(candidate_blocks);
         free(candidate_pixels);
     }
+    if (stats != NULL) {
+        stats->refinement_milliseconds =
+            (double)(clock() - stage_started) * 1000.0 / CLOCKS_PER_SEC;
+    }
 
     *output = image;
     return 1;
+}
+
+int bpal5_encode_rgb(
+    const uint8_t *rgb,
+    uint32_t width,
+    uint32_t height,
+    const bpal5_encode_options *options,
+    bpal5_image *output,
+    char *error,
+    size_t error_size
+) {
+    return bpal5_encode_rgb_with_stats(
+        rgb,
+        width,
+        height,
+        options,
+        output,
+        NULL,
+        error,
+        error_size
+    );
 }

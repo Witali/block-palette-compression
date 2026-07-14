@@ -1,18 +1,26 @@
 #include "bpal5_cuda.h"
+#include "bpal5_encode_internal.h"
 
 #include <cuda_runtime.h>
 
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <limits>
+#include <new>
+#include <system_error>
+#include <thread>
 #include <utility>
+#include <vector>
 
 namespace {
 
 constexpr unsigned int CUDA_THREADS = 256u;
 constexpr unsigned int MAX_BLOCK_PIXELS = 64u * 64u;
 constexpr unsigned int MAX_LOCAL_COLORS = 16u;
+constexpr unsigned int MAX_GLOBAL_COLORS = 4096u;
+constexpr unsigned int MAX_SAMPLE_PIXELS = 32768u;
 
 struct DeviceImageInfo {
     uint32_t width;
@@ -41,6 +49,24 @@ struct DeviceBuffers {
     unsigned long long *green_sums;
     unsigned long long *blue_sums;
     unsigned long long *error_sum;
+    uint32_t *samples;
+    uint32_t *sample_offsets;
+    uint32_t *sample_counts;
+    uint32_t *nearest_sample_distances;
+};
+
+struct HostPaletteSamples {
+    std::vector<uint32_t> colors;
+    std::vector<uint32_t> offsets;
+    std::vector<uint32_t> counts;
+};
+
+struct CudaSetupState {
+    cudaDeviceProp properties;
+    cudaError_t status;
+    const char *operation;
+    int device_count;
+    double milliseconds;
 };
 
 void set_message(char *error, size_t error_size, const char *message) {
@@ -66,6 +92,30 @@ void set_cuda_message(
     }
 }
 
+void initialize_cuda_device(int device_ordinal, CudaSetupState *state) {
+    const auto started = std::chrono::steady_clock::now();
+    state->status = cudaGetDeviceCount(&state->device_count);
+    state->operation = "Cannot enumerate CUDA devices";
+    if (state->status == cudaSuccess &&
+        device_ordinal >= 0 && device_ordinal < state->device_count) {
+        state->status = cudaSetDevice(device_ordinal);
+        state->operation = "Cannot select CUDA device";
+    }
+    if (state->status == cudaSuccess &&
+        device_ordinal >= 0 && device_ordinal < state->device_count) {
+        state->status = cudaGetDeviceProperties(&state->properties, device_ordinal);
+        state->operation = "Cannot query CUDA device";
+    }
+    if (state->status == cudaSuccess &&
+        device_ordinal >= 0 && device_ordinal < state->device_count) {
+        state->status = cudaFree(nullptr);
+        state->operation = "Cannot initialize CUDA context";
+    }
+    state->milliseconds = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - started
+    ).count();
+}
+
 void release_buffers(DeviceBuffers *buffers) {
     if (buffers == nullptr) {
         return;
@@ -84,7 +134,90 @@ void release_buffers(DeviceBuffers *buffers) {
     cudaFree(buffers->green_sums);
     cudaFree(buffers->blue_sums);
     cudaFree(buffers->error_sum);
+    cudaFree(buffers->samples);
+    cudaFree(buffers->sample_offsets);
+    cudaFree(buffers->sample_counts);
+    cudaFree(buffers->nearest_sample_distances);
     std::memset(buffers, 0, sizeof(*buffers));
+}
+
+uint32_t pack_host_rgba(uint8_t red, uint8_t green, uint8_t blue) {
+    return static_cast<uint32_t>(red) |
+        (static_cast<uint32_t>(green) << 8u) |
+        (static_cast<uint32_t>(blue) << 16u) |
+        0xff000000u;
+}
+
+bool collect_palette_samples(
+    const uint8_t *rgb,
+    const bpal5_image &image,
+    HostPaletteSamples *output,
+    char *error,
+    size_t error_size
+) {
+    try {
+        std::vector<uint64_t> totals(image.palette_count, 0u);
+        std::vector<uint64_t> strides(image.palette_count, 1u);
+        std::vector<uint64_t> seen(image.palette_count, 0u);
+        std::vector<uint32_t> stored(image.palette_count, 0u);
+        uint64_t total_samples = 0u;
+
+        output->offsets.assign(image.palette_count, 0u);
+        output->counts.assign(image.palette_count, 0u);
+
+        for (uint32_t block = 0u; block < image.block_count; ++block) {
+            const uint32_t block_x = block % image.blocks_x;
+            const uint32_t block_y = block / image.blocks_x;
+            const uint32_t start_x = block_x * image.block_size;
+            const uint32_t start_y = block_y * image.block_size;
+            const uint32_t end_x = std::min(start_x + image.block_size, image.width);
+            const uint32_t end_y = std::min(start_y + image.block_size, image.height);
+            const uint32_t palette = image.block_palette_selectors[block];
+            totals[palette] += static_cast<uint64_t>(end_x - start_x) * (end_y - start_y);
+        }
+
+        for (uint32_t palette = 0u; palette < image.palette_count; ++palette) {
+            strides[palette] = std::max<uint64_t>(
+                1u,
+                (totals[palette] + MAX_SAMPLE_PIXELS - 1u) / MAX_SAMPLE_PIXELS
+            );
+            const uint64_t count = (totals[palette] + strides[palette] - 1u) / strides[palette];
+            if (count > UINT32_MAX || total_samples + count > UINT32_MAX) {
+                set_message(error, error_size, "CUDA palette sample set is too large");
+                return false;
+            }
+            output->offsets[palette] = static_cast<uint32_t>(total_samples);
+            output->counts[palette] = static_cast<uint32_t>(count);
+            total_samples += count;
+        }
+        output->colors.resize(static_cast<size_t>(total_samples));
+
+        for (uint32_t block = 0u; block < image.block_count; ++block) {
+            const uint32_t block_x = block % image.blocks_x;
+            const uint32_t block_y = block / image.blocks_x;
+            const uint32_t start_x = block_x * image.block_size;
+            const uint32_t start_y = block_y * image.block_size;
+            const uint32_t end_x = std::min(start_x + image.block_size, image.width);
+            const uint32_t end_y = std::min(start_y + image.block_size, image.height);
+            const uint32_t palette = image.block_palette_selectors[block];
+            for (uint32_t y = start_y; y < end_y; ++y) {
+                for (uint32_t x = start_x; x < end_x; ++x) {
+                    if (seen[palette] % strides[palette] == 0u) {
+                        const uint8_t *pixel = rgb +
+                            (static_cast<size_t>(y) * image.width + x) * 3u;
+                        output->colors[output->offsets[palette] + stored[palette]] =
+                            pack_host_rgba(pixel[0], pixel[1], pixel[2]);
+                        ++stored[palette];
+                    }
+                    ++seen[palette];
+                }
+            }
+        }
+        return true;
+    } catch (const std::bad_alloc &) {
+        set_message(error, error_size, "Out of memory collecting CUDA palette samples");
+        return false;
+    }
 }
 
 __device__ __forceinline__ uint32_t pack_rgba(
@@ -164,30 +297,163 @@ __global__ void cache_rgb_kernel(
     }
 }
 
-__global__ void calculate_error_kernel(
-    const uint32_t *rgb,
-    DeviceImageInfo info,
-    const uint8_t *selectors,
-    const uint32_t *palette,
-    const uint16_t *block_indices,
-    const uint8_t *pixel_indices,
-    unsigned long long *error_sum
+__global__ void initialize_palettes_kernel(
+    const uint32_t *samples,
+    const uint32_t *sample_offsets,
+    const uint32_t *sample_counts,
+    uint32_t global_color_count,
+    uint32_t *palette,
+    uint32_t *nearest_distances
 ) {
-    const size_t pixel = static_cast<size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
-    unsigned long long error = 0u;
-    if (pixel < info.pixel_count) {
-        const uint32_t block = block_for_pixel(pixel, info);
-        const uint32_t local = pixel_indices[pixel];
-        const uint32_t global = block_indices[
-            static_cast<size_t>(block) * info.local_color_count + local
-        ];
-        const uint32_t palette_base =
-            static_cast<uint32_t>(selectors[block]) * info.global_color_count;
-        error = color_distance(rgb[pixel], palette[palette_base + global]);
+    const uint32_t palette_index = blockIdx.x;
+    const uint32_t sample_offset = sample_offsets[palette_index];
+    const uint32_t sample_count = sample_counts[palette_index];
+    const size_t palette_offset = static_cast<size_t>(palette_index) * global_color_count;
+
+    for (uint32_t color = threadIdx.x; color < global_color_count; color += blockDim.x) {
+        palette[palette_offset + color] = pack_rgba(0u, 0u, 0u);
     }
-    error = warp_sum(error);
-    if ((threadIdx.x & 31u) == 0u) {
-        atomicAdd(error_sum, error);
+    for (uint32_t sample = threadIdx.x; sample < sample_count; sample += blockDim.x) {
+        nearest_distances[sample_offset + sample] = UINT_MAX;
+    }
+    __syncthreads();
+    if (threadIdx.x == 0u && sample_count != 0u) {
+        palette[palette_offset] = samples[sample_offset];
+    }
+}
+
+__global__ void choose_palette_centroid_kernel(
+    const uint32_t *samples,
+    const uint32_t *sample_offsets,
+    const uint32_t *sample_counts,
+    uint32_t global_color_count,
+    uint32_t centroid,
+    uint32_t *palette,
+    uint32_t *nearest_distances
+) {
+    __shared__ uint32_t best_distances[CUDA_THREADS];
+    __shared__ uint32_t best_samples[CUDA_THREADS];
+
+    const uint32_t palette_index = blockIdx.x;
+    const uint32_t sample_offset = sample_offsets[palette_index];
+    const uint32_t sample_count = sample_counts[palette_index];
+    const uint32_t active_count = min(sample_count, global_color_count);
+    const size_t palette_offset = static_cast<size_t>(palette_index) * global_color_count;
+    if (centroid >= active_count) {
+        return;
+    }
+
+    const uint32_t previous = palette[palette_offset + centroid - 1u];
+    uint32_t thread_best_distance = 0u;
+    uint32_t thread_best_sample = 0u;
+    for (uint32_t sample = threadIdx.x; sample < sample_count; sample += blockDim.x) {
+        const uint32_t index = sample_offset + sample;
+        const uint32_t distance = color_distance(samples[index], previous);
+        const uint32_t nearest = min(distance, nearest_distances[index]);
+        nearest_distances[index] = nearest;
+        if (nearest > thread_best_distance ||
+            (nearest == thread_best_distance && sample < thread_best_sample)) {
+            thread_best_distance = nearest;
+            thread_best_sample = sample;
+        }
+    }
+    best_distances[threadIdx.x] = thread_best_distance;
+    best_samples[threadIdx.x] = thread_best_sample;
+    __syncthreads();
+
+    for (uint32_t offset = blockDim.x / 2u; offset != 0u; offset >>= 1u) {
+        if (threadIdx.x < offset) {
+            const uint32_t other_distance = best_distances[threadIdx.x + offset];
+            const uint32_t other_sample = best_samples[threadIdx.x + offset];
+            if (other_distance > best_distances[threadIdx.x] ||
+                (other_distance == best_distances[threadIdx.x] &&
+                 other_sample < best_samples[threadIdx.x])) {
+                best_distances[threadIdx.x] = other_distance;
+                best_samples[threadIdx.x] = other_sample;
+            }
+        }
+        __syncthreads();
+    }
+    if (threadIdx.x == 0u) {
+        palette[palette_offset + centroid] = samples[sample_offset + best_samples[0]];
+    }
+}
+
+__global__ void assign_palette_samples_kernel(
+    const uint32_t *samples,
+    const uint32_t *sample_offsets,
+    const uint32_t *sample_counts,
+    uint32_t global_color_count,
+    const uint32_t *palette,
+    unsigned long long *red_sums,
+    unsigned long long *green_sums,
+    unsigned long long *blue_sums,
+    uint32_t *counts
+) {
+    const uint32_t palette_index = blockIdx.y;
+    const uint32_t sample = blockIdx.x * blockDim.x + threadIdx.x;
+    const uint32_t sample_count = sample_counts[palette_index];
+    if (sample >= sample_count) {
+        return;
+    }
+    const uint32_t sample_offset = sample_offsets[palette_index];
+    const uint32_t active_count = min(sample_count, global_color_count);
+    const size_t palette_offset = static_cast<size_t>(palette_index) * global_color_count;
+    const uint32_t source = samples[sample_offset + sample];
+    uint32_t best_centroid = 0u;
+    uint32_t best_distance = color_distance(source, palette[palette_offset]);
+    for (uint32_t centroid = 1u; centroid < active_count; ++centroid) {
+        const uint32_t distance = color_distance(source, palette[palette_offset + centroid]);
+        if (distance < best_distance) {
+            best_distance = distance;
+            best_centroid = centroid;
+        }
+    }
+    const size_t entry = palette_offset + best_centroid;
+    atomicAdd(red_sums + entry, static_cast<unsigned long long>(source & 255u));
+    atomicAdd(green_sums + entry, static_cast<unsigned long long>((source >> 8u) & 255u));
+    atomicAdd(blue_sums + entry, static_cast<unsigned long long>((source >> 16u) & 255u));
+    atomicAdd(counts + entry, 1u);
+}
+
+__global__ void finalize_palette_samples_kernel(
+    uint32_t *palette,
+    uint32_t palette_count,
+    uint32_t global_color_count,
+    const uint32_t *sample_counts,
+    const unsigned long long *red_sums,
+    const unsigned long long *green_sums,
+    const unsigned long long *blue_sums,
+    const uint32_t *counts
+) {
+    const size_t entry = static_cast<size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+    const size_t palette_entries = static_cast<size_t>(palette_count) * global_color_count;
+    if (entry >= palette_entries) {
+        return;
+    }
+    const uint32_t palette_index = static_cast<uint32_t>(entry / global_color_count);
+    const uint32_t centroid = static_cast<uint32_t>(entry % global_color_count);
+    const uint32_t active_count = min(sample_counts[palette_index], global_color_count);
+    if (centroid >= active_count) {
+        palette[entry] = pack_rgba(0u, 0u, 0u);
+    } else if (counts[entry] != 0u) {
+        const uint32_t count = counts[entry];
+        palette[entry] = pack_rgba(
+            static_cast<uint8_t>((red_sums[entry] + count / 2u) / count),
+            static_cast<uint8_t>((green_sums[entry] + count / 2u) / count),
+            static_cast<uint8_t>((blue_sums[entry] + count / 2u) / count)
+        );
+    }
+}
+
+__global__ void quantize_palette_kernel(
+    uint32_t *palette,
+    size_t palette_entries,
+    uint32_t palette_color_bits
+) {
+    const size_t entry = static_cast<size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+    if (entry < palette_entries) {
+        palette[entry] = quantize_color(palette[entry], palette_color_bits);
     }
 }
 
@@ -248,9 +514,13 @@ __global__ void select_block_palette_kernel(
     uint16_t *block_indices
 ) {
     __shared__ unsigned long long shared_scores[CUDA_THREADS];
-    __shared__ uint32_t shared_candidates[CUDA_THREADS];
+    __shared__ uint32_t shared_candidate_positions[CUDA_THREADS];
     __shared__ uint32_t shared_best_distances[MAX_BLOCK_PIXELS];
     __shared__ uint32_t shared_selected[MAX_LOCAL_COLORS];
+    __shared__ uint8_t shared_candidate_flags[MAX_GLOBAL_COLORS];
+    __shared__ uint16_t shared_candidate_values[MAX_GLOBAL_COLORS];
+    __shared__ uint16_t shared_nearest_globals[MAX_BLOCK_PIXELS];
+    __shared__ uint32_t shared_candidate_count;
 
     const uint32_t block = blockIdx.x;
     const uint32_t block_x = block % info.blocks_x;
@@ -264,18 +534,56 @@ __global__ void select_block_palette_kernel(
     const uint32_t palette_base =
         static_cast<uint32_t>(selectors[block]) * info.global_color_count;
 
+    for (uint32_t color = threadIdx.x; color < info.global_color_count; color += blockDim.x) {
+        shared_candidate_flags[color] = 0u;
+    }
     for (uint32_t position = threadIdx.x; position < block_pixel_count; position += blockDim.x) {
+        const uint32_t x = start_x + position % block_width;
+        const uint32_t y = start_y + position / block_width;
+        const uint32_t source = rgb[static_cast<size_t>(y) * info.width + x];
+        uint32_t best_global = 0u;
+        uint32_t best_distance = color_distance(source, palette[palette_base]);
+        for (uint32_t global = 1u; global < info.global_color_count; ++global) {
+            const uint32_t distance = color_distance(source, palette[palette_base + global]);
+            if (distance < best_distance) {
+                best_distance = distance;
+                best_global = global;
+            }
+        }
+        shared_nearest_globals[position] = static_cast<uint16_t>(best_global);
         shared_best_distances[position] = UINT_MAX;
+    }
+    __syncthreads();
+
+    if (threadIdx.x == 0u) {
+        uint32_t candidate_count = 0u;
+        for (uint32_t position = 0u; position < block_pixel_count; ++position) {
+            const uint32_t global = shared_nearest_globals[position];
+            if (shared_candidate_flags[global] == 0u) {
+                shared_candidate_flags[global] = 1u;
+                shared_candidate_values[candidate_count++] = static_cast<uint16_t>(global);
+            }
+        }
+        for (uint32_t global = 0u;
+             global < info.global_color_count && candidate_count < info.local_color_count;
+             ++global) {
+            if (shared_candidate_flags[global] == 0u) {
+                shared_candidate_flags[global] = 1u;
+                shared_candidate_values[candidate_count++] = static_cast<uint16_t>(global);
+            }
+        }
+        shared_candidate_count = candidate_count;
     }
     __syncthreads();
 
     for (uint32_t slot = 0u; slot < info.local_color_count; ++slot) {
         unsigned long long thread_score = ULLONG_MAX;
-        uint32_t thread_candidate = UINT_MAX;
+        uint32_t thread_candidate_position = UINT_MAX;
 
-        for (uint32_t candidate = threadIdx.x;
-             candidate < info.global_color_count;
-             candidate += blockDim.x) {
+        for (uint32_t candidate_position = threadIdx.x;
+             candidate_position < shared_candidate_count;
+             candidate_position += blockDim.x) {
+            const uint32_t candidate = shared_candidate_values[candidate_position];
             bool selected = false;
             for (uint32_t previous = 0u; previous < slot; ++previous) {
                 if (shared_selected[previous] == candidate) {
@@ -297,34 +605,35 @@ __global__ void select_block_palette_kernel(
                     score += min(distance, shared_best_distances[position++]);
                 }
             }
-            if (score < thread_score || (score == thread_score && candidate < thread_candidate)) {
+            if (score < thread_score ||
+                (score == thread_score && candidate_position < thread_candidate_position)) {
                 thread_score = score;
-                thread_candidate = candidate;
+                thread_candidate_position = candidate_position;
             }
         }
 
         shared_scores[threadIdx.x] = thread_score;
-        shared_candidates[threadIdx.x] = thread_candidate;
+        shared_candidate_positions[threadIdx.x] = thread_candidate_position;
         __syncthreads();
 
         for (uint32_t offset = blockDim.x / 2u; offset != 0u; offset >>= 1u) {
             if (threadIdx.x < offset) {
                 const unsigned long long other_score = shared_scores[threadIdx.x + offset];
-                const uint32_t other_candidate = shared_candidates[threadIdx.x + offset];
+                const uint32_t other_position = shared_candidate_positions[threadIdx.x + offset];
                 if (other_score < shared_scores[threadIdx.x] ||
                     (other_score == shared_scores[threadIdx.x] &&
-                     other_candidate < shared_candidates[threadIdx.x])) {
+                     other_position < shared_candidate_positions[threadIdx.x])) {
                     shared_scores[threadIdx.x] = other_score;
-                    shared_candidates[threadIdx.x] = other_candidate;
+                    shared_candidate_positions[threadIdx.x] = other_position;
                 }
             }
             __syncthreads();
         }
 
         if (threadIdx.x == 0u) {
-            shared_selected[slot] = shared_candidates[0];
+            shared_selected[slot] = shared_candidate_values[shared_candidate_positions[0]];
             block_indices[static_cast<size_t>(block) * info.local_color_count + slot] =
-                static_cast<uint16_t>(shared_candidates[0]);
+                static_cast<uint16_t>(shared_selected[slot]);
         }
         __syncthreads();
 
@@ -418,8 +727,16 @@ extern "C" int bpal5_encode_rgb_cuda(
     bpal5_cuda_encode_stats *result_stats = stats != nullptr ? stats : &local_stats;
     DeviceImageInfo info{};
     DeviceBuffers buffers{};
-    cudaDeviceProp properties{};
+    HostPaletteSamples samples{};
+    CudaSetupState cuda_setup{};
+    std::thread cuda_setup_thread;
+    cudaEvent_t palette_started = nullptr;
+    cudaEvent_t palette_finished = nullptr;
+    cudaEvent_t initial_finished = nullptr;
+    cudaEvent_t refinement_finished = nullptr;
     std::chrono::steady_clock::time_point cpu_start;
+    std::chrono::steady_clock::time_point sample_start;
+    std::chrono::steady_clock::time_point sample_end;
     std::chrono::steady_clock::time_point cpu_end;
     std::chrono::steady_clock::time_point gpu_start;
     std::chrono::steady_clock::time_point gpu_end;
@@ -431,8 +748,8 @@ extern "C" int bpal5_encode_rgb_cuda(
     unsigned long long current_error = 0u;
     unsigned long long candidate_error = 0u;
     uint32_t pass = 0u;
-    int device_count = 0;
     int success = 0;
+    float event_milliseconds = 0.0f;
 
 #define BPAL5_CUDA_CHECK(call, operation) \
     do { \
@@ -455,33 +772,57 @@ extern "C" int bpal5_encode_rgb_cuda(
         options = *options_input;
     }
 
-    if (!bpal5_cuda_device_count(&device_count, error, error_size)) {
+    result_stats->requested_refinement_passes = options.refinement_passes;
+
+    try {
+        cuda_setup_thread = std::thread(initialize_cuda_device, device_ordinal, &cuda_setup);
+    } catch (const std::system_error &) {
+        initialize_cuda_device(device_ordinal, &cuda_setup);
+    }
+
+    cpu_start = std::chrono::steady_clock::now();
+    if (!bpal5_prepare_rgb_image_internal(
+            rgb,
+            width,
+            height,
+            &options,
+            &image,
+            &result_stats->cpu_block_clustering_milliseconds,
+            error,
+            error_size)) {
         goto cleanup;
     }
-    if (device_ordinal < 0 || device_ordinal >= device_count) {
+    sample_start = std::chrono::steady_clock::now();
+    if (!collect_palette_samples(rgb, image, &samples, error, error_size)) {
+        goto cleanup;
+    }
+    sample_end = std::chrono::steady_clock::now();
+    result_stats->cpu_sample_grouping_milliseconds =
+        std::chrono::duration<double, std::milli>(sample_end - sample_start).count();
+    cpu_end = std::chrono::steady_clock::now();
+    result_stats->cpu_initialization_milliseconds =
+        std::chrono::duration<double, std::milli>(cpu_end - cpu_start).count();
+
+    if (cuda_setup_thread.joinable()) {
+        cuda_setup_thread.join();
+    }
+    result_stats->cuda_setup_milliseconds = cuda_setup.milliseconds;
+    if (cuda_setup.status != cudaSuccess) {
+        set_cuda_message(error, error_size, cuda_setup.operation, cuda_setup.status);
+        goto cleanup;
+    }
+    if (device_ordinal < 0 || device_ordinal >= cuda_setup.device_count) {
         set_message(error, error_size, "Requested CUDA device does not exist");
         goto cleanup;
     }
-    BPAL5_CUDA_CHECK(cudaSetDevice(device_ordinal), "Cannot select CUDA device");
-    BPAL5_CUDA_CHECK(cudaGetDeviceProperties(&properties, device_ordinal), "Cannot query CUDA device");
-
+    BPAL5_CUDA_CHECK(cudaSetDevice(device_ordinal), "Cannot select initialized CUDA device");
     result_stats->device_ordinal = device_ordinal;
     std::snprintf(
         result_stats->device_name,
         sizeof(result_stats->device_name),
         "%s",
-        properties.name
+        cuda_setup.properties.name
     );
-    result_stats->requested_refinement_passes = options.refinement_passes;
-
-    cpu_start = std::chrono::steady_clock::now();
-    options.refinement_passes = 0u;
-    if (!bpal5_encode_rgb(rgb, width, height, &options, &image, error, error_size)) {
-        goto cleanup;
-    }
-    cpu_end = std::chrono::steady_clock::now();
-    result_stats->cpu_initialization_milliseconds =
-        std::chrono::duration<double, std::milli>(cpu_end - cpu_start).count();
 
     pixel_count = static_cast<size_t>(image.width) * image.height;
     palette_entries = static_cast<size_t>(image.palette_count) * image.global_color_count;
@@ -513,18 +854,97 @@ extern "C" int bpal5_encode_rgb_cuda(
     BPAL5_CUDA_CHECK(cudaMalloc(&buffers.green_sums, palette_entries * sizeof(unsigned long long)), "Cannot allocate CUDA green sums");
     BPAL5_CUDA_CHECK(cudaMalloc(&buffers.blue_sums, palette_entries * sizeof(unsigned long long)), "Cannot allocate CUDA blue sums");
     BPAL5_CUDA_CHECK(cudaMalloc(&buffers.error_sum, sizeof(unsigned long long)), "Cannot allocate CUDA error sum");
+    BPAL5_CUDA_CHECK(cudaMalloc(&buffers.samples, samples.colors.size() * sizeof(uint32_t)), "Cannot allocate CUDA palette samples");
+    BPAL5_CUDA_CHECK(cudaMalloc(&buffers.sample_offsets, image.palette_count * sizeof(uint32_t)), "Cannot allocate CUDA palette sample offsets");
+    BPAL5_CUDA_CHECK(cudaMalloc(&buffers.sample_counts, image.palette_count * sizeof(uint32_t)), "Cannot allocate CUDA palette sample counts");
+    BPAL5_CUDA_CHECK(cudaMalloc(&buffers.nearest_sample_distances, samples.colors.size() * sizeof(uint32_t)), "Cannot allocate CUDA palette sample distances");
 
     BPAL5_CUDA_CHECK(cudaMemcpy(buffers.rgb_bytes, rgb, pixel_count * 3u, cudaMemcpyHostToDevice), "Cannot upload source image to CUDA");
     BPAL5_CUDA_CHECK(cudaMemcpy(buffers.selectors, image.block_palette_selectors, image.block_count, cudaMemcpyHostToDevice), "Cannot upload palette selectors to CUDA");
-    BPAL5_CUDA_CHECK(cudaMemcpy(buffers.current_pixels, image.pixel_indices, pixel_count, cudaMemcpyHostToDevice), "Cannot upload pixel indices to CUDA");
-    BPAL5_CUDA_CHECK(cudaMemcpy(buffers.current_blocks, image.block_palette_indices, block_bytes, cudaMemcpyHostToDevice), "Cannot upload block palettes to CUDA");
-    BPAL5_CUDA_CHECK(cudaMemcpy(buffers.current_palette, image.palette_rgba, palette_bytes, cudaMemcpyHostToDevice), "Cannot upload shared palette to CUDA");
+    BPAL5_CUDA_CHECK(cudaMemcpy(buffers.samples, samples.colors.data(), samples.colors.size() * sizeof(uint32_t), cudaMemcpyHostToDevice), "Cannot upload CUDA palette samples");
+    BPAL5_CUDA_CHECK(cudaMemcpy(buffers.sample_offsets, samples.offsets.data(), image.palette_count * sizeof(uint32_t), cudaMemcpyHostToDevice), "Cannot upload CUDA palette sample offsets");
+    BPAL5_CUDA_CHECK(cudaMemcpy(buffers.sample_counts, samples.counts.data(), image.palette_count * sizeof(uint32_t), cudaMemcpyHostToDevice), "Cannot upload CUDA palette sample counts");
 
     cache_rgb_kernel<<<grid_for(pixel_count), CUDA_THREADS>>>(buffers.rgb_bytes, buffers.rgb, pixel_count);
     BPAL5_CUDA_CHECK(cudaGetLastError(), "Cannot launch CUDA aligned RGB cache");
 
+    BPAL5_CUDA_CHECK(cudaEventCreate(&palette_started), "Cannot create CUDA palette-start event");
+    BPAL5_CUDA_CHECK(cudaEventCreate(&palette_finished), "Cannot create CUDA palette-finish event");
+    BPAL5_CUDA_CHECK(cudaEventCreate(&initial_finished), "Cannot create CUDA initial-encode event");
+    BPAL5_CUDA_CHECK(cudaEventCreate(&refinement_finished), "Cannot create CUDA refinement event");
+    BPAL5_CUDA_CHECK(cudaEventRecord(palette_started), "Cannot record CUDA palette-start event");
+
+    initialize_palettes_kernel<<<image.palette_count, CUDA_THREADS>>>(
+        buffers.samples,
+        buffers.sample_offsets,
+        buffers.sample_counts,
+        image.global_color_count,
+        buffers.current_palette,
+        buffers.nearest_sample_distances
+    );
+    BPAL5_CUDA_CHECK(cudaGetLastError(), "Cannot launch CUDA palette initialization");
+    for (uint32_t centroid = 1u; centroid < image.global_color_count; ++centroid) {
+        choose_palette_centroid_kernel<<<image.palette_count, CUDA_THREADS>>>(
+            buffers.samples,
+            buffers.sample_offsets,
+            buffers.sample_counts,
+            image.global_color_count,
+            centroid,
+            buffers.current_palette,
+            buffers.nearest_sample_distances
+        );
+        BPAL5_CUDA_CHECK(cudaGetLastError(), "Cannot launch CUDA palette centroid selection");
+    }
+    for (uint32_t iteration = 0u; iteration < options.kmeans_iterations; ++iteration) {
+        BPAL5_CUDA_CHECK(cudaMemset(buffers.red_sums, 0, palette_entries * sizeof(unsigned long long)), "Cannot clear CUDA palette red sums");
+        BPAL5_CUDA_CHECK(cudaMemset(buffers.green_sums, 0, palette_entries * sizeof(unsigned long long)), "Cannot clear CUDA palette green sums");
+        BPAL5_CUDA_CHECK(cudaMemset(buffers.blue_sums, 0, palette_entries * sizeof(unsigned long long)), "Cannot clear CUDA palette blue sums");
+        BPAL5_CUDA_CHECK(cudaMemset(buffers.counts, 0, palette_entries * sizeof(uint32_t)), "Cannot clear CUDA palette counts");
+        assign_palette_samples_kernel<<<
+            dim3((MAX_SAMPLE_PIXELS + CUDA_THREADS - 1u) / CUDA_THREADS, image.palette_count),
+            CUDA_THREADS
+        >>>(
+            buffers.samples,
+            buffers.sample_offsets,
+            buffers.sample_counts,
+            image.global_color_count,
+            buffers.current_palette,
+            buffers.red_sums,
+            buffers.green_sums,
+            buffers.blue_sums,
+            buffers.counts
+        );
+        BPAL5_CUDA_CHECK(cudaGetLastError(), "Cannot launch CUDA palette sample assignment");
+        finalize_palette_samples_kernel<<<grid_for(palette_entries), CUDA_THREADS>>>(
+            buffers.current_palette,
+            image.palette_count,
+            image.global_color_count,
+            buffers.sample_counts,
+            buffers.red_sums,
+            buffers.green_sums,
+            buffers.blue_sums,
+            buffers.counts
+        );
+        BPAL5_CUDA_CHECK(cudaGetLastError(), "Cannot launch CUDA palette sample update");
+    }
+    quantize_palette_kernel<<<grid_for(palette_entries), CUDA_THREADS>>>(
+        buffers.current_palette,
+        palette_entries,
+        image.palette_color_bits
+    );
+    BPAL5_CUDA_CHECK(cudaGetLastError(), "Cannot launch CUDA palette quantization");
+    BPAL5_CUDA_CHECK(cudaEventRecord(palette_finished), "Cannot record CUDA palette-finish event");
+
+    select_block_palette_kernel<<<image.block_count, CUDA_THREADS>>>(
+        buffers.rgb,
+        info,
+        buffers.selectors,
+        buffers.current_palette,
+        buffers.current_blocks
+    );
+    BPAL5_CUDA_CHECK(cudaGetLastError(), "Cannot launch CUDA initial block-palette selection");
     BPAL5_CUDA_CHECK(cudaMemset(buffers.error_sum, 0, sizeof(unsigned long long)), "Cannot clear CUDA error sum");
-    calculate_error_kernel<<<grid_for(pixel_count), CUDA_THREADS>>>(
+    assign_pixels_kernel<<<grid_for(pixel_count), CUDA_THREADS>>>(
         buffers.rgb,
         info,
         buffers.selectors,
@@ -533,7 +953,8 @@ extern "C" int bpal5_encode_rgb_cuda(
         buffers.current_pixels,
         buffers.error_sum
     );
-    BPAL5_CUDA_CHECK(cudaGetLastError(), "Cannot launch CUDA error kernel");
+    BPAL5_CUDA_CHECK(cudaGetLastError(), "Cannot launch CUDA initial pixel assignment");
+    BPAL5_CUDA_CHECK(cudaEventRecord(initial_finished), "Cannot record CUDA initial-encode event");
     BPAL5_CUDA_CHECK(cudaMemcpy(&current_error, buffers.error_sum, sizeof(current_error), cudaMemcpyDeviceToHost), "Cannot read CUDA initial error");
     result_stats->initial_error = current_error;
 
@@ -597,6 +1018,7 @@ extern "C" int bpal5_encode_rgb_cuda(
         current_error = candidate_error;
         ++result_stats->accepted_refinement_passes;
     }
+    BPAL5_CUDA_CHECK(cudaEventRecord(refinement_finished), "Cannot record CUDA refinement event");
 
     BPAL5_CUDA_CHECK(cudaMemcpy(image.palette_rgba, buffers.current_palette, palette_bytes, cudaMemcpyDeviceToHost), "Cannot download CUDA shared palette");
     BPAL5_CUDA_CHECK(cudaMemcpy(image.block_palette_indices, buffers.current_blocks, block_bytes, cudaMemcpyDeviceToHost), "Cannot download CUDA block palettes");
@@ -605,6 +1027,12 @@ extern "C" int bpal5_encode_rgb_cuda(
     gpu_end = std::chrono::steady_clock::now();
     result_stats->gpu_milliseconds =
         std::chrono::duration<double, std::milli>(gpu_end - gpu_start).count();
+    BPAL5_CUDA_CHECK(cudaEventElapsedTime(&event_milliseconds, palette_started, palette_finished), "Cannot measure CUDA palette construction");
+    result_stats->gpu_palette_building_milliseconds = event_milliseconds;
+    BPAL5_CUDA_CHECK(cudaEventElapsedTime(&event_milliseconds, palette_finished, initial_finished), "Cannot measure CUDA initial encoding");
+    result_stats->gpu_initial_encoding_milliseconds = event_milliseconds;
+    BPAL5_CUDA_CHECK(cudaEventElapsedTime(&event_milliseconds, initial_finished, refinement_finished), "Cannot measure CUDA refinement");
+    result_stats->gpu_refinement_milliseconds = event_milliseconds;
     result_stats->final_error = current_error;
 
     *output = image;
@@ -612,6 +1040,21 @@ extern "C" int bpal5_encode_rgb_cuda(
     success = 1;
 
 cleanup:
+    if (cuda_setup_thread.joinable()) {
+        cuda_setup_thread.join();
+    }
+    if (palette_started != nullptr) {
+        cudaEventDestroy(palette_started);
+    }
+    if (palette_finished != nullptr) {
+        cudaEventDestroy(palette_finished);
+    }
+    if (initial_finished != nullptr) {
+        cudaEventDestroy(initial_finished);
+    }
+    if (refinement_finished != nullptr) {
+        cudaEventDestroy(refinement_finished);
+    }
     release_buffers(&buffers);
     if (!success) {
         bpal5_image_free(&image);

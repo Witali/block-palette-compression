@@ -145,13 +145,36 @@ def main() -> int:
                 "psnr": psnr,
             }
             if label == "CUDA":
-                gpu_timings = []
+                cuda_stage_timings = {
+                    "CPU clustering": [],
+                    "CPU sample grouping": [],
+                    "CUDA setup": [],
+                    "GPU palette building": [],
+                    "GPU initial blocks": [],
+                    "GPU refinement": [],
+                    "GPU total": [],
+                }
+                stage_pattern = re.compile(
+                    r"CPU init [0-9.]+ ms \(clusters ([0-9.]+), samples ([0-9.]+)\), "
+                    r"CUDA setup ([0-9.]+) ms, GPU ([0-9.]+) ms "
+                    r"\(palettes ([0-9.]+), initial blocks ([0-9.]+), refine ([0-9.]+)\)"
+                )
                 for _, output in measured:
-                    match = re.search(r"GPU ([0-9.]+) ms", output)
+                    match = stage_pattern.search(output)
                     if match is None:
-                        raise RuntimeError("could not parse the CUDA GPU-phase timing")
-                    gpu_timings.append(float(match.group(1)))
-                results[label]["gpu_timings"] = gpu_timings
+                        raise RuntimeError("could not parse the CUDA stage timings")
+                    values = (
+                        match.group(1),
+                        match.group(2),
+                        match.group(3),
+                        match.group(5),
+                        match.group(6),
+                        match.group(7),
+                        match.group(4),
+                    )
+                    for stage, value in zip(cuda_stage_timings, values):
+                        cuda_stage_timings[stage].append(float(value))
+                results[label]["cuda_stage_timings"] = cuda_stage_timings
 
     print(f"Image: {source} ({width}x{height})")
     print(f"Settings: preset {args.preset}, refinement {args.refine}, {args.runs} measured runs")
@@ -169,10 +192,13 @@ def main() -> int:
         )
     cpu_mean = statistics.mean(results["CPU"]["timings"])
     cuda_mean = statistics.mean(results["CUDA"]["timings"])
-    cuda_gpu_mean = statistics.mean(results["CUDA"]["gpu_timings"])
+    cuda_stages = results["CUDA"]["cuda_stage_timings"]
     print()
     print(f"CUDA wall-clock speedup: {cpu_mean / cuda_mean:.3f}x")
-    print(f"CUDA GPU phase: {cuda_gpu_mean:.3f} ms mean")
+    print("CUDA stages (mean):")
+    for stage, timings in cuda_stages.items():
+        print(f"  {stage:<24} {statistics.mean(timings):8.3f} ms")
+    print("  CPU preparation overlaps CUDA setup; stage times do not sum to wall time.")
     return 0
 
 
