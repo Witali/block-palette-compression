@@ -1,7 +1,7 @@
 "use strict";
 
 importScripts("./palette-quantizer.js?v=k-medoids-default-1");
-importScripts("./block-palette-codec.js?v=k-medoids-distance-cache-1");
+importScripts("./block-palette-codec.js?v=direct-block-colors-1");
 importScripts("./block-palette-webgl-codec.js?v=k-medoids-specialized-webgl-1");
 
 self.addEventListener("message", (event) => {

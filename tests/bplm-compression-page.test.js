@@ -54,6 +54,13 @@ test("defaults to 64 shared palettes with 64 colors each", () => {
   );
 });
 
+test("limits block colors to the number of pixels in the selected block", () => {
+  assert.match(source, /blockSizeSelect\.addEventListener\("change", updateLocalColorCountOptions\)/);
+  assert.match(source, /const maximumColorCount = Number\(blockSizeSelect\.value\) \*\* 2/);
+  assert.match(source, /option\.disabled = Number\(option\.value\) > maximumColorCount/);
+  assert.match(source, /localColorCountSelect\.value = largestAvailableOption\.value/);
+});
+
 test("offers researched quality presets immediately after the image selector", () => {
   const imageIndex = html.indexOf('id="image-url"');
   const presetIndex = html.indexOf('id="quality-preset"');

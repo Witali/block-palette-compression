@@ -8,8 +8,8 @@ from the most significant bit to the least significant bit. Version 5 supports
 selects one shared palette and stores a small table of indices local to that
 palette.
 
-The decoder remains compatible with BPAL v1-v4 files and their legacy vector
-palette model. The v5 image compressor writes explicit palettes.
+The decoder accepts BPAL v5 files only. The image compressor writes explicit
+palettes; the v5 vector-palette model remains readable.
 
 ## v5 header
 
@@ -48,8 +48,14 @@ are written immediately after the header without intermediate alignment:
    uses `log2(P)` bits; this section has zero bits when `P = 1`.
 3. The `L` palette-local color indices of every block, in block-row order. Each
    index uses `log2(G)` bits.
-4. One local block-table index for every pixel in image-row order. Each index
-   uses `log2(L)` bits.
+4. When `L` is smaller than the number of pixels in a block, one local
+   block-table index for every pixel in image-row order. Each index uses
+   `log2(L)` bits. When `L` equals `blockSize²`, this section is omitted and
+   block-table entry `localY × blockSize + localX` directly represents that
+   pixel position.
+
+Direct mapping has no separate header flag; the decoder derives it solely from
+the block size and local color count.
 
 For block `b` and pixel local slot `i`, the final color index in the flattened
 palette array is:
@@ -62,20 +68,15 @@ If `B` is the number of blocks, `N` the number of pixels, and `C` the bits per
 stored color, the payload length before final padding is:
 
 ```text
-P × G × C + B × log2(P) + B × L × log2(G) + N × log2(L)
+P × G × C + B × log2(P) + B × L × log2(G)
+  + (L = blockSize² ? 0 : N × log2(L))
 ```
 
 Only the final byte of the file is padded with zero bits when necessary. The
 alpha channel is not stored; the decoded image is treated as fully opaque.
 
-## Legacy compatibility
+## Vector palettes
 
-BPAL v1-v3 files implicitly contain one shared palette, so their selector width
-is zero. The v1 header after the magic value is 64 bits long. The v2 and v3
-headers are 80 bits long; v3 adds the vector color-space bit at offset 72. BPAL
-v4 stores a 2-bit palette-count exponent at offsets 73-74 and supports up to
-eight shared palettes.
-
-Legacy vector-palette colors are reconstructed by linear interpolation in the
-RGB or OKLab space recorded in the header. The vector model is only valid with
-one shared palette.
+Vector-palette colors are reconstructed by linear interpolation in the RGB or
+OKLab space recorded in the v5 header. The vector model is only valid with one
+shared palette.

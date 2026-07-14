@@ -338,6 +338,27 @@ test("stores and reconstructs the common palette as RGB565 in 16-bit mode", () =
   assert.equal(result.storage.totalBytes, 9);
 });
 
+test("does not count pixel indices when block colors equal block pixels", () => {
+  const source = pixels(Array.from({ length: 16 }, (_, index) => [
+    index * 16,
+    255 - index * 16,
+    index * 8,
+    255,
+  ]));
+  const result = compressImage(source, 4, 4, {
+    blockSize: 4,
+    localColorCount: 16,
+    globalColorCount: 16,
+    paletteColorBits: 24,
+    colorSpace: "rgb",
+  });
+
+  assert.equal(result.directPixelColors, true);
+  assert.equal(result.storage.directPixelColors, true);
+  assert.equal(result.storage.pixelDataBits, 0);
+  assert.equal(result.storage.payloadBits, 16 * 24 + 16 * 4);
+});
+
 test("uses only local indices and global palette references that fit the format", () => {
   const values = [];
 

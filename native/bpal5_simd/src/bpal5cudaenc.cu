@@ -21,7 +21,7 @@ void print_usage(const char *program) {
         "  --find-settings   Find minimum-RMSE settings in the preset bpp range\n"
         "  --device N        CUDA device ordinal (default 0)\n"
         "  --block N         Block size: 2,4,8,16,32,64 (default 16)\n"
-        "  --local N         Colors per block: 2,4,8,16 (default 8)\n"
+        "  --local N         Colors per block: 2,4,8,16; <= block pixels (default 8)\n"
         "  --global N        Colors per shared palette: 2..4096 power of two (default 32)\n"
         "  --palettes N      Shared palettes: 1..128 power of two (default 1)\n"
         "  --rgb565          Store shared colors as RGB565 (default RGB888)\n"
@@ -280,6 +280,10 @@ int main(int argc, char **argv) {
     }
     if (device > static_cast<uint32_t>(INT32_MAX)) {
         std::fprintf(stderr, "Invalid CUDA device ordinal\n");
+        return 2;
+    }
+    if (options.local_color_count > options.block_size * options.block_size) {
+        std::fprintf(stderr, "Invalid --local value: colors per block cannot exceed block pixels\n");
         return 2;
     }
     if (find_settings && preset_name == nullptr) {

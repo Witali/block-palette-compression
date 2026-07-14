@@ -125,8 +125,8 @@ try {
     sourcePpmPath,
     cBpalPath,
     "--block", "4",
-    "--local", "4",
-    "--global", "8",
+    "--local", "16",
+    "--global", "16",
     "--palettes", "4",
     "--iterations", "4",
     "--refine", "2",
@@ -136,6 +136,9 @@ try {
   assert.equal(cDecodedByJs.version, 5);
   assert.equal(cDecodedByJs.paletteMode, "explicit");
   assert.equal(cDecodedByJs.paletteCount, 4);
+  assert.equal(cDecodedByJs.localColorCount, 16);
+  assert.equal(cDecodedByJs.directPixelColors, true);
+  assert.equal(cDecodedByJs.storage.pixelDataBits, 0);
   assert.equal(cDecodedByJs.width, width);
   assert.equal(cDecodedByJs.height, height);
 

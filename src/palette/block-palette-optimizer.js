@@ -212,7 +212,9 @@
     const globalPaletteBits = paletteCount * profile.globalColorCount * profile.paletteColorBits;
     const blockPaletteSelectorBits = blockCount * Math.log2(paletteCount);
     const blockPaletteBits = blockCount * profile.localColorCount * Math.log2(profile.globalColorCount);
-    const pixelDataBits = width * height * Math.log2(profile.localColorCount);
+    const pixelDataBits = profile.localColorCount === profile.blockSize * profile.blockSize
+      ? 0
+      : width * height * Math.log2(profile.localColorCount);
     const payloadBits = globalPaletteBits + blockPaletteSelectorBits + blockPaletteBits + pixelDataBits;
 
     return {

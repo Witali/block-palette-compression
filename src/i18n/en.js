@@ -178,6 +178,7 @@
     "block.paletteFormula": "{palettes} × {colors} × {bytes} bytes · {format}",
     "block.indexFormula": "{items} × ({paletteBits} palette bits + {colors} × {bits} color bits)",
     "block.pixelFormula": "{pixels} × {bits} bits",
+    "block.pixelFormulaDirect": "Omitted · block colors map directly to pixel positions",
     "block.totalNoPadding": "{size} data · no padding",
     "block.totalPadding": "{size} data · {bits} padding bits",
     "block.paletteSummary": "{palettes} palettes · {active} active colors · {used} used · {format}",

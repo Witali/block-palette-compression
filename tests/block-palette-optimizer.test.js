@@ -210,6 +210,32 @@ test("optimizes using explicit-palette storage and the current BPAL header", () 
   assert.equal(optimized.selected.fileBytes, compressed.storage.totalBytes + 14);
 });
 
+test("settings search omits redundant pixel indices in direct blocks", () => {
+  const source = new Uint8ClampedArray([
+    0, 0, 0, 255, 85, 85, 85, 255,
+    170, 170, 170, 255, 255, 255, 255, 255,
+  ]);
+  const profile = {
+    blockSize: 2,
+    localColorCount: 4,
+    globalColorCount: 8,
+    paletteColorBits: 24,
+  };
+  const optimized = findBalancedBlockPaletteSettings(source, 2, 2, {
+    profiles: [profile],
+    colorSpace: "rgb",
+    clusteringMethod: "k-medians",
+  });
+  const compressed = compressImage(source, 2, 2, {
+    ...profile,
+    colorSpace: "rgb",
+    clusteringMethod: "k-medians",
+  });
+
+  assert.equal(compressed.storage.pixelDataBits, 0);
+  assert.equal(optimized.selected.fileBytes, compressed.storage.totalBytes + 14);
+});
+
 function test(name, callback) {
   try {
     callback();

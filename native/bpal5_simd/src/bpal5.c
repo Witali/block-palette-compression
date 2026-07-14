@@ -100,6 +100,10 @@ static uint32_t integer_log2(uint32_t value) {
     return bits;
 }
 
+static int uses_direct_pixel_colors(uint32_t block_size, uint32_t local_color_count) {
+    return local_color_count == block_size * block_size;
+}
+
 static uint32_t pack_rgba(uint8_t red, uint8_t green, uint8_t blue) {
     return (uint32_t)red | ((uint32_t)green << 8u) | ((uint32_t)blue << 16u) | 0xff000000u;
 }
@@ -269,7 +273,9 @@ static int calculate_file_size(const bpal5_image *image, size_t *total_bytes) {
     const uint64_t palette_bits = (uint64_t)image->palette_count * image->global_color_count * image->palette_color_bits;
     const uint64_t selector_bits = (uint64_t)image->block_count * image->palette_index_bits;
     const uint64_t block_bits = (uint64_t)image->block_count * image->local_color_count * image->global_index_bits;
-    const uint64_t pixel_bits = (uint64_t)image->width * image->height * image->local_index_bits;
+    const uint64_t pixel_bits = uses_direct_pixel_colors(image->block_size, image->local_color_count)
+        ? 0u
+        : (uint64_t)image->width * image->height * image->local_index_bits;
     const uint64_t payload_bits = palette_bits + selector_bits + block_bits + pixel_bits;
     const uint64_t bytes = BPAL5_HEADER_BYTES + (payload_bits + 7u) / 8u;
 
@@ -293,7 +299,8 @@ static int validate_image_metadata(const bpal5_image *image, char *error, size_t
         return 0;
     }
     if (!is_power_of_two(image->local_color_count) || image->local_color_count < 2u ||
-        image->local_color_count > 16u || image->local_color_count > image->global_color_count) {
+        image->local_color_count > 16u || image->local_color_count > image->global_color_count ||
+        image->local_color_count > image->block_size * image->block_size) {
         set_error(error, error_size, "BPAL local color count is out of range");
         return 0;
     }
@@ -520,7 +527,9 @@ uint64_t bpal5_estimate_payload_bits(
     return (uint64_t)options->palette_count * options->global_color_count * options->palette_color_bits +
         block_count * integer_log2(options->palette_count) +
         block_count * options->local_color_count * integer_log2(options->global_color_count) +
-        pixel_count * integer_log2(options->local_color_count);
+        (uses_direct_pixel_colors(options->block_size, options->local_color_count)
+            ? 0u
+            : pixel_count * integer_log2(options->local_color_count));
 }
 
 void bpal5_image_free(bpal5_image *image) {
@@ -681,14 +690,27 @@ int bpal5_parse(
     }
 
     pixel_count = (size_t)image.width * image.height;
-    for (index = 0; index < pixel_count; ++index) {
-        uint32_t value;
-        if (!bit_read(&reader, image.local_index_bits, &value) || value >= image.local_color_count) {
-            set_error(error, error_size, "Invalid BPAL pixel index");
-            bpal5_image_free(&image);
-            return 0;
+    if (uses_direct_pixel_colors(image.block_size, image.local_color_count)) {
+        uint32_t y;
+        uint32_t x;
+
+        for (y = 0u; y < image.height; ++y) {
+            for (x = 0u; x < image.width; ++x) {
+                image.pixel_indices[(size_t)y * image.width + x] = (uint8_t)(
+                    (y % image.block_size) * image.block_size + x % image.block_size
+                );
+            }
         }
-        image.pixel_indices[index] = (uint8_t)value;
+    } else {
+        for (index = 0; index < pixel_count; ++index) {
+            uint32_t value;
+            if (!bit_read(&reader, image.local_index_bits, &value) || value >= image.local_color_count) {
+                set_error(error, error_size, "Invalid BPAL pixel index");
+                bpal5_image_free(&image);
+                return 0;
+            }
+            image.pixel_indices[index] = (uint8_t)value;
+        }
     }
 
     *output = image;
@@ -779,19 +801,52 @@ int bpal5_serialize(
     }
 
     block_entries = (size_t)image->block_count * image->local_color_count;
-    if (!bit_write_u16_values(
-            &writer,
-            image->block_palette_indices,
-            block_entries,
-            image->global_index_bits,
-            image->global_color_count)) {
+    if (uses_direct_pixel_colors(image->block_size, image->local_color_count)) {
+        uint32_t block_y;
+        uint32_t block_x;
+
+        for (block_y = 0u; block_y < image->blocks_y; ++block_y) {
+            for (block_x = 0u; block_x < image->blocks_x; ++block_x) {
+                const uint32_t block = block_y * image->blocks_x + block_x;
+                const size_t block_offset = (size_t)block * image->local_color_count;
+                const uint16_t padding_index = image->block_palette_indices[block_offset];
+                uint32_t local_y;
+                uint32_t local_x;
+
+                for (local_y = 0u; local_y < image->block_size; ++local_y) {
+                    for (local_x = 0u; local_x < image->block_size; ++local_x) {
+                        const uint32_t x = block_x * image->block_size + local_x;
+                        const uint32_t y = block_y * image->block_size + local_y;
+                        uint16_t global_index = padding_index;
+
+                        if (x < image->width && y < image->height) {
+                            const size_t pixel = (size_t)y * image->width + x;
+                            const uint8_t local_index = image->pixel_indices[pixel];
+                            global_index = image->block_palette_indices[block_offset + local_index];
+                        }
+                        if (!bit_write(&writer, global_index, image->global_index_bits)) {
+                            set_error(error, error_size, "Invalid BPAL direct block color index");
+                            free(output);
+                            return 0;
+                        }
+                    }
+                }
+            }
+        }
+    } else if (!bit_write_u16_values(
+                   &writer,
+                   image->block_palette_indices,
+                   block_entries,
+                   image->global_index_bits,
+                   image->global_color_count)) {
         set_error(error, error_size, "Invalid BPAL block color index");
         free(output);
         return 0;
     }
 
     pixel_count = (size_t)image->width * image->height;
-    if (!bit_write_u8_values(
+    if (!uses_direct_pixel_colors(image->block_size, image->local_color_count) &&
+        !bit_write_u8_values(
             &writer,
             image->pixel_indices,
             pixel_count,
@@ -1652,6 +1707,7 @@ int bpal5_prepare_rgb_image_internal(
     if (width == 0u || width > BPAL5_MAX_DIMENSION || height == 0u || height > BPAL5_MAX_DIMENSION ||
         !is_power_of_two(options->block_size) || options->block_size < 2u || options->block_size > 64u ||
         !is_power_of_two(options->local_color_count) || options->local_color_count < 2u || options->local_color_count > 16u ||
+        options->local_color_count > options->block_size * options->block_size ||
         !is_power_of_two(options->global_color_count) || options->global_color_count < options->local_color_count || options->global_color_count > 4096u ||
         !is_power_of_two(options->palette_count) || options->palette_count > 128u ||
         (options->palette_color_bits != 16u && options->palette_color_bits != 24u) ||

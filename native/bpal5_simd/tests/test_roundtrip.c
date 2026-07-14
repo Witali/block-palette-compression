@@ -121,6 +121,12 @@ static int test_find_settings_candidates(void) {
     if (bpal5_estimate_payload_bits(&baseline, 16u, 8u) != 512u) {
         return fail("settings search bpp estimate mismatch");
     }
+    baseline.block_size = 2u;
+    baseline.local_color_count = 4u;
+    baseline.global_color_count = 8u;
+    if (bpal5_estimate_payload_bits(&baseline, 16u, 8u) != 576u) {
+        return fail("direct block bpp estimate includes pixel indices");
+    }
     return 0;
 }
 
@@ -164,9 +170,18 @@ int main(void) {
     }
 
     bpal5_default_encode_options(&options);
-    options.block_size = 4u;
-    options.local_color_count = 4u;
+    options.block_size = 2u;
+    options.local_color_count = 8u;
     options.global_color_count = 8u;
+    if (bpal5_encode_rgb(source, width, height, &options, &encoded, error, sizeof(error))) {
+        result = fail("encoder accepted more block colors than block pixels");
+        goto cleanup;
+    }
+
+    bpal5_default_encode_options(&options);
+    options.block_size = 4u;
+    options.local_color_count = 16u;
+    options.global_color_count = 16u;
     options.palette_count = 4u;
     options.kmeans_iterations = 4u;
     options.refinement_passes = 2u;
@@ -187,7 +202,8 @@ int main(void) {
         fprintf(stderr, "%s\n", error);
         goto cleanup;
     }
-    if (byte_count < BPAL5_HEADER_BYTES || memcmp(bytes, "BPAL", 4u) != 0 || (bytes[4] >> 4u) != BPAL5_VERSION) {
+    if (byte_count != 371u || memcmp(bytes, "BPAL", 4u) != 0 ||
+        (bytes[4] >> 4u) != BPAL5_VERSION || (bytes[13] & 0x0fu) != 0u) {
         result = fail("invalid serialized header");
         goto cleanup;
     }
@@ -196,7 +212,7 @@ int main(void) {
         goto cleanup;
     }
     if (parsed.width != width || parsed.height != height || parsed.palette_count != 4u ||
-        parsed.global_color_count != 8u || parsed.local_color_count != 4u) {
+        parsed.global_color_count != 16u || parsed.local_color_count != 16u) {
         result = fail("parsed metadata mismatch");
         goto cleanup;
     }
