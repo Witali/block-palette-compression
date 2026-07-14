@@ -151,6 +151,21 @@ static int test_find_settings_candidates(void) {
     if (bpal5_estimate_payload_bits(&baseline, 16u, 8u) != 384u) {
         return fail("scalar palette bpp estimate mismatch");
     }
+    bpal5_default_encode_options(&baseline);
+    baseline.channel_mode = BPAL5_CHANNEL_SCALAR;
+    count = bpal5_find_settings_candidates(
+        &baseline,
+        candidates,
+        BPAL5_FIND_SETTINGS_MAX_CANDIDATES
+    );
+    if (count != 77u) {
+        return fail("scalar settings search contains redundant color formats");
+    }
+    for (index = 0u; index < count; ++index) {
+        if (candidates[index].palette_color_bits != baseline.palette_color_bits) {
+            return fail("scalar settings search changed an ignored color format");
+        }
+    }
     return 0;
 }
 

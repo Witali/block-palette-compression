@@ -517,7 +517,9 @@ size_t bpal5_find_settings_candidates(
                 int duplicate = 0;
 
                 candidate.palette_count = palette_counts[palette_index];
-                candidate.palette_color_bits = palette_color_bits[color_bits_index];
+                candidate.palette_color_bits = baseline->channel_mode == BPAL5_CHANNEL_SCALAR
+                    ? baseline->palette_color_bits
+                    : palette_color_bits[color_bits_index];
                 if (profile_index < profile_count) {
                     const search_profile *profile = &FIND_SETTINGS_PROFILES[profile_index];
                     candidate.block_size = profile->block_size;
