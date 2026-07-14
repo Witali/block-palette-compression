@@ -447,7 +447,8 @@
     const globalPaletteBits = paletteCount * globalColorCount * paletteColorBits;
     const blockPaletteSelectorBits = blockCount * paletteIndexBits;
     const blockPaletteBits = blockCount * localColorCount * globalIndexBits;
-    const pixelDataBits = width * height * localIndexBits;
+    const directPixelColors = localColorCount === blockSize * blockSize;
+    const pixelDataBits = directPixelColors ? 0 : width * height * localIndexBits;
     const payloadBits = globalPaletteBits + blockPaletteSelectorBits + blockPaletteBits + pixelDataBits;
     const globalPaletteBytes = Math.ceil(globalPaletteBits / 8);
     const blockPaletteSelectorBytes = Math.ceil(blockPaletteSelectorBits / 8);
@@ -488,6 +489,7 @@
       activeGlobalColorCounts: activePaletteCounts.slice(),
       globalIndexBits,
       localIndexBits,
+      directPixelColors,
       uniqueColorCount,
       resultColorCount: countNonZero(resultUsage),
       meanSquaredError: reconstructionError,
@@ -506,6 +508,7 @@
         blockPaletteSelectorBits,
         blockPaletteBits,
         pixelDataBits,
+        directPixelColors,
         payloadBits,
         globalPaletteBytes,
         blockPaletteSelectorBytes,

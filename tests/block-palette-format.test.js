@@ -46,6 +46,41 @@ test("round-trips an explicit RGB888 block-palette image through BPAL v5", () =>
   assert.equal(encoded.length, layout.totalBytes);
 });
 
+test("omits pixel indices when every block pixel has its own color entry", () => {
+  const values = Array.from({ length: 15 }, (_, index) => [
+    index * 17,
+    255 - index * 13,
+    index * 7,
+    255,
+  ]);
+  const result = compressImage(pixels(values), 5, 3, {
+    blockSize: 4,
+    localColorCount: 16,
+    globalColorCount: 16,
+    paletteColorBits: 24,
+    colorSpace: "rgb",
+  });
+  const layout = getBlockPaletteFileLayout(result);
+  const encoded = encodeBlockPaletteFile(result);
+  const decoded = decodeBlockPaletteFile(encoded);
+  const expectedPixelIndices = [];
+
+  for (let y = 0; y < 3; y += 1) {
+    for (let x = 0; x < 5; x += 1) {
+      expectedPixelIndices.push(y % 4 * 4 + x % 4);
+    }
+  }
+
+  assert.equal(layout.directPixelColors, true);
+  assert.equal(layout.pixelDataBits, 0);
+  assert.equal(layout.payloadBits, 512);
+  assert.equal(encoded.length, HEADER_BYTES + 64);
+  assert.equal(encoded[13] & 0x0f, 0);
+  assert.equal(decoded.directPixelColors, true);
+  assert.deepEqual(Array.from(decoded.pixelIndices), expectedPixelIndices);
+  assert.deepEqual(Array.from(decoded.pixels), Array.from(result.pixels));
+});
+
 test("packs adjacent BPAL payload sections without byte alignment", () => {
   const source = pixels([
     [123, 201, 77, 255], [123, 201, 77, 255],
@@ -87,34 +122,6 @@ test("continues to reconstruct legacy RGB-vector palettes", () => {
     0, 0, 0, 255, 255, 255, 255, 255,
     255, 255, 255, 255, 0, 0, 0, 255,
   ]);
-});
-
-test("continues to reconstruct legacy OKLab-vector palettes in BPAL v3", () => {
-  const image = createLegacyVectorImage("oklab");
-  const encoded = encodeBlockPaletteFile(image);
-
-  encoded[4] = (encoded[4] & 0x0f) | 0x30;
-
-  const decoded = decodeBlockPaletteFile(encoded);
-
-  assert.equal(decoded.version, 3);
-  assert.equal(decoded.paletteMode, "vector");
-  assert.equal(decoded.vectorColorSpace, "oklab");
-  assert.deepEqual(decoded.paletteVectors, image.paletteVectors);
-  assert.equal(decoded.palette.length, image.globalColorCount);
-});
-
-test("continues to decode legacy RGB-vector BPAL v2 files", () => {
-  const image = createLegacyVectorImage("rgb");
-  const encoded = encodeBlockPaletteFile(image);
-
-  encoded[4] = (encoded[4] & 0x0f) | 0x20;
-
-  const decoded = decodeBlockPaletteFile(encoded);
-
-  assert.equal(decoded.version, 2);
-  assert.equal(decoded.vectorColorSpace, "rgb");
-  assert.deepEqual(decoded.paletteVectors, image.paletteVectors);
 });
 
 test("round-trips four global palettes and per-block palette selectors", () => {
@@ -163,17 +170,6 @@ test("round-trips four global palettes and per-block palette selectors", () => {
   assert.deepEqual(Array.from(decoded.pixels.slice(2 * 4, 3 * 4)), [0, 255, 0, 255]);
   assert.deepEqual(Array.from(decoded.pixels.slice(8 * 4, 9 * 4)), [0, 0, 255, 255]);
   assert.deepEqual(Array.from(decoded.pixels.slice(10 * 4, 11 * 4)), [255, 255, 0, 255]);
-
-  const legacyV4 = encoded.slice();
-
-  legacyV4[4] = (legacyV4[4] & 0x0f) | 0x40;
-  legacyV4[13] = 0x40;
-
-  const decodedV4 = decodeBlockPaletteFile(legacyV4);
-
-  assert.equal(decodedV4.version, 4);
-  assert.equal(decodedV4.paletteCount, 4);
-  assert.deepEqual(Array.from(decodedV4.blockPaletteSelectors), [0, 1, 2, 3]);
 });
 
 test("round-trips 128 global palettes with seven-bit block selectors", () => {
@@ -208,19 +204,6 @@ test("round-trips 128 global palettes with seven-bit block selectors", () => {
     Array.from(image.blockPaletteSelectors)
   );
   assert.equal(layout.blockPaletteSelectorBits, blockCount * 7);
-});
-
-test("continues to decode legacy BPAL v1 files", () => {
-  const decoded = decodeBlockPaletteFile(createVersion1Fixture());
-
-  assert.equal(decoded.version, 1);
-  assert.equal(decoded.paletteMode, "explicit");
-  assert.equal(decoded.width, 2);
-  assert.equal(decoded.height, 2);
-  assert.deepEqual(Array.from(decoded.pixels), [
-    255, 0, 0, 255, 0, 0, 255, 255,
-    0, 0, 255, 255, 255, 0, 0, 255,
-  ]);
 });
 
 test("stores and restores 12-bit common-palette indices", () => {
@@ -262,13 +245,21 @@ test("rejects invalid BPAL magic, versions, and lengths", () => {
   };
   const encoded = encodeBlockPaletteFile(image);
   const invalidMagic = encoded.slice();
-  const invalidVersion = encoded.slice();
 
   invalidMagic[0] = 0;
-  invalidVersion[4] = (invalidVersion[4] & 0x0f) | 0x60;
 
   assert.throws(() => decodeBlockPaletteFile(invalidMagic), /Invalid BPAL magic/);
-  assert.throws(() => decodeBlockPaletteFile(invalidVersion), /Unsupported BPAL version: 6/);
+
+  for (const version of [1, 2, 3, 4, 6]) {
+    const invalidVersion = encoded.slice();
+
+    invalidVersion[4] = (invalidVersion[4] & 0x0f) | version << 4;
+    assert.throws(
+      () => decodeBlockPaletteFile(invalidVersion),
+      new RegExp(`Unsupported BPAL version: ${version}`)
+    );
+  }
+
   assert.throws(() => decodeBlockPaletteFile(encoded.slice(0, -1)), /file size does not match/);
 });
 
@@ -294,38 +285,6 @@ function createLegacyVectorImage(vectorColorSpace) {
     blockPaletteIndices: new Uint16Array([0, 7]),
     pixelIndices: new Uint8Array([0, 1, 1, 0]),
   };
-}
-
-function createVersion1Fixture() {
-  const bits = [];
-  const write = (value, count) => {
-    for (let bit = count - 1; bit >= 0; bit -= 1) {
-      bits.push(Math.floor(value / 2 ** bit) % 2);
-    }
-  };
-
-  write(1, 4); // version
-  write(1, 24); // width - 1
-  write(1, 24); // height - 1
-  write(0, 3); // log2(block size) - 1
-  write(0, 2); // log2(local colors) - 1
-  write(0, 4); // log2(global colors) - 1
-  write(1, 1); // RGB888
-  write(0, 2); // reserved
-  write(255, 8); write(0, 8); write(0, 8);
-  write(0, 8); write(0, 8); write(255, 8);
-  write(0, 1); write(1, 1); // block palette
-  write(0, 1); write(1, 1); write(1, 1); write(0, 1); // pixels
-
-  const bytes = new Uint8Array(4 + Math.ceil(bits.length / 8));
-
-  bytes.set([0x42, 0x50, 0x41, 0x4c]);
-
-  for (let index = 0; index < bits.length; index += 1) {
-    bytes[4 + Math.floor(index / 8)] |= bits[index] << (7 - index % 8);
-  }
-
-  return bytes;
 }
 
 function test(name, callback) {

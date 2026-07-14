@@ -2,23 +2,26 @@
 
 An experimental browser codec for BPAL block-palette images. A BPAL image uses
 one or more shared color palettes and a small table of palette-local color
-indices in every block. Pixels store only indices into their block's table.
+indices in every block. Pixels normally store indices into their block's table;
+the indices are omitted when table entries map one-to-one to pixel positions.
 
 [Open the live demo on GitHub Pages.](https://witali.github.io/block-palette-compression/)
 
 ## How BPAL works
 
-The image is split into fixed-size blocks. A pixel stores a compact local slot,
-the block table maps that slot to an index in a shared image palette, and the
-block's palette selector chooses which shared palette provides the final RGB
-color. BPAL v5 supports 1, 2, 4, 8, 16, 32, 64, or 128 shared palettes, using
+The image is split into fixed-size blocks. Normally a pixel stores a compact
+local slot, the block table maps that slot to an index in a shared image
+palette, and the block's palette selector chooses which shared palette
+provides the final RGB color. When the block has one color entry per pixel,
+the table entries map directly to pixel positions and pixel indices are
+omitted. BPAL v5 supports 1, 2, 4, 8, 16, 32, 64, or 128 shared palettes, using
 0 to 7 selector bits per block.
 
 ![BPAL indexing from image blocks to the final RGB color](./docs/images/bpal-double-indexing.svg)
 
 The file uses a single tightly packed bitstream. Header fields, palette colors,
-block-table indices, and pixel indices begin immediately after one another;
-only the final byte may need zero padding.
+block-table indices, and optional pixel indices begin immediately after one
+another; only the final byte may need zero padding.
 
 ![Tightly packed BPAL header and payload](./docs/images/bpal-bitstream-layout.svg)
 
@@ -30,14 +33,13 @@ colors in RGB or OKLab, deterministic clustering assigns the block to one of
 the requested palettes, and every cluster receives its own explicitly stored
 shared palette. A block then stores a `log2(palette count)`-bit selector in
 addition to its local color table, while pixels keep the same compact local
-indices as in the single-palette format.
+indices as in the single-palette format unless direct block colors apply.
 
 BPAL v5 extends this model to 1, 2, 4, 8, 16, 32, 64, or 128 shared palettes. The
 encoder UI exposes the palette count, reports clustering and palette-building
 progress, and shows all reconstructed palettes. BPAL/BPLM serialization, the
 viewer, mip generation, the WebGL cube demos, and the compact WebGL2 shader
-path all preserve the per-block palette selectors. Decoders remain compatible
-with BPAL v1-v4.
+path all preserve the per-block palette selectors. Decoders accept BPAL v5.
 
 The bundled [32-palette landscape BPLM sample](./assets/bpal/landscape-alaska-bpal-v5.bplm)
 uses BPAL v5 with 32 colors per shared palette, 8 local colors per 16x16 block,
@@ -134,5 +136,5 @@ npm test
 ```
 
 The tests cover palette quantization, block encoding, tightly packed BPAL
-files, legacy format compatibility, texture atlas decoding, settings search,
+files, BPAL v5 format validation, texture atlas decoding, settings search,
 and WebGL2 fallback behavior.

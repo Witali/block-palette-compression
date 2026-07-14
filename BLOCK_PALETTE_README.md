@@ -59,7 +59,8 @@ shared palettes = P × G × C bits
 
 block selectors = ceil(W / S) × ceil(H / S) × log2(P) bits
 block palettes = ceil(W / S) × ceil(H / S) × L × log2(G) bits
-pixels = W × H × log2(L) bits
+pixels = 0 bits, when L = S²
+       = W × H × log2(L) bits, otherwise
 ```
 
 The 14-byte BPAL v5 header is added to this sum. The sections are written as a
@@ -205,8 +206,9 @@ quality and performance evaluation.
 BPAL v5 begins with the `BPAL` magic value and a version number. Header bit
 fields contain the image dimensions, block parameters, index widths, shared
 palette count, and color format. New files store the shared palettes and one
-selector per block explicitly. For compatibility, the decoder continues to
-read BPAL v1 files and BPAL v2/v3 vector palettes.
+selector per block explicitly. The decoder accepts BPAL v5 only. When the
+number of local colors equals the number of block pixels, block-table entries
+map directly to pixel positions and the pixel-index section is omitted.
 
 The exact header and payload layouts are documented in
 [`BLOCK_PALETTE_FORMAT.md`](./BLOCK_PALETTE_FORMAT.md).
@@ -236,7 +238,7 @@ npm test
 ```
 
 The tests cover bit-layout calculations, block and palette sizes, RGB565,
-dithering, per-block Floyd–Steinberg isolation, BPAL v1-v5 compatibility,
+dithering, per-block Floyd–Steinberg isolation, BPAL v5 validation,
 the optimizer, and WebGL2-to-CPU fallback.
 
 ## Main files

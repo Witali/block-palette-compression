@@ -149,6 +149,7 @@ imageSelect.addEventListener("change", () => {
 });
 
 qualityPresetSelect.addEventListener("change", applyQualityPreset);
+blockSizeSelect.addEventListener("change", updateLocalColorCountOptions);
 
 for (const select of [
   blockSizeSelect,
@@ -262,6 +263,7 @@ function applyQualityPreset() {
 
   blockSizeSelect.value = String(preset.blockSize);
   localColorCountSelect.value = String(preset.localColorCount);
+  updateLocalColorCountOptions();
   globalColorCountSelect.value = String(preset.globalColorCount);
   paletteCountSelect.value = String(preset.paletteCount);
   paletteColorBitsSelect.value = "24";
@@ -276,6 +278,24 @@ function applyQualityPreset() {
   processImage();
 }
 
+function updateLocalColorCountOptions() {
+  const maximumColorCount = Number(blockSizeSelect.value) ** 2;
+  let largestAvailableOption = null;
+
+  for (const option of localColorCountSelect.options) {
+    option.disabled = Number(option.value) > maximumColorCount;
+
+    if (!option.disabled) {
+      largestAvailableOption = option;
+    }
+  }
+
+  if (localColorCountSelect.selectedOptions[0]?.disabled && largestAvailableOption) {
+    localColorCountSelect.value = largestAvailableOption.value;
+  }
+}
+
+updateLocalColorCountOptions();
 updateDiversityLabel();
 updateCanvasImageRendering();
 loadImage(imageSelect.value, optionLabel(imageSelect.selectedOptions[0])).catch(showError);
@@ -333,8 +353,8 @@ function processImage() {
   const sourceCopy = new Uint8ClampedArray(state.sourceImageData.data);
   const processingId = ++state.processingId;
   const workerUrl = settings.algorithm === "webgl"
-    ? "./src/palette/block-palette-webgl-worker.js?v=k-medoids-specialized-webgl-1"
-    : "./src/palette/block-palette-worker.js?v=k-medoids-distance-cache-1";
+    ? "./src/palette/block-palette-webgl-worker.js?v=direct-block-colors-1"
+    : "./src/palette/block-palette-worker.js?v=direct-block-colors-1";
   const worker = new Worker(workerUrl);
 
   state.worker = worker;
@@ -443,10 +463,12 @@ function renderResult(result) {
     bits: result.globalIndexBits,
   });
   storagePixels.textContent = formatBitSize(result.storage.pixelDataBits);
-  storagePixelsFormula.textContent = t("block.pixelFormula", {
-    pixels: formatInteger(result.width * result.height),
-    bits: result.localIndexBits,
-  });
+  storagePixelsFormula.textContent = fileLayout.directPixelColors
+    ? t("block.pixelFormulaDirect")
+    : t("block.pixelFormula", {
+      pixels: formatInteger(result.width * result.height),
+      bits: result.localIndexBits,
+    });
   storageTotal.textContent = formatBytes(fileLayout.totalBytes);
   storageTotalFormula.textContent = fileLayout.paddingBits === 0
     ? t("block.totalNoPadding", { size: formatBitSize(fileLayout.payloadBits) })
@@ -1213,7 +1235,7 @@ function optimizeSettings() {
   });
 
   const preview = createOptimizationPreview();
-  const worker = new Worker("./src/palette/block-palette-optimizer-worker.js?v=target-bpp-quality-2");
+  const worker = new Worker("./src/palette/block-palette-optimizer-worker.js?v=direct-block-colors-1");
 
   state.optimizerWorker = worker;
 
@@ -1268,6 +1290,7 @@ function optimizeSettings() {
 
       blockSizeSelect.value = String(settings.blockSize);
       localColorCountSelect.value = String(settings.localColorCount);
+      updateLocalColorCountOptions();
       globalColorCountSelect.value = String(settings.globalColorCount);
       paletteColorBitsSelect.value = String(settings.paletteColorBits);
       qualityPresetSelect.value = "";

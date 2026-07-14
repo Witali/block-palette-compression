@@ -178,6 +178,7 @@
     "block.paletteFormula": "{palettes} × {colors} × {bytes} байта · {format}",
     "block.indexFormula": "{items} × ({paletteBits} бит палитры + {colors} × {bits} бит цвета)",
     "block.pixelFormula": "{pixels} × {bits} бит",
+    "block.pixelFormulaDirect": "Не хранятся · цвета блока напрямую соответствуют позициям пикселей",
     "block.totalNoPadding": "{size} данных · без padding",
     "block.totalPadding": "{size} данных · {bits} бит padding",
     "block.paletteSummary": "палитр: {palettes} · активных цветов: {active} · использовано: {used} · {format}",

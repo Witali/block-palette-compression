@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1280" height="570" viewBox="0 0 1280 570" role="img" aria-labelledby="title desc">
   <title id="title">Tightly packed BPAL v5 bitstream</title>
-  <desc id="desc">The BPAL file contains a 14-byte header, explicit shared palettes, block palette selectors, block palette indices, pixel indices, and at most seven final padding bits.</desc>
+  <desc id="desc">The BPAL file contains a 14-byte header, explicit shared palettes, block palette selectors, block palette indices, optional pixel indices, and at most seven final padding bits.</desc>
   <defs>
     <style>
       .background{fill:#fff}.heading{font:700 22px system-ui,sans-serif;fill:#1f2328}.label{font:600 16px system-ui,sans-serif;fill:#1f2328}.body{font:14px system-ui,sans-serif;fill:#59636e}.small{font:12px system-ui,sans-serif;fill:#59636e}.mono{font:13px ui-monospace,SFMono-Regular,Consolas,monospace;fill:#1f2328}.outline{stroke:#8c959f;stroke-width:1.5}.magic{fill:#dbeafe}.header{fill:#e9d5ff}.palette{fill:#d1fae5}.tables{fill:#ffedd5}.pixels{fill:#fce7f3}.padding{fill:#eaeef2}.card{fill:#f6f8fa;stroke:#d0d7de;stroke-width:1.5}.arrow{stroke:#8c959f;stroke-width:2;fill:none}
@@ -19,7 +19,7 @@
     <rect x="227" y="0" width="260" height="72" rx="10" class="palette outline"/><text x="357" y="29" text-anchor="middle" class="label">Shared RGB palettes</text><text x="357" y="52" text-anchor="middle" class="small">P × G × C bits</text>
     <rect x="493" y="0" width="180" height="72" rx="10" class="tables outline"/><text x="583" y="29" text-anchor="middle" class="label">Block selectors</text><text x="583" y="52" text-anchor="middle" class="small">blocks × log₂(P)</text>
     <rect x="679" y="0" width="210" height="72" rx="10" class="tables outline"/><text x="784" y="29" text-anchor="middle" class="label">Block tables</text><text x="784" y="52" text-anchor="middle" class="small">blocks × L × log₂(G)</text>
-    <rect x="895" y="0" width="240" height="72" rx="10" class="pixels outline"/><text x="1015" y="29" text-anchor="middle" class="label">Pixel indices</text><text x="1015" y="52" text-anchor="middle" class="small">W × H × log₂(L)</text>
+    <rect x="895" y="0" width="240" height="72" rx="10" class="pixels outline"/><text x="1015" y="29" text-anchor="middle" class="label">Pixel indices (optional)</text><text x="1015" y="52" text-anchor="middle" class="small">0 if L=S²; else W×H×log₂(L)</text>
     <rect x="1141" y="0" width="99" height="72" rx="10" class="padding outline"/><text x="1190" y="29" text-anchor="middle" class="label">pad</text><text x="1190" y="52" text-anchor="middle" class="small">0…7 bits</text>
   </g>
 

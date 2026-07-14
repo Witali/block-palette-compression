@@ -14,6 +14,8 @@ decoder writes binary PPM (`P6`).
 
 The implementation reads and writes the same continuous, MSB-first bit stream
 as `src/palette/block-palette-format.js`, including multi-palette selectors.
+When `--local` equals `--block × --block`, block-table entries map directly to
+pixel positions and no pixel-index stream is stored.
 It uses AVX2 for nearest-colour searches and pixel reconstruction on supported
 x86-64 CPUs. AVX2 is selected at runtime; the same binary automatically falls
 back to scalar C when AVX2 is unavailable. Pass `--no-simd` to force the scalar
@@ -99,7 +101,8 @@ Encoder options:
   preset's bpp range and keep the result with minimum RGB RMSE (equivalently,
   maximum PSNR); this option requires `--preset`;
 - `--block N`: block width and height, power of two from 2 to 64;
-- `--local N`: colours in each block palette, power of two from 2 to 16;
+- `--local N`: colours in each block palette, power of two from 2 to 16 and no
+  greater than `--block × --block`;
 - `--global N`: colours in each global palette, power of two from 2 to 4096;
 - `--palettes N`: global palette count, power of two from 1 to 128;
 - `--rgb565`: store global palette colours as RGB565 instead of RGB888;
