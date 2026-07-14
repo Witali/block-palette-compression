@@ -469,35 +469,52 @@ size_t bpal5_find_settings_candidates(
     bpal5_encode_options *candidates,
     size_t capacity
 ) {
+    static const uint32_t palette_counts[] = { 2u, 16u, 32u, 64u };
+    static const uint32_t palette_color_bits[] = { 16u, 24u };
     const size_t profile_count = sizeof(FIND_SETTINGS_PROFILES) / sizeof(FIND_SETTINGS_PROFILES[0]);
     size_t count = 0u;
+    size_t palette_index;
+    size_t color_bits_index;
     size_t profile_index;
 
     if (baseline == NULL || candidates == NULL || capacity == 0u) {
         return 0u;
     }
     candidates[count++] = *baseline;
-    for (profile_index = 0u; profile_index < profile_count && count < capacity; ++profile_index) {
-        const search_profile *profile = &FIND_SETTINGS_PROFILES[profile_index];
-        bpal5_encode_options candidate = *baseline;
-        size_t candidate_index;
-        int duplicate = 0;
+    for (palette_index = 0u;
+         palette_index < sizeof(palette_counts) / sizeof(palette_counts[0]);
+         ++palette_index) {
+        for (color_bits_index = 0u;
+             color_bits_index < sizeof(palette_color_bits) / sizeof(palette_color_bits[0]);
+             ++color_bits_index) {
+            for (profile_index = 0u; profile_index <= profile_count && count < capacity; ++profile_index) {
+                bpal5_encode_options candidate = *baseline;
+                size_t candidate_index;
+                int duplicate = 0;
 
-        candidate.block_size = profile->block_size;
-        candidate.local_color_count = profile->local_color_count;
-        candidate.global_color_count = profile->global_color_count;
-        for (candidate_index = 0u; candidate_index < count; ++candidate_index) {
-            const bpal5_encode_options *existing = &candidates[candidate_index];
-            if (candidate.block_size == existing->block_size &&
-                candidate.local_color_count == existing->local_color_count &&
-                candidate.global_color_count == existing->global_color_count &&
-                candidate.palette_color_bits == existing->palette_color_bits) {
-                duplicate = 1;
-                break;
+                candidate.palette_count = palette_counts[palette_index];
+                candidate.palette_color_bits = palette_color_bits[color_bits_index];
+                if (profile_index < profile_count) {
+                    const search_profile *profile = &FIND_SETTINGS_PROFILES[profile_index];
+                    candidate.block_size = profile->block_size;
+                    candidate.local_color_count = profile->local_color_count;
+                    candidate.global_color_count = profile->global_color_count;
+                }
+                for (candidate_index = 0u; candidate_index < count; ++candidate_index) {
+                    const bpal5_encode_options *existing = &candidates[candidate_index];
+                    if (candidate.block_size == existing->block_size &&
+                        candidate.local_color_count == existing->local_color_count &&
+                        candidate.global_color_count == existing->global_color_count &&
+                        candidate.palette_count == existing->palette_count &&
+                        candidate.palette_color_bits == existing->palette_color_bits) {
+                        duplicate = 1;
+                        break;
+                    }
+                }
+                if (!duplicate) {
+                    candidates[count++] = candidate;
+                }
             }
-        }
-        if (!duplicate) {
-            candidates[count++] = candidate;
         }
     }
     return count;
@@ -530,6 +547,32 @@ uint64_t bpal5_estimate_payload_bits(
         (uses_direct_pixel_colors(options->block_size, options->local_color_count)
             ? 0u
             : pixel_count * integer_log2(options->local_color_count));
+}
+
+int bpal5_rate_guard_accept(
+    uint64_t candidate_error,
+    double candidate_bits_per_pixel,
+    uint64_t baseline_error,
+    double baseline_bits_per_pixel
+) {
+    const double rate_penalty = 15.0;
+    double quality_gain;
+    double rate_cost;
+
+    if (candidate_bits_per_pixel <= 0.0 || baseline_bits_per_pixel <= 0.0 ||
+        candidate_error > baseline_error) {
+        return 0;
+    }
+    if (baseline_error == 0u) {
+        return candidate_error == 0u &&
+            candidate_bits_per_pixel <= baseline_bits_per_pixel;
+    }
+    if (candidate_error == 0u) {
+        return 1;
+    }
+    quality_gain = 10.0 * log10((double)baseline_error / (double)candidate_error);
+    rate_cost = rate_penalty * log(candidate_bits_per_pixel / baseline_bits_per_pixel);
+    return quality_gain + 1e-12 >= rate_cost;
 }
 
 void bpal5_image_free(bpal5_image *image) {

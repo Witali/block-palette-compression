@@ -97,20 +97,32 @@ static int test_find_settings_candidates(void) {
         memcmp(&baseline, &candidates[0], sizeof(baseline)) != 0) {
         return fail("settings search candidates mismatch");
     }
-    for (index = 0u; index < count; ++index) {
-        if (candidates[index].palette_color_bits != baseline.palette_color_bits) {
-            return fail("settings search changed the palette color format");
+    {
+        int found_rgb565 = 0;
+        int found_rgb888 = 0;
+        int found_palette_2 = 0;
+        int found_palette_64 = 0;
+
+        for (index = 0u; index < count; ++index) {
+            found_rgb565 |= candidates[index].palette_color_bits == 16u;
+            found_rgb888 |= candidates[index].palette_color_bits == 24u;
+            found_palette_2 |= candidates[index].palette_count == 2u;
+            found_palette_64 |= candidates[index].palette_count == 64u;
+        }
+        if (!found_rgb565 || !found_rgb888 || !found_palette_2 || !found_palette_64) {
+            return fail("settings search did not span rate-distortion formats");
         }
     }
-    baseline.palette_color_bits = 16u;
-    count = bpal5_find_settings_candidates(
-        &baseline,
-        candidates,
-        BPAL5_FIND_SETTINGS_MAX_CANDIDATES
-    );
     for (index = 0u; index < count; ++index) {
-        if (candidates[index].palette_color_bits != 16u) {
-            return fail("RGB565 settings search changed the palette color format");
+        size_t other;
+        for (other = index + 1u; other < count; ++other) {
+            if (candidates[index].block_size == candidates[other].block_size &&
+                candidates[index].local_color_count == candidates[other].local_color_count &&
+                candidates[index].global_color_count == candidates[other].global_color_count &&
+                candidates[index].palette_count == candidates[other].palette_count &&
+                candidates[index].palette_color_bits == candidates[other].palette_color_bits) {
+                return fail("settings search candidates are not unique");
+            }
         }
     }
     baseline.block_size = 2u;
@@ -126,6 +138,13 @@ static int test_find_settings_candidates(void) {
     baseline.global_color_count = 8u;
     if (bpal5_estimate_payload_bits(&baseline, 16u, 8u) != 576u) {
         return fail("direct block bpp estimate includes pixel indices");
+    }
+    if (!bpal5_rate_guard_accept(90u, 2.0, 100u, 2.0) ||
+        !bpal5_rate_guard_accept(100u, 1.9, 100u, 2.0) ||
+        bpal5_rate_guard_accept(100u, 2.1, 100u, 2.0) ||
+        bpal5_rate_guard_accept(99u, 2.1, 100u, 2.0) ||
+        !bpal5_rate_guard_accept(80u, 2.1, 100u, 2.0)) {
+        return fail("settings search rate guard mismatch");
     }
     return 0;
 }

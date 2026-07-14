@@ -12,7 +12,7 @@ static void print_usage(const char *program) {
         "Input: JPEG, PNG, TGA, BMP, PSD, GIF, HDR, PIC, PNM\n"
         "Options:\n"
         "  --preset BPP      Quality preset: 1.5,2,2.5,3,4,5,6,8\n"
-        "  --find-settings   Find minimum-RMSE settings in the preset bpp range\n"
+        "  --find-settings   Search palette layouts in the preset bpp range\n"
         "  --block N          Block size: 2,4,8,16,32,64 (default 16)\n"
         "  --local N          Colors per block: 2,4,8,16; <= block pixels (default 8)\n"
         "  --global N         Colors per shared palette: 2..4096 power of two (default 32)\n"
@@ -48,6 +48,7 @@ static int find_best_settings(
     size_t error_size
 ) {
     bpal5_encode_options candidates[BPAL5_FIND_SETTINGS_MAX_CANDIDATES];
+    const bpal5_encode_options legacy_family = *options;
     const size_t candidate_count = bpal5_find_settings_candidates(
         options,
         candidates,
@@ -62,7 +63,15 @@ static int find_best_settings(
     size_t closest_index = candidate_count;
     double closest_bpp = 0.0;
     double closest_distance = INFINITY;
+    bpal5_encode_options legacy_options = legacy_family;
+    uint64_t legacy_error = UINT64_MAX;
+    uint64_t legacy_payload_bits = 0u;
+    double legacy_bpp = 0.0;
+    size_t legacy_closest_index = candidate_count;
+    double legacy_closest_bpp = 0.0;
+    double legacy_closest_distance = INFINITY;
     size_t index;
+    int legacy_found = 0;
     int found = 0;
 
     if (!bpal5_quality_preset_range(preset_name, &target_bpp, &minimum_bpp, &maximum_bpp)) {
@@ -82,6 +91,9 @@ static int find_best_settings(
         const uint64_t payload_bits = bpal5_estimate_payload_bits(&candidates[index], width, height);
         const double bpp = (double)payload_bits / ((double)width * height);
         const double distance = fabs(bpp - target_bpp);
+        const int legacy_candidate =
+            candidates[index].palette_count == legacy_family.palette_count &&
+            candidates[index].palette_color_bits == legacy_family.palette_color_bits;
         bpal5_image candidate_image;
         bpal5_encode_stats candidate_stats;
         double mse;
@@ -94,6 +106,13 @@ static int find_best_settings(
             closest_index = index;
             closest_bpp = bpp;
             closest_distance = distance;
+        }
+        if (legacy_candidate &&
+            (distance < legacy_closest_distance ||
+             (distance == legacy_closest_distance && bpp < legacy_closest_bpp))) {
+            legacy_closest_index = index;
+            legacy_closest_bpp = bpp;
+            legacy_closest_distance = distance;
         }
         if (bpp < minimum_bpp || bpp > maximum_bpp) {
             fprintf(stderr, "  %zu/%zu: %.3f bpp, outside range\n", index + 1u, candidate_count, bpp);
@@ -130,6 +149,22 @@ static int find_best_settings(
             rmse,
             psnr
         );
+        {
+            int legacy_better = legacy_candidate &&
+                (!legacy_found || candidate_stats.final_error < legacy_error);
+            if (legacy_candidate && !legacy_better && candidate_stats.final_error == legacy_error) {
+                const double legacy_distance = fabs(legacy_bpp - target_bpp);
+                legacy_better = distance < legacy_distance ||
+                    (distance == legacy_distance && payload_bits < legacy_payload_bits);
+            }
+            if (legacy_better) {
+                legacy_options = candidates[index];
+                legacy_error = candidate_stats.final_error;
+                legacy_payload_bits = payload_bits;
+                legacy_bpp = bpp;
+                legacy_found = 1;
+            }
+        }
         better = !found || candidate_stats.final_error < best_error;
         if (!better && candidate_stats.final_error == best_error) {
             const double distance = fabs(bpp - target_bpp);
@@ -149,6 +184,31 @@ static int find_best_settings(
             found = 1;
         }
         bpal5_image_free(&candidate_image);
+    }
+    if (!legacy_found && legacy_closest_index < candidate_count) {
+        bpal5_image legacy_image;
+        bpal5_encode_stats legacy_stats;
+
+        memset(&legacy_image, 0, sizeof(legacy_image));
+        memset(&legacy_stats, 0, sizeof(legacy_stats));
+        if (!bpal5_encode_rgb_with_stats(
+                rgb,
+                width,
+                height,
+                &candidates[legacy_closest_index],
+                &legacy_image,
+                &legacy_stats,
+                error,
+                error_size)) {
+            bpal5_image_free(output);
+            return 0;
+        }
+        legacy_options = candidates[legacy_closest_index];
+        legacy_error = legacy_stats.final_error;
+        legacy_payload_bits = bpal5_estimate_payload_bits(&legacy_options, width, height);
+        legacy_bpp = legacy_closest_bpp;
+        legacy_found = 1;
+        bpal5_image_free(&legacy_image);
     }
     if (!found && closest_index < candidate_count) {
         bpal5_image candidate_image;
@@ -190,6 +250,39 @@ static int find_best_settings(
             maximum_bpp
         );
         return 0;
+    }
+    if (legacy_found &&
+        !bpal5_rate_guard_accept(best_error, best_bpp, legacy_error, legacy_bpp)) {
+        bpal5_image legacy_image;
+        bpal5_encode_stats legacy_stats;
+
+        memset(&legacy_image, 0, sizeof(legacy_image));
+        memset(&legacy_stats, 0, sizeof(legacy_stats));
+        fprintf(
+            stderr,
+            "Rate guard kept legacy search result %.3f bpp instead of %.3f bpp\n",
+            legacy_bpp,
+            best_bpp
+        );
+        if (!bpal5_encode_rgb_with_stats(
+                rgb,
+                width,
+                height,
+                &legacy_options,
+                &legacy_image,
+                &legacy_stats,
+                error,
+                error_size)) {
+            bpal5_image_free(output);
+            return 0;
+        }
+        bpal5_image_free(output);
+        *output = legacy_image;
+        *options = legacy_options;
+        *output_stats = legacy_stats;
+        best_error = legacy_stats.final_error;
+        best_payload_bits = legacy_payload_bits;
+        best_bpp = legacy_bpp;
     }
     fprintf(
         stderr,

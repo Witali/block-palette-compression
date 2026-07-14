@@ -97,9 +97,9 @@ Encoder options:
 
 - `--preset BPP`: apply the researched quality settings for target bpp `1.5`,
   `2`, `2.5`, `3`, `4`, `5`, `6`, or `8`;
-- `--find-settings`: test the shared search profiles inside the selected
-  preset's bpp range and keep the result with minimum RGB RMSE (equivalently,
-  maximum PSNR); this option requires `--preset`;
+- `--find-settings`: test the shared structural profiles, palette counts 2,
+  16, 32, and 64, and both RGB565 and RGB888 inside the selected preset's bpp
+  range; this option requires `--preset`;
 - `--block N`: block width and height, power of two from 2 to 64;
 - `--local N`: colours in each block palette, power of two from 2 to 16 and no
   greater than `--block × --block`;
@@ -122,21 +122,25 @@ The range for a preset is bounded by `(previous + current) / 2` and
 `(current + next) / 2`; the missing neighbour at either end is extrapolated.
 Only profiles whose calculated full-image payload bpp is inside that range
 are encoded. The current command-line settings are included as the baseline
-candidate. Ties in RMSE are resolved by distance from the target bpp and then
-by smaller payload size. Search output states the requested target bpp and its
-allowed range, then reports bpp, RMSE, and PSNR for every eligible candidate.
+candidate. The search first finds the minimum-RMSE result in both the expanded
+candidate set and the legacy family that keeps the preset palette count and
+color format. The expanded result is accepted only when its PSNR gain is at
+least `15 * ln(expanded_bpp / legacy_bpp)`; this rate guard avoids spending a
+large number of bits for a marginal quality gain. Ties in RMSE are resolved by
+distance from the target bpp and then by smaller payload size. Search output
+states the requested target bpp and its allowed range, then reports bpp, RMSE,
+and PSNR for every eligible candidate.
 If discrete palette overhead leaves the range empty for a small image, the
 candidate closest to the target bpp is encoded and reported as a fallback.
 Candidate encodes reuse the same process, including its initialized CUDA
 runtime and driver caches.
 
-`--palettes`, `--rgb565`, `--iterations`, `--refine`, `--threads`, and
-`--no-simd` remain common to all search candidates. In particular, settings
-search never changes the selected RGB565 or RGB888 palette color format.
-Structural options (`--block`, `--local`, and `--global`) customize the
-baseline candidate; the remaining candidates deliberately vary those fields.
-Without `--find-settings`, all explicit options continue to override the
-preset normally.
+`--iterations`, `--refine`, `--threads`, and `--no-simd` remain common to all
+search candidates. `--palettes`, `--rgb565`, `--block`, `--local`, and
+`--global` customize the baseline and legacy family; the expanded candidates
+deliberately vary palette count, color format, and structural fields. Without
+`--find-settings`, all explicit options continue to override the preset
+normally.
 
 Presets select RGB888, four refinement passes, and the following BPAL
 structure. Explicit encoder options override the selected preset regardless of

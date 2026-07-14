@@ -10,7 +10,7 @@ extern "C" {
 
 #define BPAL5_VERSION 5u
 #define BPAL5_HEADER_BYTES 14u
-#define BPAL5_FIND_SETTINGS_MAX_CANDIDATES 19u
+#define BPAL5_FIND_SETTINGS_MAX_CANDIDATES 153u
 
 typedef struct bpal5_image {
     uint32_t width;
@@ -70,6 +70,12 @@ uint64_t bpal5_estimate_payload_bits(
     const bpal5_encode_options *options,
     uint32_t width,
     uint32_t height
+);
+int bpal5_rate_guard_accept(
+    uint64_t candidate_error,
+    double candidate_bits_per_pixel,
+    uint64_t baseline_error,
+    double baseline_bits_per_pixel
 );
 int bpal5_cpu_has_avx2(void);
 const char *bpal5_simd_backend(int use_simd);
