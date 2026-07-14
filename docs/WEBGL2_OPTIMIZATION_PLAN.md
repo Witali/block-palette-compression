@@ -23,7 +23,8 @@ version.
 2. Warm up shaders and the GPU before recording measurements.
 3. Alternate reference and candidate runs to reduce temperature and scheduling
    bias.
-4. Record at least 11 measured runs per variant and compare their medians.
+4. Record at least 11 measured preset 5 runs per variant and compare their
+   medians. Use shorter screening runs while rejecting early experiments.
 5. Repeat a promising result in a fresh browser session.
 6. Accept a change only when both sessions are faster by at least 2%, or when a
    smaller improvement is outside the observed run-to-run noise.
@@ -32,6 +33,9 @@ version.
    the existing algorithm.
 8. Revert experiments that are slower, unstable, or reduce quality. Record the
    rejected result here without retaining its implementation.
+9. Screen accepted changes on presets 1.5, 3, 5, and 8, covering small and
+   large blocks and palettes. Run all presets from 1.5 through 8 before final
+   acceptance.
 
 Wall-clock time is the primary metric. When
 `EXT_disjoint_timer_query_webgl2` is available, GPU time is also recorded to
