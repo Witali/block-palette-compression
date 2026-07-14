@@ -1459,14 +1459,29 @@
     const selected = [];
     const isSelected = new Uint8Array(palettePoints.length);
     const nearestDistances = new Float64Array(candidates.length);
+    const candidateDistances = new Float64Array(candidates.length * candidates.length);
+
+    for (let sourcePosition = 0; sourcePosition < candidates.length; sourcePosition += 1) {
+      const rowOffset = sourcePosition * candidates.length;
+
+      for (let candidatePosition = 0; candidatePosition < candidates.length; candidatePosition += 1) {
+        candidateDistances[rowOffset + candidatePosition] = squaredDistance(
+          sourceTargets[sourcePosition],
+          palettePoints[candidates[candidatePosition]]
+        );
+      }
+    }
 
     nearestDistances.fill(Infinity);
 
     while (selected.length < localColorCount) {
       let bestCandidate = -1;
+      let bestCandidatePosition = -1;
       let bestError = Infinity;
 
-      for (const candidate of candidates) {
+      for (let candidatePosition = 0; candidatePosition < candidates.length; candidatePosition += 1) {
+        const candidate = candidates[candidatePosition];
+
         if (isSelected[candidate]) {
           continue;
         }
@@ -1474,10 +1489,9 @@
         let error = 0;
 
         for (let sourcePosition = 0; sourcePosition < candidates.length; sourcePosition += 1) {
-          const candidateDistance = squaredDistance(
-            sourceTargets[sourcePosition],
-            palettePoints[candidate]
-          );
+          const candidateDistance = candidateDistances[
+            sourcePosition * candidates.length + candidatePosition
+          ];
 
           error += counts[candidates[sourcePosition]] * Math.min(
             nearestDistances[sourcePosition],
@@ -1494,6 +1508,7 @@
           ))
         ) {
           bestCandidate = candidate;
+          bestCandidatePosition = candidatePosition;
           bestError = error;
         }
       }
@@ -1504,7 +1519,7 @@
       for (let sourcePosition = 0; sourcePosition < candidates.length; sourcePosition += 1) {
         nearestDistances[sourcePosition] = Math.min(
           nearestDistances[sourcePosition],
-          squaredDistance(sourceTargets[sourcePosition], palettePoints[bestCandidate])
+          candidateDistances[sourcePosition * candidates.length + bestCandidatePosition]
         );
       }
     }
