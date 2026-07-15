@@ -8,6 +8,11 @@ to localize ringing around strong edges. Every MCU contains independent Y, Cb,
 and Cr coefficients, so decoding a pixel requires its own record only and
 never a full-image reconstruction.
 
+The decoder also accepts the optional clustered DCT prototype library written
+by the JavaScript encoder. A component adds one directly indexed prototype to
+its local residual before IDCT. The CUDA kernels read the fixed MCU plus at
+most one Y, Cb, and Cr prototype; they never follow a reference to another MCU.
+
 New files use grouped binary exponents for the selected AC coefficients. Each
 group stores one three-bit exponent and five-bit signed mantissas; the DC term
 keeps its own exponent and ten-bit signed value. The 0.75, 1, and 2 bpp modes
@@ -19,8 +24,9 @@ shared exponent and six-bit AC values.
 The encoder runs RGB-to-YCbCr conversion, 4:2:2 downsampling, separable DCT,
 profile selection, grouped-exponent quantization, and packing on the GPU. Both full-image decoding and
 single-pixel reconstruction use CUDA kernels. The `pixel` command reads one
-24-192 byte MCU record from disk and uploads only that record to the GPU. For
-a split-luma record, the kernel reconstructs only the selected 8x8 Y block.
+24-192 byte MCU record and, when present, the small prototype library. It does
+not upload the other MCU records. For a split-luma record, the kernel
+reconstructs only the selected 8x8 Y block.
 
 ## Build on Windows
 

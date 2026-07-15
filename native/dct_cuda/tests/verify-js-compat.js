@@ -39,6 +39,7 @@ try {
   }
   verifyJpegDctImport();
   verifyLegacyHighRate();
+  verifyPrototypeLibrary();
   console.log("ok - CUDA and JavaScript DCTBS2 codecs are bidirectionally compatible");
 } finally {
   fs.rmSync(temporary, { recursive: true, force: true });
@@ -97,6 +98,39 @@ function verifyLegacyHighRate() {
   assert.ok(match, `legacy high-rate pixel output: ${output}`);
   assert.deepEqual(match.slice(1).map(Number), [sampled.r, sampled.g, sampled.b, sampled.a]);
   console.log("ok - legacy high-rate 16x16 luma decodes identically in CUDA and JavaScript");
+}
+
+function verifyPrototypeLibrary() {
+  const encoded = encodeDctFile(rgba, width, height, {
+    preset: "3",
+    quality: 92,
+    dctLibrary: true,
+    librarySize: 3,
+    libraryComponents: ["y"],
+  });
+  const dctFile = path.join(temporary, "prototype-library.dctbs2");
+  const decodedPpm = path.join(temporary, "prototype-library.ppm");
+  const info = inspectDctFile(encoded);
+
+  assert.equal(info.libraryEnabled, true);
+  assert.equal(info.library.referenceCoding, "header");
+  fs.writeFileSync(dctFile, encoded);
+  run(["decode", dctFile, decodedPpm]);
+  assertRgbMatchesRgba(
+    readPpm(decodedPpm),
+    decodeDctFile(encoded).pixels,
+    "clustered DCT prototype library"
+  );
+
+  for (const [x, y] of [[0, 0], [15, 8], [18, 16]]) {
+    const sampled = sampleDctFilePixel(encoded, x, y);
+    const output = run(["pixel", dctFile, String(x), String(y)]);
+    const match = /RGBA\(\d+,\d+\) = (\d+) (\d+) (\d+) (\d+)/.exec(output);
+    assert.ok(match, `prototype-library pixel output: ${output}`);
+    assert.deepEqual(match.slice(1).map(Number), [sampled.r, sampled.g, sampled.b, sampled.a]);
+  }
+
+  console.log("ok - clustered DCT prototype library decodes identically in CUDA and JavaScript");
 }
 
 function verifyPresetListing() {

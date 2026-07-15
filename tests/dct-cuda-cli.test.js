@@ -20,11 +20,12 @@ test("provides CUDA encode, decode, settings search, and pixel commands", () => 
   assert.match(source, /preset\.bytes_per_mcu/);
 });
 
-test("keeps random pixel access bounded to one fixed MCU record", () => {
-  assert.match(source, /std::vector<uint8_t> record\(info\.preset\.bytes_per_mcu\)/);
-  assert.match(source, /file\.seekg\(static_cast<std::streamoff>\(offset\)/);
-  assert.match(source, /cudaMemcpy\([\s\S]*record\.size\(\)[\s\S]*cudaMemcpyHostToDevice/);
-  assert.match(readme, /uploads only that record to the GPU/);
+test("keeps random pixel access bounded to one fixed MCU record and its prototype library", () => {
+  assert.match(source, /const std::vector<uint8_t> record\(/);
+  assert.match(source, /HEADER_BYTES \+ static_cast<size_t>\(mcu_index\) \* info\.preset\.bytes_per_mcu/);
+  assert.match(source, /device_record\.get\(\), record\.data\(\), record\.size\(\), cudaMemcpyHostToDevice/);
+  assert.match(source, /info\.library_enabled \? device_library\.get\(\) : nullptr/);
+  assert.match(readme, /does\s+not upload the other MCU records/);
   assert.match(readme, /sampleDctFilePixel/);
 });
 
