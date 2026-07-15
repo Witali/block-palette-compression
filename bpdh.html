@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#101318">
+    <title data-i18n="hybrid.title">Hybrid BPAL/DCT compression</title>
+    <link rel="manifest" href="./app.webmanifest">
+    <link rel="icon" href="./assets/icons/app-icon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="./assets/icons/app-icon-192.png">
+    <link rel="stylesheet" href="./block-palette.css?v=hybrid-1">
+    <link rel="stylesheet" href="./bpdh.css?v=hybrid-1">
+    <link rel="stylesheet" href="./i18n.css">
+  </head>
+  <body>
+    <main>
+      <header class="page-header">
+        <div class="title-block">
+          <a class="back-link" href="./index.html" data-i18n="common.home">← Back to home</a>
+          <h1 data-i18n="hybrid.title">Hybrid BPAL/DCT compression</h1>
+          <p data-i18n="hybrid.description">Each 16×16 unit independently selects a shared-palette BPAL record or a 4:2:0 DCT record under one payload budget.</p>
+        </div>
+
+        <form id="controls">
+          <label>
+            <span data-i18n="common.image">Image</span>
+            <select id="image-url" name="image">
+              <option value="./assets/stone-texture-small.jpg">stone-texture-small.jpg</option>
+              <option value="./assets/stone-texture-wic.jpg">stone-texture-wic.jpg</option>
+              <option value="./assets/benchmark-jpegs/landscape-alaska.jpg">landscape-alaska.jpg</option>
+              <option value="./assets/benchmark-jpegs/clipart-apple.jpg">clipart-apple.jpg</option>
+            </select>
+          </label>
+
+          <label>
+            <span data-i18n="hybrid.targetBpp">Target payload</span>
+            <span class="number-with-unit">
+              <input id="target-bpp" name="targetBitsPerPixel" type="number" min="0.5" max="24" step="0.25" value="4">
+              <small>bpp</small>
+            </span>
+          </label>
+
+          <label>
+            <span data-i18n="hybrid.mode">Allowed modes</span>
+            <select id="codec-mode" name="mode">
+              <option value="auto" selected data-i18n="hybrid.modeAuto">Automatic BPAL + DCT</option>
+              <option value="bpal" data-i18n="hybrid.modeBpal">BPAL only</option>
+              <option value="dct" data-i18n="hybrid.modeDct">DCT only</option>
+            </select>
+          </label>
+
+          <label>
+            <span data-i18n="hybrid.dctSearch">DCT quality search</span>
+            <select id="dct-search" name="dctSearch">
+              <option value="balanced" selected data-i18n="hybrid.dctBalanced">Balanced · 8 candidates</option>
+              <option value="fast" data-i18n="hybrid.dctFast">Fast · 4 candidates</option>
+              <option value="70" data-i18n="hybrid.dctQuality70">Fixed quality 70</option>
+              <option value="85" data-i18n="hybrid.dctQuality85">Fixed quality 85</option>
+              <option value="95" data-i18n="hybrid.dctQuality95">Fixed quality 95</option>
+            </select>
+          </label>
+
+          <label>
+            <span data-i18n="block.localColors">Colors per BPAL block</span>
+            <select id="local-color-count" name="localColorCount">
+              <option value="2" data-i18n="block.local2">2 colors · 1 bit/px</option>
+              <option value="4" data-i18n="block.local4">4 colors · 2 bits/px</option>
+              <option value="8" selected data-i18n="block.local8">8 colors · 3 bits/px</option>
+              <option value="16" data-i18n="block.local16">16 colors · 4 bits/px</option>
+            </select>
+          </label>
+
+          <label>
+            <span data-i18n="block.globalPalette">Colors per shared palette</span>
+            <select id="global-color-count" name="globalColorCount">
+              <option value="8" data-i18n="block.global8">8 colors · 3 bits</option>
+              <option value="16" data-i18n="block.global16">16 colors · 4 bits</option>
+              <option value="32" selected data-i18n="block.global32">32 colors · 5 bits</option>
+              <option value="64" data-i18n="block.global64">64 colors · 6 bits</option>
+              <option value="128" data-i18n="block.global128">128 colors · 7 bits</option>
+              <option value="256" data-i18n="block.global256">256 colors · 8 bits</option>
+            </select>
+          </label>
+
+          <label>
+            <span data-i18n="block.paletteCount">Number of palettes</span>
+            <select id="palette-count" name="paletteCount">
+              <option value="1" data-i18n="block.paletteCount1">1 palette · 0 bits/block</option>
+              <option value="2" data-i18n="block.paletteCount2">2 palettes · 1 bit/block</option>
+              <option value="4" data-i18n="block.paletteCount4">4 palettes · 2 bits/block</option>
+              <option value="8" data-i18n="block.paletteCount8">8 palettes · 3 bits/block</option>
+              <option value="16" data-i18n="block.paletteCount16">16 palettes · 4 bits/block</option>
+              <option value="32" data-i18n="block.paletteCount32">32 palettes · 5 bits/block</option>
+              <option value="64" selected data-i18n="block.paletteCount64">64 palettes · 6 bits/block</option>
+              <option value="128" data-i18n="block.paletteCount128">128 palettes · 7 bits/block</option>
+            </select>
+          </label>
+
+          <label>
+            <span data-i18n="block.paletteFormat">Palette color format</span>
+            <select id="palette-color-bits" name="paletteColorBits">
+              <option value="24" selected data-i18n="block.rgb888">24 bits · RGB888</option>
+              <option value="16" data-i18n="block.rgb565">16 bits · RGB565</option>
+            </select>
+          </label>
+
+          <label>
+            <span data-i18n="common.colorSpace">Color space</span>
+            <select id="color-space" name="colorSpace">
+              <option value="rgb" selected>RGB</option>
+              <option value="oklab">OKLab</option>
+            </select>
+          </label>
+
+          <label>
+            <span data-i18n="block.clusteringMethod">Clustering method</span>
+            <select id="clustering-method" name="clusteringMethod">
+              <option value="k-means" selected data-i18n="block.kmeans">K-means · Euclidean</option>
+              <option value="k-means-uniform" data-i18n="block.kmeansUniform">K-means · uniform initialization</option>
+              <option value="k-medoids" data-i18n="block.kmedoids">K-medoids · source colors</option>
+              <option value="k-medians" data-i18n="block.kmedians">K-medians · Manhattan</option>
+            </select>
+          </label>
+
+          <label>
+            <span data-i18n="block.refinementPasses">Refinement passes</span>
+            <select id="refinement-passes" name="refinementPasses">
+              <option value="0">0</option>
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="4" selected>4</option>
+            </select>
+          </label>
+
+          <button id="upload-button" type="button" data-i18n="common.uploadImage">Upload image</button>
+          <input id="image-file" type="file" accept="image/*" hidden>
+          <button id="process-button" type="submit" data-i18n="hybrid.compress">Compress BPDH</button>
+          <button id="download-file-button" type="button" disabled data-i18n="hybrid.downloadFile">Download BPDH</button>
+          <button id="download-png-button" type="button" disabled data-i18n="common.downloadPng">Download PNG</button>
+        </form>
+      </header>
+
+      <section id="status" class="status" role="status" aria-live="polite" data-i18n="common.preparing">Preparing…</section>
+
+      <section class="progress-panel" aria-label="Compression progress" data-i18n-aria-label="hybrid.progress">
+        <progress id="progress-bar" max="100" value="0">0%</progress>
+        <output id="progress-label">0%</output>
+      </section>
+
+      <section class="metrics hybrid-metrics" aria-label="Hybrid compression metrics" data-i18n-aria-label="hybrid.metrics">
+        <div><span data-i18n="hybrid.dimensions">Dimensions</span><strong id="metric-dimensions">—</strong></div>
+        <div><span data-i18n="hybrid.fileSize">BPDH file</span><strong id="metric-file-size">—</strong></div>
+        <div><span data-i18n="hybrid.payloadBpp">Payload bpp</span><strong id="metric-bpp">—</strong></div>
+        <div><span data-i18n="common.psnr">PSNR RGB</span><strong id="metric-psnr">—</strong></div>
+        <div><span data-i18n="common.rmse">RMSE per channel</span><strong id="metric-rmse">—</strong></div>
+        <div><span data-i18n="hybrid.modeSplit">BPAL / DCT units</span><strong id="metric-modes">—</strong></div>
+        <div><span data-i18n="common.processingTime">Processing time</span><strong id="metric-time">—</strong></div>
+      </section>
+
+      <section class="storage-section" aria-labelledby="storage-title">
+        <div class="section-heading">
+          <div>
+            <h2 id="storage-title" data-i18n="hybrid.storageTitle">BPDH stored data</h2>
+            <p data-i18n="hybrid.storageDescription">The mode map selects one sparse payload; pure files omit the map and the unused codec tables.</p>
+          </div>
+          <span id="target-result">—</span>
+        </div>
+        <div class="storage-flow hybrid-storage">
+          <div><span data-i18n="hybrid.header">Header</span><strong id="storage-header">—</strong><small>48 B</small></div>
+          <b>+</b>
+          <div><span data-i18n="hybrid.palettes">BPAL palettes</span><strong id="storage-palettes">—</strong><small id="storage-palettes-note">—</small></div>
+          <b>+</b>
+          <div><span data-i18n="hybrid.quantTables">DCT tables</span><strong id="storage-tables">—</strong><small>Y + C</small></div>
+          <b>+</b>
+          <div><span data-i18n="hybrid.modeMap">Mode map</span><strong id="storage-map">—</strong><small id="storage-map-note">—</small></div>
+          <b>+</b>
+          <div><span data-i18n="hybrid.bpalPayload">BPAL payload</span><strong id="storage-bpal">—</strong><small id="storage-bpal-note">—</small></div>
+          <b>+</b>
+          <div><span data-i18n="hybrid.dctPayload">DCT payload</span><strong id="storage-dct">—</strong><small id="storage-dct-note">—</small></div>
+          <b>=</b>
+          <div class="storage-total"><span data-i18n="hybrid.file">BPDH file</span><strong id="storage-total">—</strong><small id="storage-total-note">—</small></div>
+        </div>
+      </section>
+
+      <section class="comparison" aria-label="Image comparison" data-i18n-aria-label="common.imageComparison">
+        <figure>
+          <figcaption data-i18n="common.sourceImage">Source image</figcaption>
+          <div class="canvas-viewport">
+            <span id="source-stage" class="canvas-stage">
+              <canvas id="source-canvas"></canvas>
+            </span>
+          </div>
+        </figure>
+        <figure>
+          <figcaption class="result-caption">
+            <span data-i18n="hybrid.restoredPreview">Restored BPDH preview</span>
+            <label><input id="show-modes" type="checkbox" checked><span data-i18n="hybrid.showModes">Mode overlay</span></label>
+          </figcaption>
+          <div class="canvas-viewport">
+            <span id="result-stage" class="canvas-stage result-stage">
+              <canvas id="result-canvas" aria-label="BPDH result; select a pixel to inspect deterministic decoding" data-i18n-aria-label="hybrid.resultAria"></canvas>
+              <canvas id="mode-canvas" aria-hidden="true"></canvas>
+            </span>
+          </div>
+        </figure>
+      </section>
+
+      <section class="palette-section inspector-section" aria-labelledby="inspector-title">
+        <div class="section-heading">
+          <div>
+            <h2 id="inspector-title" data-i18n="hybrid.inspectorTitle">Coordinate decoder</h2>
+            <p data-i18n="hybrid.inspectorDescription">Select a result pixel. The coordinate sampler reconstructs it from the chosen BPAL or DCT unit and must match the full decode.</p>
+          </div>
+          <span id="selected-unit">—</span>
+        </div>
+        <div class="mode-legend" aria-label="Mode colors" data-i18n-aria-label="hybrid.modeLegend">
+          <span><i class="legend-bpal"></i><b>BPAL</b><output id="legend-bpal-count">—</output></span>
+          <span><i class="legend-dct"></i><b>DCT</b><output id="legend-dct-count">—</output></span>
+        </div>
+        <div class="pixel-inspector">
+          <div><span data-i18n="hybrid.coordinate">Coordinate</span><strong id="pixel-coordinate">—</strong></div>
+          <div><span data-i18n="hybrid.selectedMode">Selected mode</span><strong id="pixel-mode">—</strong></div>
+          <div><span data-i18n="hybrid.fullDecodeColor">Full decode</span><strong id="pixel-full-color">—</strong></div>
+          <div><span data-i18n="hybrid.coordinateColor">Coordinate decode</span><strong id="pixel-sampled-color">—</strong></div>
+          <div class="pixel-match"><span data-i18n="hybrid.determinism">Determinism</span><strong id="pixel-match">—</strong></div>
+          <span id="pixel-swatch" class="pixel-swatch" aria-hidden="true"></span>
+        </div>
+      </section>
+    </main>
+
+    <script src="./src/hybrid/dct420.js?v=hybrid-1"></script>
+    <script src="./src/hybrid/bpdh-format.js?v=hybrid-1"></script>
+    <script src="./src/i18n/en.js?v=hybrid-1"></script>
+    <script src="./src/i18n/ru.js?v=hybrid-1"></script>
+    <script src="./src/i18n/i18n.js"></script>
+    <script src="./src/pages/bpdh-page.js?v=hybrid-1"></script>
+    <script src="./src/pwa/register-service-worker.js?v=1"></script>
+  </body>
+</html>

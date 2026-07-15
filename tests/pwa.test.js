@@ -14,6 +14,7 @@ const testCases = [];
 const htmlPages = [
   "index.html",
   "block-palette.html",
+  "bpdh.html",
   "bpal-viewer.html",
   "cube.html",
   "cube-bpal-sampler.html",

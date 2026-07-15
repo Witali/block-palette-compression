@@ -10,6 +10,7 @@ async function runTests() {
   require("./block-palette-codec.test.js");
   require("./block-palette-format.test.js");
   require("./bpdh-codec.test.js");
+  require("./bpdh-page.test.js");
   require("./block-pattern-dictionary.test.js");
   require("./bplm-format.test.js");
   require("./bplm-compression-page.test.js");

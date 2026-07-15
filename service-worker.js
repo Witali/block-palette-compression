@@ -1,6 +1,6 @@
 "use strict";
 
-const CACHE_VERSION = "v4";
+const CACHE_VERSION = "v5";
 const SHELL_CACHE = `bpal-shell-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `bpal-runtime-${CACHE_VERSION}`;
 const SHARED_FILE_CACHE = "bpal-shared-files-v1";
@@ -14,12 +14,14 @@ const APP_SHELL = [
   "./",
   "./index.html",
   "./block-palette.html",
+  "./bpdh.html",
   "./bpal-viewer.html",
   "./cube.html",
   "./cube-bpal-sampler.html",
   "./app.webmanifest",
   "./home.css",
   "./block-palette.css",
+  "./bpdh.css",
   "./bpal-viewer.css",
   "./style.css",
   "./bpal-sampler.css",
@@ -35,7 +37,12 @@ const APP_SHELL = [
   "./src/i18n/en.js",
   "./src/i18n/i18n.js",
   "./src/i18n/ru.js",
+  "./src/hybrid/dct420.js",
+  "./src/hybrid/bpdh-format.js",
+  "./src/hybrid/bpdh-codec.js",
+  "./src/hybrid/bpdh-worker.js",
   "./src/pages/block-palette-page.js",
+  "./src/pages/bpdh-page.js",
   "./src/pages/bpal-example-catalog.js",
   "./src/pages/bpal-viewer-page.js",
   "./src/pages/cube-bpal-sampler-page.js",
