@@ -55,23 +55,59 @@ All multi-byte integers are unsigned little-endian values.
 | 40 | 4 | Cb bytes per MCU |
 | 44 | 4 | Cr bytes per MCU |
 | 48 | 4 | JPEG-style quality value (1–100) |
-| 52 | 4 | flags; bit 0 means quality was selected automatically; bit 1 selects four 8×8 Y records |
+| 52 | 4 | flags; bit 0 means quality was selected automatically; bit 1 selects four 8×8 Y records; bit 2 enables a DCT prototype library |
 | 56 | 4 | payload bytes |
-| 60 | 4 | number of quality candidates measured by the encoder |
+| 60 | 4 | number of quality candidates, or prototype-library bytes when flag bit 2 is set |
 
 ## Component record
 
 Every component record starts with one byte. Its high nibble selects one of
 four fixed coefficient scans (low-frequency, horizontal, vertical, or
 diagonal). Its low nibble selects the quantizer multiplier 1, 2, 4, 8, 16,
-32, 64, or 128. Remaining values are a signed 10-bit DC coefficient followed
-by as many signed 6-bit AC coefficients as fit in the fixed component record.
-Unused tail bits are zero. A split-luma MCU places its four Y records in
-top-left, top-right, bottom-left, bottom-right order before Cb and Cr.
+32, 64, or 128. The legacy coding then stores a signed 10-bit DC coefficient
+followed by as many signed 6-bit AC coefficients as fit in the fixed component
+record. Unused tail bits are zero. A split-luma MCU places its four Y records
+in top-left, top-right, bottom-left, bottom-right order before Cb and Cr.
 
 The quantization step is reconstructed from the stored quality, the component
 dimensions, the fixed JPEG luma/chroma table, and the per-component multiplier.
 No runtime codebook or previous block is required.
+
+The default grouped coefficient coding uses signed 5-bit AC mantissas and two
+or three 3-bit binary scale indices. The scale groups are reconstructed from
+the fixed component size and coding flag, so their parsing remains bounded and
+does not depend on another MCU.
+
+## Optional DCT prototype library
+
+The encoder can cluster the Y, Cb, and Cr coefficient vectors across one image
+into separate deterministic prototype libraries. Each component then stores a
+quantized residual relative to either zero or one prototype. The decoded
+coefficient vector is simply `prototype + residual`.
+
+With one to three prototypes, the two otherwise unused high bits of the
+component profile nibble store a reference from 0 through 3. The lower two
+bits still select the four coefficient scans, so this compact mode preserves
+the complete baseline coefficient budget. Experimental libraries with four or
+more entries use the final AC mantissa as a wider unsigned reference and
+therefore store one fewer residual coefficient.
+
+The library is appended after all fixed-size MCU records. Its 32-byte header is:
+
+| Offset | Bytes | Field |
+| ---: | ---: | --- |
+| 0 | 8 | `DCTLIB1\0` magic |
+| 8 | 4 | version (`2` for header references, `1` for tail references) |
+| 12 | 4 | Y prototype count |
+| 16 | 4 | Cb prototype count |
+| 20 | 4 | Cr prototype count |
+| 24 | 4 | bytes per Y prototype record |
+| 28 | 4 | complete library bytes including this header |
+
+Y prototype records are followed by Cb and Cr prototype records. Every
+prototype uses the ordinary component-record representation, the image quality,
+and the file's coefficient coding. The counts are bounded by 3 in compact mode
+and by the unsigned mantissa range in tail-reference mode.
 
 ## Random access
 
@@ -90,7 +126,10 @@ samples it at `(x mod 8, y mod 8)`. In a legacy or low-rate file it samples the
 single 16×16 Y record.
 Cb/Cr are sampled at `((x mod 16) / 2, y mod 16)`, after which the three
 samples are converted to RGB. All loops are bounded by 16×16, 8×8, and 8×16
-transform dimensions. There are no data-dependent references to other MCUs.
+transform dimensions. A library file additionally reads at most one bounded
+prototype record per component. There are no references to other MCUs, and the
+prototype address is computed directly from the stored index and fixed record
+size. This remains suitable for a read-only GPU buffer or texture.
 
 High-rate DCTBS2 v2 files written before the split-luma flag was introduced
 remain valid: an unset bit 1 always means one 16×16 Y record, including for a

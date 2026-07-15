@@ -195,6 +195,64 @@ test("uses grouped binary exponents by default while preserving legacy files", (
   assert.equal(inspectDctMcu(legacy, 0).components.y.groupScaleIndices.length, 1);
 });
 
+test("stores deterministic clustered DCT prototypes without losing coordinate access", () => {
+  const width = 32;
+  const height = 24;
+  const source = makePixels(width, height);
+  const options = {
+    preset: "3",
+    quality: 92,
+    dctLibrary: true,
+    librarySize: 3,
+  };
+  const first = encodeDctFile(source, width, height, options);
+  const second = encodeDctFile(source, width, height, options);
+  const info = inspectDctFile(first);
+  const decoded = decodeDctFile(first);
+  const mcu = inspectDctMcu(first, 0);
+
+  assert.deepEqual(first, second);
+  assert.equal(info.libraryEnabled, true);
+  assert.equal(info.library.referenceCoding, "header");
+  assert.equal(info.library.y.count, 3);
+  assert.equal(info.library.cb.count, 3);
+  assert.equal(info.library.cr.count, 3);
+  assert.equal(first.length, HEADER_BYTES + info.payloadBytes + info.libraryBytes);
+  assert.ok(mcu.components.y.blocks.every((block) => block.libraryIndex >= 0 && block.libraryIndex <= 3));
+
+  for (const [x, y] of [[0, 0], [9, 7], [16, 15], [31, 23]]) {
+    const sampled = sampleDctFilePixel(first, x, y);
+    const offset = (y * width + x) * 4;
+    assert.deepEqual(
+      [sampled.r, sampled.g, sampled.b, sampled.a],
+      Array.from(decoded.pixels.slice(offset, offset + 4)),
+      `prototype-library pixel ${x},${y}`
+    );
+  }
+
+  const tailReference = encodeDctFile(source, width, height, {
+    ...options,
+    librarySize: 4,
+  });
+  assert.equal(inspectDctFile(tailReference).library.referenceCoding, "tail");
+});
+
+test("rejects invalid DCT prototype libraries and out-of-range references", () => {
+  const source = makePixels(16, 16);
+  const encoded = encodeDctFile(source, 16, 16, {
+    preset: "1.5",
+    quality: 92,
+    dctLibrary: true,
+    librarySize: 1,
+  });
+  const invalidReference = encoded.slice();
+
+  invalidReference[HEADER_BYTES] = invalidReference[HEADER_BYTES] & 0x3f | 0xc0;
+
+  assert.throws(() => inspectDctFile(encoded.slice(0, -1)), /Invalid DCTBS2 layout/);
+  assert.throws(() => sampleDctFilePixel(invalidReference, 0, 0), /library index/);
+});
+
 test("decodes the extended quantizer range", () => {
   const source = makePixels(16, 16);
   const encoded = encodeDctFile(source, 16, 16, { preset: "2", quality: 75 });
@@ -233,7 +291,7 @@ test("rejects truncated files, invalid modes, and invalid coordinates", () => {
   invalidMode[13] = 0;
   invalidMode[14] = 0;
   invalidMode[15] = 0;
-  unsupportedFlags[52] |= 4;
+  unsupportedFlags[52] |= 8;
   invalidCoefficientCoding[53] = 15;
   splitLowRate[52] |= 2;
 

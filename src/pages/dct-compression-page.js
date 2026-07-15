@@ -9,6 +9,7 @@ const qualityInput = document.getElementById("quality");
 const qualityValue = document.getElementById("quality-value");
 const autoQualityInput = document.getElementById("auto-quality");
 const jpegImportInput = document.getElementById("jpeg-dct-import");
+const prototypeLibraryInput = document.getElementById("dct-prototype-library");
 const uploadButton = document.getElementById("upload-button");
 const fileInput = document.getElementById("image-file");
 const processButton = document.getElementById("process-button");
@@ -82,7 +83,10 @@ imageSelect.addEventListener("change", () => {
   loadImage(imageSelect.value, optionLabel(imageSelect.selectedOptions[0])).catch(showError);
 });
 
-presetSelect.addEventListener("change", processImage);
+presetSelect.addEventListener("change", () => {
+  setBusy(false);
+  processImage();
+});
 qualityInput.addEventListener("input", updateQualityLabel);
 qualityInput.addEventListener("change", () => {
   if (!autoQualityInput.checked) {
@@ -96,8 +100,16 @@ autoQualityInput.addEventListener("change", () => {
 jpegImportInput.addEventListener("change", () => {
   if (jpegImportInput.checked) {
     autoQualityInput.checked = false;
+    prototypeLibraryInput.checked = false;
   }
   updateQualityLabel();
+  processImage();
+});
+prototypeLibraryInput.addEventListener("change", () => {
+  if (prototypeLibraryInput.checked) {
+    jpegImportInput.checked = false;
+  }
+  setBusy(false);
   processImage();
 });
 uploadButton.addEventListener("click", () => fileInput.click());
@@ -186,6 +198,7 @@ async function loadImage(url, name, suppliedBytes = null) {
   jpegImportInput.checked = Boolean(state.sourceJpegBytes);
   if (jpegImportInput.checked) {
     autoQualityInput.checked = false;
+    prototypeLibraryInput.checked = false;
   }
   updateQualityLabel();
   drawImageData(sourceCanvas, state.sourceImageData);
@@ -261,7 +274,7 @@ function processImage() {
   const source = state.sourceImageData;
   const jpegImport = jpegImportInput.checked && Boolean(state.sourceJpegBytes);
   const autoQuality = !jpegImport && autoQualityInput.checked;
-  const worker = new Worker("./src/dct/dct-worker.js?v=dct-page-8");
+  const worker = new Worker("./src/dct/dct-worker.js?v=dct-page-9");
   const pixels = source.data.slice();
   const jpegBytes = jpegImport ? state.sourceJpegBytes.slice() : null;
 
@@ -338,6 +351,9 @@ function processImage() {
       quality: Number(qualityInput.value),
       autoQuality,
       jpegImport,
+      dctLibrary: !jpegImport && prototypeLibraryInput.checked && Number(presetSelect.value) >= 3,
+      librarySize: 3,
+      libraryComponents: ["y"],
       jpegBytes: jpegBytes ? jpegBytes.buffer : null,
       sampleMcuCount: 24,
     };
@@ -689,6 +705,7 @@ function setBusy(busy) {
   qualityInput.disabled = busy || autoQualityInput.checked;
   autoQualityInput.disabled = busy || jpegImportInput.checked;
   jpegImportInput.disabled = busy || !state.sourceJpegBytes;
+  prototypeLibraryInput.disabled = busy || jpegImportInput.checked || Number(presetSelect.value) < 3;
   uploadButton.disabled = busy;
   imageSelect.disabled = busy;
   downloadDctButton.disabled = busy || !state.encoded;

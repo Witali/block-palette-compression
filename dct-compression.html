@@ -60,6 +60,11 @@
             <span data-i18n="dct.jpegImport">Fast JPEG DCT import</span>
           </label>
 
+          <label class="dct-check-option" title="At 3 bpp and above, cluster luma DCT blocks into three prototypes and store an independent local residual plus a prototype reference" data-i18n-title="dct.prototypeLibraryTitle">
+            <input id="dct-prototype-library" name="dctPrototypeLibrary" type="checkbox">
+            <span data-i18n="dct.prototypeLibrary">Y DCT prototype library (3 entries)</span>
+          </label>
+
           <button id="upload-button" type="button" data-i18n="common.uploadImage">Upload image</button>
           <input id="image-file" type="file" accept="image/*" hidden>
           <button id="process-button" type="submit" data-i18n="dct.compress">Compress DCT</button>
@@ -127,13 +132,14 @@
         <div class="section-heading">
           <div>
             <h2 id="format-title" data-i18n="dct.formatTitle">Addressable DCTBS2 layout</h2>
-            <p data-i18n="dct.formatDescription">Each independent MCU stores one 16×16 luma transform at low rates or four 8×8 luma transforms at high rates, plus two 8×16 chroma transforms. There is no entropy stream or dependency on neighboring MCUs.</p>
+            <p data-i18n="dct.formatDescription">Each independent MCU stores one 16×16 luma transform at low rates or four 8×8 luma transforms at high rates, plus two 8×16 chroma transforms. An optional clustered library supplies one directly addressed DCT prototype per component; no component depends on a neighboring MCU.</p>
           </div>
           <a class="reference-link" href="./docs/reference/dct-chat/dctbs_converter_with_edge_dictionary.html" data-i18n="dct.referenceSource">Original attached source</a>
         </div>
         <div class="dct-formula" aria-label="Pixel address formula" data-i18n-aria-label="dct.addressFormula">
           <code>mcu = floor(y / 16) × mcuColumns + floor(x / 16)</code>
           <code>byteOffset = headerBytes + mcu × bytesPerMcu</code>
+          <code>prototypeOffset = libraryBase + (reference - 1) × componentBytes</code>
         </div>
       </section>
     </main>
@@ -152,11 +158,11 @@
       <button id="progress-cancel" type="button" data-i18n="common.cancel">Cancel</button>
     </dialog>
 
-    <script src="./src/dct/dct-format.js?v=dct-page-8"></script>
-    <script src="./src/i18n/en.js?v=dct-page-7"></script>
-    <script src="./src/i18n/ru.js?v=dct-page-7"></script>
+    <script src="./src/dct/dct-format.js?v=dct-page-9"></script>
+    <script src="./src/i18n/en.js?v=dct-page-8"></script>
+    <script src="./src/i18n/ru.js?v=dct-page-8"></script>
     <script src="./src/i18n/i18n.js"></script>
-    <script src="./src/pages/dct-compression-page.js?v=dct-page-8"></script>
+    <script src="./src/pages/dct-compression-page.js?v=dct-page-9"></script>
     <script src="./src/pwa/register-service-worker.js?v=1"></script>
   </body>
 </html>
