@@ -9,7 +9,7 @@
     <link rel="icon" href="./assets/icons/app-icon.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="./assets/icons/app-icon-192.png">
     <link rel="stylesheet" href="./block-palette.css?v=hybrid-1">
-    <link rel="stylesheet" href="./bpdh.css?v=hybrid-1">
+    <link rel="stylesheet" href="./bpdh.css?v=hybrid-2">
     <link rel="stylesheet" href="./i18n.css">
   </head>
   <body>
@@ -186,7 +186,7 @@
       <section class="comparison" aria-label="Image comparison" data-i18n-aria-label="common.imageComparison">
         <figure>
           <figcaption data-i18n="common.sourceImage">Source image</figcaption>
-          <div class="canvas-viewport">
+          <div id="source-viewport" class="canvas-viewport">
             <span id="source-stage" class="canvas-stage">
               <canvas id="source-canvas"></canvas>
             </span>
@@ -195,9 +195,19 @@
         <figure>
           <figcaption class="result-caption">
             <span data-i18n="hybrid.restoredPreview">Restored BPDH preview</span>
-            <label><input id="show-modes" type="checkbox" checked><span data-i18n="hybrid.showModes">Mode overlay</span></label>
+            <span class="result-caption-controls">
+              <span class="zoom-controls" aria-label="Zoom" data-i18n-aria-label="viewer.zoom">
+                <button id="zoom-out" type="button" title="Zoom out" data-i18n-title="viewer.zoomOut" disabled>−</button>
+                <output id="zoom-level" aria-label="Current zoom" data-i18n-aria-label="viewer.currentZoom">100%</output>
+                <button id="zoom-in" type="button" title="Zoom in" data-i18n-title="viewer.zoomIn" disabled>+</button>
+                <button id="actual-size" class="text-button" type="button" title="Show at actual size" data-i18n-title="viewer.actualSizeTitle" aria-pressed="false" disabled>1:1</button>
+                <button id="fit-image" class="text-button" type="button" title="Fit image to viewport" data-i18n="viewer.fit" data-i18n-title="viewer.fitTitle" aria-pressed="true" disabled>Fit</button>
+              </span>
+              <label title="Use smooth interpolation while scaling previews" data-i18n-title="block.smoothingTitle"><input id="smooth-scaling" type="checkbox" checked><span data-i18n="block.smoothing">Smoothing</span></label>
+              <label><input id="show-modes" type="checkbox" checked><span data-i18n="hybrid.showModes">Mode overlay</span></label>
+            </span>
           </figcaption>
-          <div class="canvas-viewport">
+          <div id="result-viewport" class="canvas-viewport">
             <span id="result-stage" class="canvas-stage result-stage">
               <canvas id="result-canvas" aria-label="BPDH result; select a pixel to inspect deterministic decoding" data-i18n-aria-label="hybrid.resultAria"></canvas>
               <canvas id="mode-canvas" aria-hidden="true"></canvas>
@@ -234,7 +244,7 @@
     <script src="./src/i18n/en.js?v=hybrid-1"></script>
     <script src="./src/i18n/ru.js?v=hybrid-1"></script>
     <script src="./src/i18n/i18n.js"></script>
-    <script src="./src/pages/bpdh-page.js?v=hybrid-1"></script>
+    <script src="./src/pages/bpdh-page.js?v=hybrid-2"></script>
     <script src="./src/pwa/register-service-worker.js?v=1"></script>
   </body>
 </html>

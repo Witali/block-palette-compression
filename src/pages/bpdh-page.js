@@ -14,7 +14,21 @@
     metrics: null,
     selectedX: 0,
     selectedY: 0,
+    imageWidth: 0,
+    imageHeight: 0,
+    zoom: 1,
+    viewMode: "fit",
+    synchronizingScroll: false,
+    viewportDrag: null,
+    touches: new Map(),
+    pinch: null,
   };
+  const MIN_ZOOM = 0.05;
+  const MAX_ZOOM = 32;
+  const ZOOM_FACTOR = 1.25;
+  const VIEWPORT_PADDING = 28;
+  const DRAG_THRESHOLD = 5;
+  const DRAG_DELAY_MS = 140;
 
   elements.controls.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -26,10 +40,33 @@
   elements.downloadFileButton.addEventListener("click", downloadBpdh);
   elements.downloadPngButton.addEventListener("click", downloadPng);
   elements.showModes.addEventListener("change", drawModeOverlay);
-  elements.resultCanvas.addEventListener("click", selectPixelFromPointer);
+  elements.smoothScaling.addEventListener("change", updateCanvasImageRendering);
+  elements.zoomOutButton.addEventListener("click", () => setZoom(state.zoom / ZOOM_FACTOR));
+  elements.zoomInButton.addEventListener("click", () => setZoom(state.zoom * ZOOM_FACTOR));
+  elements.actualSizeButton.addEventListener("click", showActualSize);
+  elements.fitImageButton.addEventListener("click", fitImage);
+  elements.sourceViewport.addEventListener("scroll", () => (
+    synchronizeScroll(elements.sourceViewport, elements.resultViewport)
+  ), { passive: true });
+  elements.resultViewport.addEventListener("scroll", () => (
+    synchronizeScroll(elements.resultViewport, elements.sourceViewport)
+  ), { passive: true });
+  elements.sourceViewport.addEventListener("wheel", zoomFromWheel, { passive: false });
+  elements.resultViewport.addEventListener("wheel", zoomFromWheel, { passive: false });
+
+  for (const viewport of [elements.sourceViewport, elements.resultViewport]) {
+    viewport.addEventListener("pointerdown", startViewportPointer);
+    viewport.addEventListener("pointermove", moveViewportPointer);
+    viewport.addEventListener("pointerup", finishViewportPointer);
+    viewport.addEventListener("pointercancel", finishViewportPointer);
+    viewport.addEventListener("lostpointercapture", finishViewportPointer);
+  }
+
   root.addEventListener("languagechange", renderDynamicContent);
   root.addEventListener("beforeunload", dispose);
+  root.addEventListener("resize", handleResize);
 
+  updateCanvasImageRendering();
   loadImage(elements.imageUrl.value);
 
   function collectElements() {
@@ -56,11 +93,19 @@
       status: byId("status"),
       progressBar: byId("progress-bar"),
       progressLabel: byId("progress-label"),
+      sourceViewport: byId("source-viewport"),
+      resultViewport: byId("result-viewport"),
       sourceCanvas: byId("source-canvas"),
       resultCanvas: byId("result-canvas"),
       modeCanvas: byId("mode-canvas"),
       sourceStage: byId("source-stage"),
       resultStage: byId("result-stage"),
+      zoomLevel: byId("zoom-level"),
+      zoomOutButton: byId("zoom-out"),
+      zoomInButton: byId("zoom-in"),
+      actualSizeButton: byId("actual-size"),
+      fitImageButton: byId("fit-image"),
+      smoothScaling: byId("smooth-scaling"),
       showModes: byId("show-modes"),
       dimensions: byId("metric-dimensions"),
       fileSize: byId("metric-file-size"),
@@ -105,7 +150,7 @@
       context.drawImage(image, 0, 0);
       state.sourceImageData = context.getImageData(0, 0, image.naturalWidth, image.naturalHeight);
       state.sourceName = fileStem(url);
-      setStageSize(elements.sourceStage, image.naturalWidth, image.naturalHeight);
+      updateCanvasDisplaySize(image.naturalWidth, image.naturalHeight);
       await processImage();
     } catch (error) {
       showError(error);
@@ -259,7 +304,7 @@
 
     context.putImageData(new ImageData(decoded.pixels, decoded.width, decoded.height), 0, 0);
     resizeCanvas(elements.modeCanvas, decoded.width, decoded.height);
-    setStageSize(elements.resultStage, decoded.width, decoded.height);
+    applyCanvasDisplaySize();
     renderMetrics();
     drawModeOverlay();
     renderInspector();
@@ -476,11 +521,446 @@
     return canvas.getContext("2d");
   }
 
-  function setStageSize(stage, width, height) {
-    const scale = Math.max(1, Math.min(4, Math.floor(384 / Math.max(width, height))));
+  function updateCanvasDisplaySize(width, height) {
+    state.imageWidth = width;
+    state.imageHeight = height;
+    setZoomControlsEnabled(true);
+    fitImage();
+  }
 
-    stage.style.width = `${width * scale}px`;
-    stage.style.height = `${height * scale}px`;
+  function applyCanvasDisplaySize() {
+    const displayWidth = `${state.imageWidth * state.zoom}px`;
+    const displayHeight = `${state.imageHeight * state.zoom}px`;
+
+    for (const stage of [elements.sourceStage, elements.resultStage]) {
+      stage.style.width = displayWidth;
+      stage.style.height = displayHeight;
+    }
+
+    elements.zoomLevel.value = `${formatZoom(state.zoom)}%`;
+    elements.zoomOutButton.disabled = state.zoom <= MIN_ZOOM;
+    elements.zoomInButton.disabled = state.zoom >= MAX_ZOOM;
+  }
+
+  function updateCanvasImageRendering() {
+    const pixelated = !elements.smoothScaling.checked;
+
+    for (const stage of [elements.sourceStage, elements.resultStage]) {
+      stage.classList.toggle("is-pixelated", pixelated);
+    }
+  }
+
+  function fitImage() {
+    if (!state.imageWidth || !state.imageHeight) {
+      return;
+    }
+
+    const availableWidth = Math.max(1, Math.min(
+      elements.sourceViewport.clientWidth,
+      elements.resultViewport.clientWidth
+    ) - VIEWPORT_PADDING);
+    const availableHeight = Math.max(1, Math.min(
+      elements.sourceViewport.clientHeight,
+      elements.resultViewport.clientHeight
+    ) - VIEWPORT_PADDING);
+    const fittedZoom = Math.min(
+      availableWidth / state.imageWidth,
+      availableHeight / state.imageHeight
+    );
+
+    setViewMode("fit");
+    setZoom(fittedZoom, elements.resultViewport, undefined, undefined, true);
+  }
+
+  function showActualSize() {
+    if (!state.imageWidth || !state.imageHeight) {
+      return;
+    }
+
+    setViewMode("actual");
+    setZoom(1, elements.resultViewport, undefined, undefined, true);
+  }
+
+  function setViewMode(mode) {
+    state.viewMode = mode;
+    elements.fitImageButton.setAttribute("aria-pressed", String(mode === "fit"));
+    elements.actualSizeButton.setAttribute("aria-pressed", String(mode === "actual"));
+  }
+
+  function setZoom(value, viewport = elements.resultViewport, clientX, clientY, forceCenter = false, fixedImagePoint) {
+    if (!state.imageWidth || !state.imageHeight) {
+      return;
+    }
+
+    const nextZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, value));
+    const stage = viewport === elements.sourceViewport ? elements.sourceStage : elements.resultStage;
+    let anchorClientX = clientX;
+    let anchorClientY = clientY;
+    let imagePoint = fixedImagePoint;
+
+    if (!forceCenter) {
+      const viewportBounds = viewport.getBoundingClientRect();
+
+      anchorClientX = clientX === undefined
+        ? viewportBounds.left + viewport.clientWidth / 2
+        : clientX;
+      anchorClientY = clientY === undefined
+        ? viewportBounds.top + viewport.clientHeight / 2
+        : clientY;
+
+      if (!imagePoint) {
+        const stageBounds = stage.getBoundingClientRect();
+
+        imagePoint = {
+          x: (anchorClientX - stageBounds.left) / state.zoom,
+          y: (anchorClientY - stageBounds.top) / state.zoom,
+        };
+      }
+    }
+
+    state.zoom = nextZoom;
+    applyCanvasDisplaySize();
+
+    if (forceCenter) {
+      centerViewports();
+      return;
+    }
+
+    setViewMode("custom");
+    const updatedStageBounds = stage.getBoundingClientRect();
+
+    viewport.scrollLeft += updatedStageBounds.left + imagePoint.x * nextZoom - anchorClientX;
+    viewport.scrollTop += updatedStageBounds.top + imagePoint.y * nextZoom - anchorClientY;
+    state.synchronizingScroll = false;
+    synchronizeScroll(
+      viewport,
+      viewport === elements.sourceViewport ? elements.resultViewport : elements.sourceViewport
+    );
+  }
+
+  function centerViewports() {
+    state.synchronizingScroll = true;
+
+    for (const viewport of [elements.sourceViewport, elements.resultViewport]) {
+      viewport.scrollLeft = Math.max(0, (viewport.scrollWidth - viewport.clientWidth) / 2);
+      viewport.scrollTop = Math.max(0, (viewport.scrollHeight - viewport.clientHeight) / 2);
+    }
+
+    root.requestAnimationFrame(() => {
+      state.synchronizingScroll = false;
+    });
+  }
+
+  function setZoomControlsEnabled(enabled) {
+    elements.actualSizeButton.disabled = !enabled;
+    elements.fitImageButton.disabled = !enabled;
+
+    if (!enabled) {
+      elements.zoomOutButton.disabled = true;
+      elements.zoomInButton.disabled = true;
+    }
+  }
+
+  function synchronizeScroll(source, target) {
+    if (state.synchronizingScroll) {
+      return;
+    }
+
+    state.synchronizingScroll = true;
+    const sourceRangeX = Math.max(0, source.scrollWidth - source.clientWidth);
+    const sourceRangeY = Math.max(0, source.scrollHeight - source.clientHeight);
+    const targetRangeX = Math.max(0, target.scrollWidth - target.clientWidth);
+    const targetRangeY = Math.max(0, target.scrollHeight - target.clientHeight);
+
+    target.scrollLeft = sourceRangeX > 0 ? source.scrollLeft / sourceRangeX * targetRangeX : 0;
+    target.scrollTop = sourceRangeY > 0 ? source.scrollTop / sourceRangeY * targetRangeY : 0;
+    root.requestAnimationFrame(() => {
+      state.synchronizingScroll = false;
+    });
+  }
+
+  function startViewportPointer(event) {
+    if (event.pointerType === "touch") {
+      startViewportTouch(event);
+      return;
+    }
+
+    startViewportDrag(event);
+  }
+
+  function moveViewportPointer(event) {
+    if (state.touches.has(event.pointerId)) {
+      moveViewportTouch(event);
+      return;
+    }
+
+    moveViewportDrag(event);
+  }
+
+  function finishViewportPointer(event) {
+    if (state.touches.has(event.pointerId)) {
+      finishViewportTouch(event);
+      return;
+    }
+
+    finishViewportDrag(event);
+  }
+
+  function startViewportTouch(event) {
+    if (!state.imageWidth || !state.imageHeight) {
+      return;
+    }
+
+    const viewport = event.currentTarget;
+    const [activeTouch] = state.touches.values();
+
+    if ((activeTouch && activeTouch.viewport !== viewport) || state.touches.size >= 2) {
+      event.preventDefault();
+      return;
+    }
+
+    state.touches.set(event.pointerId, {
+      id: event.pointerId,
+      viewport,
+      x: event.clientX,
+      y: event.clientY,
+    });
+
+    if (state.touches.size === 1) {
+      startViewportDrag(event);
+    } else {
+      try {
+        viewport.setPointerCapture(event.pointerId);
+      } catch (_error) {
+        // Synthetic pointer events used by tests may not have a capturable pointer.
+      }
+
+      startViewportPinch(viewport);
+    }
+
+    event.preventDefault();
+  }
+
+  function moveViewportTouch(event) {
+    const touch = state.touches.get(event.pointerId);
+
+    touch.x = event.clientX;
+    touch.y = event.clientY;
+
+    if (state.pinch && state.pinch.viewport === event.currentTarget && state.touches.size === 2) {
+      const [first, second] = state.touches.values();
+      const distance = Math.max(1, getTouchDistance(first, second));
+      const center = getTouchCenter(first, second);
+      const nextZoom = state.pinch.startZoom * distance / state.pinch.startDistance;
+
+      setZoom(nextZoom, state.pinch.viewport, center.x, center.y, false, {
+        x: state.pinch.imageX,
+        y: state.pinch.imageY,
+      });
+    } else {
+      moveViewportDrag(event);
+    }
+
+    event.preventDefault();
+  }
+
+  function startViewportPinch(viewport) {
+    const [first, second] = state.touches.values();
+    const center = getTouchCenter(first, second);
+    const stage = viewport === elements.sourceViewport ? elements.sourceStage : elements.resultStage;
+    const stageBounds = stage.getBoundingClientRect();
+
+    state.viewportDrag = null;
+    state.pinch = {
+      viewport,
+      startDistance: Math.max(1, getTouchDistance(first, second)),
+      startZoom: state.zoom,
+      imageX: (center.x - stageBounds.left) / state.zoom,
+      imageY: (center.y - stageBounds.top) / state.zoom,
+    };
+    viewport.classList.add("is-dragging");
+  }
+
+  function finishViewportTouch(event) {
+    const touch = state.touches.get(event.pointerId);
+    const viewport = touch.viewport;
+
+    state.touches.delete(event.pointerId);
+
+    if (state.pinch && state.pinch.viewport === viewport) {
+      state.pinch = null;
+      state.viewportDrag = null;
+      viewport.classList.remove("is-dragging");
+
+      if (state.touches.size === 1) {
+        const [remainingTouch] = state.touches.values();
+
+        beginViewportDrag(
+          viewport,
+          remainingTouch.id,
+          remainingTouch.x,
+          remainingTouch.y,
+          event.timeStamp - DRAG_DELAY_MS
+        );
+      }
+    } else if (state.viewportDrag && state.viewportDrag.pointerId === event.pointerId) {
+      state.viewportDrag = null;
+      viewport.classList.remove("is-dragging");
+    }
+
+    if (event.type !== "lostpointercapture" && viewport.hasPointerCapture(event.pointerId)) {
+      viewport.releasePointerCapture(event.pointerId);
+    }
+  }
+
+  function getTouchDistance(first, second) {
+    return Math.hypot(second.x - first.x, second.y - first.y);
+  }
+
+  function getTouchCenter(first, second) {
+    return {
+      x: (first.x + second.x) / 2,
+      y: (first.y + second.y) / 2,
+    };
+  }
+
+  function startViewportDrag(event) {
+    if (event.button !== 0 || !state.imageWidth || !state.imageHeight) {
+      return;
+    }
+
+    const viewport = event.currentTarget;
+
+    if (viewport === elements.resultViewport && isPointerInsideResultCanvas(event)) {
+      selectPixelFromPointer(event);
+    }
+
+    beginViewportDrag(
+      viewport,
+      event.pointerId,
+      event.clientX,
+      event.clientY,
+      event.timeStamp
+    );
+
+    try {
+      viewport.setPointerCapture(event.pointerId);
+    } catch (_error) {
+      // Synthetic pointer events used by tests may not have a capturable pointer.
+    }
+  }
+
+  function beginViewportDrag(viewport, pointerId, startX, startY, startedAt) {
+    state.viewportDrag = {
+      viewport,
+      pointerId,
+      startX,
+      startY,
+      startedAt,
+      scrollLeft: viewport.scrollLeft,
+      scrollTop: viewport.scrollTop,
+      active: false,
+      moved: false,
+    };
+  }
+
+  function moveViewportDrag(event) {
+    const drag = state.viewportDrag;
+
+    if (!drag || drag.viewport !== event.currentTarget || drag.pointerId !== event.pointerId) {
+      return;
+    }
+
+    const deltaX = event.clientX - drag.startX;
+    const deltaY = event.clientY - drag.startY;
+    const distance = Math.hypot(deltaX, deltaY);
+
+    if (!drag.active) {
+      const heldLongEnough = event.timeStamp - drag.startedAt >= DRAG_DELAY_MS;
+
+      if (!heldLongEnough || distance < DRAG_THRESHOLD) {
+        return;
+      }
+
+      drag.active = true;
+      drag.viewport.classList.add("is-dragging");
+    }
+
+    drag.moved = true;
+    drag.viewport.scrollLeft = drag.scrollLeft - deltaX;
+    drag.viewport.scrollTop = drag.scrollTop - deltaY;
+    state.synchronizingScroll = false;
+    synchronizeScroll(
+      drag.viewport,
+      drag.viewport === elements.sourceViewport ? elements.resultViewport : elements.sourceViewport
+    );
+    event.preventDefault();
+  }
+
+  function finishViewportDrag(event) {
+    const drag = state.viewportDrag;
+
+    if (!drag || drag.viewport !== event.currentTarget || drag.pointerId !== event.pointerId) {
+      return;
+    }
+
+    state.viewportDrag = null;
+    drag.viewport.classList.remove("is-dragging");
+
+    if (event.type !== "lostpointercapture" && drag.viewport.hasPointerCapture(event.pointerId)) {
+      drag.viewport.releasePointerCapture(event.pointerId);
+    }
+  }
+
+  function isPointerInsideResultCanvas(event) {
+    const bounds = elements.resultCanvas.getBoundingClientRect();
+
+    return event.clientX >= bounds.left && event.clientX < bounds.right &&
+      event.clientY >= bounds.top && event.clientY < bounds.bottom;
+  }
+
+  function zoomFromWheel(event) {
+    if (!event.ctrlKey || !state.imageWidth || !state.imageHeight) {
+      return;
+    }
+
+    event.preventDefault();
+    const viewport = event.currentTarget;
+    const pixelDelta = event.deltaMode === root.WheelEvent.DOM_DELTA_LINE
+      ? event.deltaY * 16
+      : event.deltaMode === root.WheelEvent.DOM_DELTA_PAGE
+        ? event.deltaY * viewport.clientHeight
+        : event.deltaY;
+    const nextZoom = Math.min(MAX_ZOOM, Math.max(
+      MIN_ZOOM,
+      state.zoom * Math.exp(-pixelDelta * 0.002)
+    ));
+
+    if (Math.abs(nextZoom - state.zoom) < 0.0001) {
+      return;
+    }
+
+    setZoom(nextZoom, viewport, event.clientX, event.clientY);
+  }
+
+  function handleResize() {
+    if (!state.imageWidth || !state.imageHeight) {
+      return;
+    }
+
+    if (state.viewMode === "fit") {
+      fitImage();
+    } else if (state.viewMode === "actual") {
+      showActualSize();
+    } else {
+      setZoom(state.zoom);
+    }
+  }
+
+  function formatZoom(value) {
+    const percent = value * 100;
+
+    return percent < 10 ? percent.toFixed(1) : String(Math.round(percent));
   }
 
   function terminateWorker() {

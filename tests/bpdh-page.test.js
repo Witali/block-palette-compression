@@ -10,6 +10,7 @@ const pageScript = read("src/pages/bpdh-page.js");
 const worker = read("src/hybrid/bpdh-worker.js");
 const home = read("index.html");
 const serviceWorker = read("service-worker.js");
+const sharedStyles = read("block-palette.css");
 
 test("provides a dedicated BPDH compression page", () => {
   assert.match(page, /id="target-bpp"/);
@@ -53,6 +54,39 @@ test("links and caches the BPDH page", () => {
   ]) {
     assert.ok(serviceWorker.includes(`"${file}"`), file);
   }
+});
+
+test("copies the BPAL preview toolbar and synchronized zoom controls", () => {
+  assert.match(page, /id="source-viewport" class="canvas-viewport"/);
+  assert.match(page, /id="result-viewport" class="canvas-viewport"/);
+  assert.match(page, /id="zoom-out"[^>]*disabled/);
+  assert.match(page, /id="zoom-in"[^>]*disabled/);
+  assert.match(page, /id="actual-size"[^>]*aria-pressed="false"[^>]*disabled/);
+  assert.match(page, /id="fit-image"[^>]*aria-pressed="true"[^>]*disabled/);
+  assert.match(page, /id="smooth-scaling" type="checkbox" checked/);
+  assert.match(pageScript, /zoomOutButton\.addEventListener\("click", \(\) => setZoom\(state\.zoom \/ ZOOM_FACTOR\)\)/);
+  assert.match(pageScript, /zoomInButton\.addEventListener\("click", \(\) => setZoom\(state\.zoom \* ZOOM_FACTOR\)\)/);
+  assert.match(pageScript, /actualSizeButton\.addEventListener\("click", showActualSize\)/);
+  assert.match(pageScript, /fitImageButton\.addEventListener\("click", fitImage\)/);
+  assert.match(pageScript, /sourceViewport\.addEventListener\("scroll"/);
+  assert.match(pageScript, /resultViewport\.addEventListener\("scroll"/);
+  assert.match(pageScript, /function synchronizeScroll\(source, target\)/);
+  assert.match(pageScript, /state\.imageWidth \* state\.zoom/);
+});
+
+test("supports Ctrl-wheel, dragging, and two-finger pinch in either preview", () => {
+  assert.match(sharedStyles, /\.canvas-viewport \{[\s\S]*?touch-action: none;/);
+  assert.match(pageScript, /viewport\.addEventListener\("pointerdown", startViewportPointer\)/);
+  assert.match(pageScript, /if \(!event\.ctrlKey \|\| !state\.imageWidth/);
+  assert.match(pageScript, /state\.zoom \* Math\.exp\(-pixelDelta \* 0\.002\)/);
+  assert.match(pageScript, /drag\.viewport\.scrollLeft = drag\.scrollLeft - deltaX/);
+  assert.match(pageScript, /drag\.viewport\.scrollTop = drag\.scrollTop - deltaY/);
+  assert.match(pageScript, /touches: new Map\(\)/);
+  assert.match(pageScript, /pinch: null/);
+  assert.match(pageScript, /startViewportPinch\(viewport\)/);
+  assert.match(pageScript, /state\.pinch\.startZoom \* distance \/ state\.pinch\.startDistance/);
+  assert.match(pageScript, /selectPixelFromPointer\(event\)/);
+  assert.doesNotMatch(pageScript, /resultCanvas\.addEventListener\("click"/);
 });
 
 function read(fileName) {
