@@ -18,7 +18,8 @@ const bytes = fs.readFileSync(texturePath);
 const cubeHtml = read("cube.html");
 const cubeSource = read("src/pages/cube-page.js");
 const rendererSource = read("src/core/textured-cube.js");
-const shaderSource = read("src/shaders/cube-webgl2.frag.glsl");
+const shaderSource = read("src/shaders/cube-webgl2-dctbs2-1_5bpp.frag.glsl");
+const compactRendererSource = read("src/core/textured-cube-webgl2.js");
 
 test("ships a directly addressable DCTBS2 stone texture", () => {
   const info = DctImageFormat.inspectDctFile(bytes);
@@ -135,11 +136,30 @@ test("switches Demo Cube between fast and low-memory DCTBS2 sampling", () => {
   assert.match(rendererSource, /gl\.activeTexture\(gl\.TEXTURE7\)/);
   assert.match(shaderSource, /uniform highp usampler2D uDctData/);
   assert.match(shaderSource, /uniform highp int uDctDecodeMode/);
-  assert.match(shaderSource, /sampleDctRecord\(/);
+  assert.match(shaderSource, /sampleDctLumaRecord\(/);
+  assert.match(shaderSource, /sampleDctChromaRecord\(/);
   assert.match(shaderSource, /fetchCachedDctColor\(/);
   assert.match(shaderSource, /DCT_CACHE_MCU_BYTES = 512/);
   assert.match(shaderSource, /fetchDctColor\(/);
   assert.match(shaderSource, /uUseDctTexture > 0\.5/);
+  assert.match(compactRendererSource, /cube-webgl2-dctbs2-1_5bpp\.frag\.glsl/);
+});
+
+test("uses an unrolled 1.5 bpp decoder with rolling 32-bit words", () => {
+  const decoder = shaderSource.match(
+    /\/\/ <dctbs2-profile-decoder>([\s\S]*?)\/\/ <\/dctbs2-profile-decoder>/
+  );
+
+  assert.ok(decoder, "missing generated profile decoder");
+  assert.match(shaderSource, /uint dctWordAt\(/);
+  assert.match(shaderSource, /uint mask = \(1u << uint\(bitCount\)\) - 1u/);
+  assert.doesNotMatch(shaderSource, /for \(int bit = 0; bit < 16/);
+  assert.doesNotMatch(decoder[1], /for \(/);
+  assert.doesNotMatch(decoder[1], /profile < 0|dcScaleIndex < 0|libraryVersion|splitLuma/);
+  assert.match(decoder[1], /uint currentWord = headerWord/);
+  assert.match(decoder[1], /currentWord = nextWord/);
+  assert.equal((decoder[1].match(/int position = DCT_SCAN_Y/g) || []).length, 33);
+  assert.equal((decoder[1].match(/int position = DCT_SCAN_C/g) || []).length, 13);
 });
 
 test("keeps the cube shader significance scans synchronized with DCTBS2", () => {

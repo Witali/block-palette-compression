@@ -146,32 +146,40 @@ uint byteAt(int byteOffset) {
 }
 
 uint u32le(int byteOffset) {
-    return byteAt(byteOffset) |
-        (byteAt(byteOffset + 1) << 8u) |
-        (byteAt(byteOffset + 2) << 16u) |
-        (byteAt(byteOffset + 3) << 24u);
+    int texelIndex = byteOffset >> 2;
+    ivec2 coordinate = ivec2(texelIndex % uDataTexWidth, texelIndex / uDataTexWidth);
+    uvec4 bytes = texelFetch(uDctData, coordinate, 0);
+    return bytes.r | (bytes.g << 8u) | (bytes.b << 16u) | (bytes.a << 24u);
 }
 
 uint readSidecarBits(int byteOffset, int bitOffset, int bitCount) {
-    uint value = 0u;
-    for (int bit = 0; bit < 16; ++bit) {
-        if (bit >= bitCount) break;
-        int absoluteBit = bitOffset + bit;
-        uint source = byteAt(byteOffset + (absoluteBit >> 3));
-        value |= ((source >> uint(absoluteBit & 7)) & 1u) << uint(bit);
+    int absoluteBit = (byteOffset << 3) + bitOffset;
+    int wordByteOffset = (absoluteBit >> 5) << 2;
+    uint wordBit = uint(absoluteBit & 31);
+    uint value = u32le(wordByteOffset) >> wordBit;
+    if (int(wordBit) + bitCount > 32) {
+        value |= u32le(wordByteOffset + 4) << (32u - wordBit);
     }
-    return value;
+    return value & ((1u << uint(bitCount)) - 1u);
+}
+
+uint componentWordAt(int byteOffset) {
+    int texelIndex = byteOffset >> 2;
+    ivec2 coordinate = ivec2(texelIndex % uDataTexWidth, texelIndex / uDataTexWidth);
+    uvec4 bytes = texelFetch(uDctData, coordinate, 0);
+    return (bytes.r << 24u) | (bytes.g << 16u) | (bytes.b << 8u) | bytes.a;
 }
 
 uint readComponentBits(int byteOffset, int bitOffset, int bitCount) {
-    uint value = 0u;
-    for (int bit = 0; bit < 16; ++bit) {
-        if (bit >= bitCount) break;
-        int absoluteBit = bitOffset + bit;
-        uint source = byteAt(byteOffset + (absoluteBit >> 3));
-        value = value * 2u + ((source >> uint(7 - (absoluteBit & 7))) & 1u);
+    int absoluteBit = (byteOffset << 3) + bitOffset;
+    int wordByteOffset = (absoluteBit >> 5) << 2;
+    uint wordBit = uint(absoluteBit & 31);
+    uint value = componentWordAt(wordByteOffset) << wordBit;
+    if (int(wordBit) + bitCount > 32) {
+        value |= componentWordAt(wordByteOffset + 4) >> (32u - wordBit);
     }
-    return value;
+    uint mask = (1u << uint(bitCount)) - 1u;
+    return (value >> uint(32 - bitCount)) & mask;
 }
 
 int readSignedComponentBits(int byteOffset, int bitOffset, int bitCount) {

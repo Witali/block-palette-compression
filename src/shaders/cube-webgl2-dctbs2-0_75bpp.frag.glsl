@@ -1,6 +1,6 @@
 #version 300 es
 /*
- * WebGL2 compact BPAL fragment stage.
+ * Generated WebGL2 compact cube fragment stage for DCTBS2 0.75 bpp.
  * Pixel indices, block-palette indices, and palette colors stay bit-packed in
  * R32UI textures and are decoded with exact integer fetches.
  */
@@ -67,11 +67,11 @@ out vec4 fragmentColor;
 
 const float DCT_PI = 3.1415926535897932384626433832795;
 const int DCT_HEADER_BYTES = 64;
-const int DCT_MCU_BYTES = 48;
-const int DCT_Y_BYTES = 24;
-const int DCT_CB_BYTES = 12;
-const int DCT_Y_AC_COUNT = 33;
-const int DCT_C_AC_COUNT = 13;
+const int DCT_MCU_BYTES = 24;
+const int DCT_Y_BYTES = 12;
+const int DCT_CB_BYTES = 6;
+const int DCT_Y_AC_COUNT = 13;
+const int DCT_C_AC_COUNT = 4;
 const int DCT_DECODE_MODE_FAST = 1;
 const int DCT_CACHE_MCU_BYTES = 512;
 const int DCT_CACHE_MCU_TEXELS = 128;
@@ -100,24 +100,16 @@ const int DCT_QUANT_C[64] = int[64](
   99, 99, 99, 99, 99, 99, 99, 99
 );
 
-// Four deterministic significance profiles, trimmed to the coefficients that
-// fit the 24-byte Y record in the bundled 1.5 bpp texture.
-const int DCT_SCAN_Y[132] = int[132](
-  16, 1, 2, 17, 32, 48, 33, 18, 3, 4, 19, 34, 49, 64, 80, 65, 50,
-  35, 20, 5, 6, 21, 36, 51, 66, 81, 96, 112, 97, 82, 67, 52, 37,
-  1, 2, 16, 3, 17, 4, 18, 32, 5, 19, 33, 6, 20, 34, 7, 48, 21,
-  35, 8, 49, 22, 36, 9, 50, 23, 64, 37, 10, 51, 24, 65, 38, 11,
-  16, 32, 1, 48, 17, 64, 33, 2, 80, 49, 18, 96, 65, 34, 112, 3, 81,
-  50, 128, 19, 97, 66, 144, 35, 113, 4, 82, 160, 51, 129, 20, 98, 176,
-  17, 1, 16, 34, 18, 33, 2, 32, 51, 35, 50, 19, 49, 3, 48, 68, 52,
-  67, 36, 66, 20, 65, 4, 64, 85, 69, 84, 53, 83, 37, 82, 21, 81
+// Four deterministic significance scans trimmed for 0.75 bpp records.
+const int DCT_SCAN_Y[52] = int[52](
+  16, 1, 2, 17, 32, 48, 33, 18, 3, 4, 19, 34, 49, 1, 2, 16, 3,
+  17, 4, 18, 32, 5, 19, 33, 6, 20, 16, 32, 1, 48, 17, 64, 33, 2,
+  80, 49, 18, 96, 65, 17, 1, 16, 34, 18, 33, 2, 32, 51, 35, 50, 19,
+  49
 );
 
-const int DCT_SCAN_C[52] = int[52](
-  8, 1, 2, 9, 16, 24, 17, 10, 3, 4, 11, 18, 25,
-  1, 2, 8, 3, 9, 4, 10, 16, 5, 11, 17, 6, 12,
-  8, 16, 1, 24, 9, 32, 17, 2, 40, 25, 10, 48, 33,
-  9, 1, 8, 18, 10, 17, 2, 16, 27, 19, 26, 11, 25
+const int DCT_SCAN_C[16] = int[16](
+  8, 1, 2, 9, 1, 2, 8, 3, 8, 16, 1, 24, 9, 1, 8, 18
 );
 
 uint dctByteAt(int byteOffset) {
@@ -196,11 +188,13 @@ float dctQuantizationStep(int position, bool chroma) {
 }
 
 // <dctbs2-profile-decoder>
-int dctScaleIndex(int recordOffset, int coefficientCount, int coefficientIndex) {
-  int firstEnd = (coefficientCount + 5) / 6;
-  int secondEnd = (coefficientCount + 1) / 2;
-  int group = coefficientIndex < firstEnd ? 0 : coefficientIndex < secondEnd ? 1 : 2;
-  return int(readDctBits(recordOffset, 18 + group * 3, 3));
+// Generated baseline grouped-5-front decoder: fixed record sizes, no format branches.
+int dctSigned10(uint raw) {
+  return (raw & 512u) == 0u ? int(raw) : int(raw) - 1024;
+}
+
+int dctSigned5(uint raw) {
+  return (raw & 16u) == 0u ? int(raw) : int(raw) - 32;
 }
 
 void addDctCompensated(float value, inout float sum, inout float correction) {
@@ -211,9 +205,13 @@ void addDctCompensated(float value, inout float sum, inout float correction) {
 }
 
 float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
-  int profile = int(dctByteAt(recordOffset) >> 4u);
-  int dcScaleIndex = int(dctByteAt(recordOffset) & 15u);
-  int dc = readSignedDctBits(recordOffset, 8, 10);
+  uint headerWord = dctWordAt(recordOffset);
+  int profile = int(headerWord >> 28u);
+  int dcScaleIndex = int((headerWord >> 24u) & 15u);
+  int dc = dctSigned10((headerWord >> 14u) & 1023u);
+  float scale0 = exp2(float((headerWord >> 11u) & 7u));
+  float scale1 = exp2(float((headerWord >> 8u) & 7u));
+  float scale2 = exp2(float((headerWord >> 5u) & 7u));
   float sum = 0.0;
   float correction = 0.0;
 
@@ -224,16 +222,150 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     correction
   );
 
-  for (int index = 0; index < DCT_Y_AC_COUNT; ++index) {
-    int position = DCT_SCAN_Y[profile * DCT_Y_AC_COUNT + index];
-    int u = position & 15;
-    int v = position >> 4;
-    int stored = readSignedDctBits(recordOffset, 27 + index * 5, 5);
-    int scaleIndex = dctScaleIndex(recordOffset, DCT_Y_AC_COUNT, index);
-
+  uint currentWord = headerWord;
+  uint nextWord = dctWordAt(recordOffset + 4);
+  {
+    int position = DCT_SCAN_Y[profile * 13 + 0];
+    int stored = dctSigned5((currentWord >> 0u) & 31u);
     addDctCompensated(
-      float(stored) * exp2(float(scaleIndex)) * dctQuantizationStep(position, false) *
-        dctBasis(u, localX, 16) * dctBasis(v, localY, 16),
+      float(stored) * scale0 * dctQuantizationStep(position, false) *
+        dctBasis(position & 15, localX, 16) *
+        dctBasis(position >> 4, localY, 16),
+      sum,
+      correction
+    );
+  }
+  currentWord = nextWord;
+  nextWord = dctWordAt(recordOffset + 8);
+  {
+    int position = DCT_SCAN_Y[profile * 13 + 1];
+    int stored = dctSigned5((currentWord >> 27u) & 31u);
+    addDctCompensated(
+      float(stored) * scale0 * dctQuantizationStep(position, false) *
+        dctBasis(position & 15, localX, 16) *
+        dctBasis(position >> 4, localY, 16),
+      sum,
+      correction
+    );
+  }
+  {
+    int position = DCT_SCAN_Y[profile * 13 + 2];
+    int stored = dctSigned5((currentWord >> 22u) & 31u);
+    addDctCompensated(
+      float(stored) * scale0 * dctQuantizationStep(position, false) *
+        dctBasis(position & 15, localX, 16) *
+        dctBasis(position >> 4, localY, 16),
+      sum,
+      correction
+    );
+  }
+  {
+    int position = DCT_SCAN_Y[profile * 13 + 3];
+    int stored = dctSigned5((currentWord >> 17u) & 31u);
+    addDctCompensated(
+      float(stored) * scale1 * dctQuantizationStep(position, false) *
+        dctBasis(position & 15, localX, 16) *
+        dctBasis(position >> 4, localY, 16),
+      sum,
+      correction
+    );
+  }
+  {
+    int position = DCT_SCAN_Y[profile * 13 + 4];
+    int stored = dctSigned5((currentWord >> 12u) & 31u);
+    addDctCompensated(
+      float(stored) * scale1 * dctQuantizationStep(position, false) *
+        dctBasis(position & 15, localX, 16) *
+        dctBasis(position >> 4, localY, 16),
+      sum,
+      correction
+    );
+  }
+  {
+    int position = DCT_SCAN_Y[profile * 13 + 5];
+    int stored = dctSigned5((currentWord >> 7u) & 31u);
+    addDctCompensated(
+      float(stored) * scale1 * dctQuantizationStep(position, false) *
+        dctBasis(position & 15, localX, 16) *
+        dctBasis(position >> 4, localY, 16),
+      sum,
+      correction
+    );
+  }
+  {
+    int position = DCT_SCAN_Y[profile * 13 + 6];
+    int stored = dctSigned5((currentWord >> 2u) & 31u);
+    addDctCompensated(
+      float(stored) * scale1 * dctQuantizationStep(position, false) *
+        dctBasis(position & 15, localX, 16) *
+        dctBasis(position >> 4, localY, 16),
+      sum,
+      correction
+    );
+  }
+  {
+    int position = DCT_SCAN_Y[profile * 13 + 7];
+    int stored = dctSigned5(((currentWord << 3u) | (nextWord >> 29u)) & 31u);
+    addDctCompensated(
+      float(stored) * scale2 * dctQuantizationStep(position, false) *
+        dctBasis(position & 15, localX, 16) *
+        dctBasis(position >> 4, localY, 16),
+      sum,
+      correction
+    );
+  }
+  currentWord = nextWord;
+  {
+    int position = DCT_SCAN_Y[profile * 13 + 8];
+    int stored = dctSigned5((currentWord >> 24u) & 31u);
+    addDctCompensated(
+      float(stored) * scale2 * dctQuantizationStep(position, false) *
+        dctBasis(position & 15, localX, 16) *
+        dctBasis(position >> 4, localY, 16),
+      sum,
+      correction
+    );
+  }
+  {
+    int position = DCT_SCAN_Y[profile * 13 + 9];
+    int stored = dctSigned5((currentWord >> 19u) & 31u);
+    addDctCompensated(
+      float(stored) * scale2 * dctQuantizationStep(position, false) *
+        dctBasis(position & 15, localX, 16) *
+        dctBasis(position >> 4, localY, 16),
+      sum,
+      correction
+    );
+  }
+  {
+    int position = DCT_SCAN_Y[profile * 13 + 10];
+    int stored = dctSigned5((currentWord >> 14u) & 31u);
+    addDctCompensated(
+      float(stored) * scale2 * dctQuantizationStep(position, false) *
+        dctBasis(position & 15, localX, 16) *
+        dctBasis(position >> 4, localY, 16),
+      sum,
+      correction
+    );
+  }
+  {
+    int position = DCT_SCAN_Y[profile * 13 + 11];
+    int stored = dctSigned5((currentWord >> 9u) & 31u);
+    addDctCompensated(
+      float(stored) * scale2 * dctQuantizationStep(position, false) *
+        dctBasis(position & 15, localX, 16) *
+        dctBasis(position >> 4, localY, 16),
+      sum,
+      correction
+    );
+  }
+  {
+    int position = DCT_SCAN_Y[profile * 13 + 12];
+    int stored = dctSigned5((currentWord >> 4u) & 31u);
+    addDctCompensated(
+      float(stored) * scale2 * dctQuantizationStep(position, false) *
+        dctBasis(position & 15, localX, 16) *
+        dctBasis(position >> 4, localY, 16),
       sum,
       correction
     );
@@ -243,9 +375,13 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
 }
 
 float sampleDctChromaRecord(int recordOffset, int localX, int localY) {
-  int profile = int(dctByteAt(recordOffset) >> 4u);
-  int dcScaleIndex = int(dctByteAt(recordOffset) & 15u);
-  int dc = readSignedDctBits(recordOffset, 8, 10);
+  uint headerWord = dctWordAt(recordOffset);
+  int profile = int(headerWord >> 28u);
+  int dcScaleIndex = int((headerWord >> 24u) & 15u);
+  int dc = dctSigned10((headerWord >> 14u) & 1023u);
+  float scale0 = exp2(float((headerWord >> 11u) & 7u));
+  float scale1 = exp2(float((headerWord >> 8u) & 7u));
+  float scale2 = exp2(float((headerWord >> 5u) & 7u));
   float sum = 0.0;
   float correction = 0.0;
 
@@ -256,16 +392,49 @@ float sampleDctChromaRecord(int recordOffset, int localX, int localY) {
     correction
   );
 
-  for (int index = 0; index < DCT_C_AC_COUNT; ++index) {
-    int position = DCT_SCAN_C[profile * DCT_C_AC_COUNT + index];
-    int u = position & 7;
-    int v = position >> 3;
-    int stored = readSignedDctBits(recordOffset, 27 + index * 5, 5);
-    int scaleIndex = dctScaleIndex(recordOffset, DCT_C_AC_COUNT, index);
-
+  uint currentWord = headerWord;
+  uint nextWord = dctWordAt(recordOffset + 4);
+  {
+    int position = DCT_SCAN_C[profile * 4 + 0];
+    int stored = dctSigned5((currentWord >> 0u) & 31u);
     addDctCompensated(
-      float(stored) * exp2(float(scaleIndex)) * dctQuantizationStep(position, true) *
-        dctBasis(u, localX, 8) * dctBasis(v, localY, 16),
+      float(stored) * scale0 * dctQuantizationStep(position, true) *
+        dctBasis(position & 7, localX, 8) *
+        dctBasis(position >> 3, localY, 16),
+      sum,
+      correction
+    );
+  }
+  currentWord = nextWord;
+  {
+    int position = DCT_SCAN_C[profile * 4 + 1];
+    int stored = dctSigned5((currentWord >> 27u) & 31u);
+    addDctCompensated(
+      float(stored) * scale1 * dctQuantizationStep(position, true) *
+        dctBasis(position & 7, localX, 8) *
+        dctBasis(position >> 3, localY, 16),
+      sum,
+      correction
+    );
+  }
+  {
+    int position = DCT_SCAN_C[profile * 4 + 2];
+    int stored = dctSigned5((currentWord >> 22u) & 31u);
+    addDctCompensated(
+      float(stored) * scale2 * dctQuantizationStep(position, true) *
+        dctBasis(position & 7, localX, 8) *
+        dctBasis(position >> 3, localY, 16),
+      sum,
+      correction
+    );
+  }
+  {
+    int position = DCT_SCAN_C[profile * 4 + 3];
+    int stored = dctSigned5((currentWord >> 17u) & 31u);
+    addDctCompensated(
+      float(stored) * scale2 * dctQuantizationStep(position, true) *
+        dctBasis(position & 7, localX, 8) *
+        dctBasis(position >> 3, localY, 16),
       sum,
       correction
     );

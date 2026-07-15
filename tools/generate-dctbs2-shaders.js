@@ -6,6 +6,7 @@ const path = require("node:path");
 
 const root = path.resolve(__dirname, "..");
 const outputDirectory = path.join(root, "src", "shaders");
+const cubeTemplatePath = path.join(outputDirectory, "cube-webgl2.frag.glsl");
 const presets = Object.freeze([
   { key: "0.75", file: "dctbs2-0_75bpp.frag.glsl", mode: 750, mcu: 24, y: 12, cb: 6, cr: 6 },
   { key: "1", file: "dctbs2-1bpp.frag.glsl", mode: 1000, mcu: 32, y: 16, cb: 8, cr: 8 },
@@ -73,6 +74,177 @@ function glslIntArray(name, values) {
   return `const int ${name}[${values.length}] = int[${values.length}](\n${lines.join(",\n")}\n);`;
 }
 
+function cubeShaderFile(preset) {
+  return `cube-webgl2-dctbs2-${preset.key.replace(".", "_")}bpp.frag.glsl`;
+}
+
+function trimmedScans(width, height, count) {
+  return Array.from(
+    { length: 4 },
+    (_, profile) => buildScan(profile, width, height).slice(0, count)
+  ).flat();
+}
+
+function renderCubeIntArray(name, values) {
+  const lines = [];
+  for (let index = 0; index < values.length; index += 17) {
+    lines.push(`  ${values.slice(index, index + 17).join(", ")}`);
+  }
+  return `const int ${name}[${values.length}] = int[${values.length}](\n${lines.join(",\n")}\n);`;
+}
+
+function groupedFiveCount(recordBytes) {
+  return Math.floor((recordBytes * 8 - 27) / 5);
+}
+
+function renderWordExtract(wordBit, bitCount) {
+  const mask = (2 ** bitCount - 1).toString();
+  if (wordBit + bitCount <= 32) {
+    return `(currentWord >> ${32 - wordBit - bitCount}u) & ${mask}u`;
+  }
+  return `((currentWord << ${wordBit + bitCount - 32}u) | ` +
+    `(nextWord >> ${64 - wordBit - bitCount}u)) & ${mask}u`;
+}
+
+function renderUnrolledComponentDecoder(options) {
+  const {
+    functionName,
+    scanName,
+    coefficientCount,
+    width,
+    chroma,
+  } = options;
+  const firstEnd = Math.floor((coefficientCount + 5) / 6);
+  const secondEnd = Math.floor((coefficientCount + 1) / 2);
+  const coefficientsByWord = new Map();
+
+  for (let index = 0; index < coefficientCount; index += 1) {
+    const bitOffset = 27 + index * 5;
+    const wordIndex = Math.floor(bitOffset / 32);
+    const entries = coefficientsByWord.get(wordIndex) || [];
+    entries.push({ index, wordBit: bitOffset % 32 });
+    coefficientsByWord.set(wordIndex, entries);
+  }
+
+  const maximumWord = Math.max(...coefficientsByWord.keys());
+  const lines = [
+    `float ${functionName}(int recordOffset, int localX, int localY) {`,
+    "  uint headerWord = dctWordAt(recordOffset);",
+    "  int profile = int(headerWord >> 28u);",
+    "  int dcScaleIndex = int((headerWord >> 24u) & 15u);",
+    "  int dc = dctSigned10((headerWord >> 14u) & 1023u);",
+    "  float scale0 = exp2(float((headerWord >> 11u) & 7u));",
+    "  float scale1 = exp2(float((headerWord >> 8u) & 7u));",
+    "  float scale2 = exp2(float((headerWord >> 5u) & 7u));",
+    "  float sum = 0.0;",
+    "  float correction = 0.0;",
+    "",
+    "  addDctCompensated(",
+    `    float(dc) * exp2(float(dcScaleIndex)) * dctQuantizationStep(0, ${chroma}) *`,
+    `      dctBasis(0, localX, ${width}) * dctBasis(0, localY, 16),`,
+    "    sum,",
+    "    correction",
+    "  );",
+    "",
+    "  uint currentWord = headerWord;",
+    "  uint nextWord = dctWordAt(recordOffset + 4);",
+  ];
+
+  for (let wordIndex = 0; wordIndex <= maximumWord; wordIndex += 1) {
+    if (wordIndex > 0) {
+      lines.push("  currentWord = nextWord;");
+      if (wordIndex < maximumWord) {
+        lines.push(`  nextWord = dctWordAt(recordOffset + ${(wordIndex + 1) * 4});`);
+      }
+    }
+
+    for (const { index, wordBit } of coefficientsByWord.get(wordIndex) || []) {
+      const scale = index < firstEnd ? "scale0" : index < secondEnd ? "scale1" : "scale2";
+      const positionShift = width === 16 ? 4 : 3;
+      const positionMask = width - 1;
+      lines.push(
+        "  {",
+        `    int position = ${scanName}[profile * ${coefficientCount} + ${index}];`,
+        `    int stored = dctSigned5(${renderWordExtract(wordBit, 5)});`,
+        "    addDctCompensated(",
+        `      float(stored) * ${scale} * dctQuantizationStep(position, ${chroma}) *`,
+        `        dctBasis(position & ${positionMask}, localX, ${width}) *`,
+        `        dctBasis(position >> ${positionShift}, localY, 16),`,
+        "      sum,",
+        "      correction",
+        "    );",
+        "  }"
+      );
+    }
+  }
+
+  lines.push("", "  return sum + 128.0;", "}");
+  return lines.join("\n");
+}
+
+function renderCubeProfileDecoder(preset) {
+  const yCount = groupedFiveCount(preset.y);
+  const chromaCount = groupedFiveCount(preset.cb);
+  return `// <dctbs2-profile-decoder>
+// Generated baseline grouped-5-front decoder: fixed record sizes, no format branches.
+int dctSigned10(uint raw) {
+  return (raw & 512u) == 0u ? int(raw) : int(raw) - 1024;
+}
+
+int dctSigned5(uint raw) {
+  return (raw & 16u) == 0u ? int(raw) : int(raw) - 32;
+}
+
+void addDctCompensated(float value, inout float sum, inout float correction) {
+  float adjusted = value - correction;
+  float next = sum + adjusted;
+  correction = (next - sum) - adjusted;
+  sum = next;
+}
+
+${renderUnrolledComponentDecoder({
+    functionName: "sampleDctLumaRecord",
+    scanName: "DCT_SCAN_Y",
+    coefficientCount: yCount,
+    width: 16,
+    chroma: "false",
+  })}
+
+${renderUnrolledComponentDecoder({
+    functionName: "sampleDctChromaRecord",
+    scanName: "DCT_SCAN_C",
+    coefficientCount: chromaCount,
+    width: 8,
+    chroma: "true",
+  })}
+// </dctbs2-profile-decoder>`;
+}
+
+function renderCubeFragmentShader(preset) {
+  const yCount = groupedFiveCount(preset.y);
+  const chromaCount = groupedFiveCount(preset.cb);
+  const yScan = renderCubeIntArray("DCT_SCAN_Y", trimmedScans(16, 16, yCount));
+  const chromaScan = renderCubeIntArray("DCT_SCAN_C", trimmedScans(8, 16, chromaCount));
+  let source = fs.readFileSync(cubeTemplatePath, "utf8").replace(/\r\n?/g, "\n");
+
+  source = source
+    .replace(" * WebGL2 compact BPAL fragment stage.",
+      ` * Generated WebGL2 compact cube fragment stage for DCTBS2 ${preset.key} bpp.`)
+    .replace(/const int DCT_MCU_BYTES = \d+;/, `const int DCT_MCU_BYTES = ${preset.mcu};`)
+    .replace(/const int DCT_Y_BYTES = \d+;/, `const int DCT_Y_BYTES = ${preset.y};`)
+    .replace(/const int DCT_CB_BYTES = \d+;/, `const int DCT_CB_BYTES = ${preset.cb};`)
+    .replace(/const int DCT_Y_AC_COUNT = \d+;/, `const int DCT_Y_AC_COUNT = ${yCount};`)
+    .replace(/const int DCT_C_AC_COUNT = \d+;/, `const int DCT_C_AC_COUNT = ${chromaCount};`)
+    .replace(/\/\/ Four deterministic significance profiles,[\s\S]*?(?=const int DCT_SCAN_Y)/,
+      `// Four deterministic significance scans trimmed for ${preset.key} bpp records.\n`)
+    .replace(/const int DCT_SCAN_Y\[\d+\] = int\[\d+\]\([\s\S]*?\);/, yScan)
+    .replace(/const int DCT_SCAN_C\[\d+\] = int\[\d+\]\([\s\S]*?\);/, chromaScan)
+    .replace(/\/\/ <dctbs2-profile-decoder>[\s\S]*?\/\/ <\/dctbs2-profile-decoder>/,
+      renderCubeProfileDecoder(preset));
+
+  return source;
+}
+
 function renderVertexShader() {
   return `#version 300 es
 
@@ -137,32 +309,40 @@ uint byteAt(int byteOffset) {
 }
 
 uint u32le(int byteOffset) {
-    return byteAt(byteOffset) |
-        (byteAt(byteOffset + 1) << 8u) |
-        (byteAt(byteOffset + 2) << 16u) |
-        (byteAt(byteOffset + 3) << 24u);
+    int texelIndex = byteOffset >> 2;
+    ivec2 coordinate = ivec2(texelIndex % uDataTexWidth, texelIndex / uDataTexWidth);
+    uvec4 bytes = texelFetch(uDctData, coordinate, 0);
+    return bytes.r | (bytes.g << 8u) | (bytes.b << 16u) | (bytes.a << 24u);
 }
 
 uint readSidecarBits(int byteOffset, int bitOffset, int bitCount) {
-    uint value = 0u;
-    for (int bit = 0; bit < 16; ++bit) {
-        if (bit >= bitCount) break;
-        int absoluteBit = bitOffset + bit;
-        uint source = byteAt(byteOffset + (absoluteBit >> 3));
-        value |= ((source >> uint(absoluteBit & 7)) & 1u) << uint(bit);
+    int absoluteBit = (byteOffset << 3) + bitOffset;
+    int wordByteOffset = (absoluteBit >> 5) << 2;
+    uint wordBit = uint(absoluteBit & 31);
+    uint value = u32le(wordByteOffset) >> wordBit;
+    if (int(wordBit) + bitCount > 32) {
+        value |= u32le(wordByteOffset + 4) << (32u - wordBit);
     }
-    return value;
+    return value & ((1u << uint(bitCount)) - 1u);
+}
+
+uint componentWordAt(int byteOffset) {
+    int texelIndex = byteOffset >> 2;
+    ivec2 coordinate = ivec2(texelIndex % uDataTexWidth, texelIndex / uDataTexWidth);
+    uvec4 bytes = texelFetch(uDctData, coordinate, 0);
+    return (bytes.r << 24u) | (bytes.g << 16u) | (bytes.b << 8u) | bytes.a;
 }
 
 uint readComponentBits(int byteOffset, int bitOffset, int bitCount) {
-    uint value = 0u;
-    for (int bit = 0; bit < 16; ++bit) {
-        if (bit >= bitCount) break;
-        int absoluteBit = bitOffset + bit;
-        uint source = byteAt(byteOffset + (absoluteBit >> 3));
-        value = value * 2u + ((source >> uint(7 - (absoluteBit & 7))) & 1u);
+    int absoluteBit = (byteOffset << 3) + bitOffset;
+    int wordByteOffset = (absoluteBit >> 5) << 2;
+    uint wordBit = uint(absoluteBit & 31);
+    uint value = componentWordAt(wordByteOffset) << wordBit;
+    if (int(wordBit) + bitCount > 32) {
+        value |= componentWordAt(wordByteOffset + 4) >> (32u - wordBit);
     }
-    return value;
+    uint mask = (1u << uint(bitCount)) - 1u;
+    return (value >> uint(32 - bitCount)) & mask;
 }
 
 int readSignedComponentBits(int byteOffset, int bitOffset, int bitCount) {
@@ -521,6 +701,7 @@ function generatedFiles() {
   return new Map([
     ["dctbs2-fullscreen.vert.glsl", renderVertexShader()],
     ...presets.map((preset) => [preset.file, renderFragmentShader(preset)]),
+    ...presets.map((preset) => [cubeShaderFile(preset), renderCubeFragmentShader(preset)]),
   ]);
 }
 
@@ -538,8 +719,10 @@ if (require.main === module) {
 
 module.exports = {
   buildScan,
+  cubeShaderFile,
   generatedFiles,
   presets,
+  renderCubeFragmentShader,
   renderFragmentShader,
   renderVertexShader,
 };

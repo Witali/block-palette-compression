@@ -14,7 +14,10 @@ const samplerHtml = fs.readFileSync(path.join(root, "cube-bpal-sampler.html"), "
 const cubeSource = fs.readFileSync(path.join(root, "src", "pages", "cube-page.js"), "utf8");
 const samplerSource = fs.readFileSync(path.join(root, "src", "pages", "cube-bpal-sampler-page.js"), "utf8");
 const cubeFragmentShader = fs.readFileSync(path.join(root, "src", "shaders", "cube.frag.glsl"), "utf8");
-const compactFragmentShader = fs.readFileSync(path.join(root, "src", "shaders", "cube-webgl2.frag.glsl"), "utf8");
+const compactFragmentShader = fs.readFileSync(
+  path.join(root, "src", "shaders", "cube-webgl2-dctbs2-1_5bpp.frag.glsl"),
+  "utf8"
+);
 
 test("loads the manifest-selected BPAL texture on the sampler page", () => {
   assert.match(samplerHtml, /<select id="bpal-example" disabled><\/select>/);
@@ -97,7 +100,7 @@ test("keeps cached BPDH shader samples deterministic for both block modes", () =
 
 test("switches Demo Cube between WebGL1 and compact WebGL2 rendering", () => {
   assert.match(cubeHtml, /<input id="webgl2-compact" type="checkbox" checked>/);
-  assert.match(cubeHtml, /src="\.\/src\/core\/textured-cube-webgl2\.js\?v=hybrid-cube-1"/);
+  assert.match(cubeHtml, /src="\.\/src\/core\/textured-cube-webgl2\.js\?v=dct-profile-1"/);
   assert.match(cubeSource, /get\("renderer"\) !== "webgl1"/);
   assert.match(cubeSource, /url\.searchParams\.set\("renderer", "webgl1"\)/);
   assert.match(cubeSource, /CompactTexturedCubeRenderer\.create\(gl\)/);

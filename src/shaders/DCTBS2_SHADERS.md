@@ -86,14 +86,28 @@ slightly from the floating-point direct-IDCT path at extreme values.
 
 The optional **Low memory** mode uploads the baseline 1.5 bpp stream directly
 and evaluates the requested 16x16 Y and 8x16 Cb/Cr inverse-DCT samples per
-fragment. The compact cube path intentionally accepts only the grouped-5-front,
-unsplit, non-library 1.5 bpp profile; the seven standalone shaders remain the
-complete format decoders.
+fragment. Cube uses the generated
+`cube-webgl2-dctbs2-1_5bpp.frag.glsl` program. It is specialized for the
+grouped-5-front, unsplit, non-library layout: Y and chroma coefficient code is
+fully unrolled, fixed group scales are loaded once, and no checks for other
+DCTBS2 layout variants remain in the GPU path. Packed fields are extracted
+from two rolling 32-bit words with shifts and masks instead of reading one bit
+at a time. Only those two words are live while a component is evaluated, which
+limits register pressure without adding a second GPU texture.
+
+The generator also emits an equivalent Cube program for every payload profile:
+`cube-webgl2-dctbs2-{0_75,1,1_5,2,3,4_5,6}bpp.frag.glsl`. The renderer factory
+selects one with its `dctProfile` option and defaults to `1.5`. The current Cube
+page and texture adapter intentionally accept only the baseline 1.5 bpp asset;
+the other generated programs make profile specialization explicit and ready
+for future Cube assets. The seven standalone `dctbs2-*.frag.glsl` shaders remain
+the complete format decoders.
 
 ## Regeneration
 
-The coefficient scans and the seven complete fragment shaders are generated
-deterministically from `tools/generate-dctbs2-shaders.js`:
+The coefficient scans, seven complete fragment shaders, and seven specialized
+Cube shaders are generated deterministically from
+`tools/generate-dctbs2-shaders.js`:
 
 ```text
 npm run generate:dct-shaders

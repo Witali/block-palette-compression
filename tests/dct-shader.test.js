@@ -8,6 +8,7 @@ const root = path.resolve(__dirname, "..");
 const { PRESETS } = require(path.join(root, "src", "dct", "dct-format.js"));
 const {
   buildScan,
+  cubeShaderFile,
   generatedFiles,
   presets,
 } = require(path.join(root, "tools", "generate-dctbs2-shaders.js"));
@@ -17,7 +18,7 @@ test("ships one current-format WebGL2 DCTBS2 shader for every payload rate", () 
     presets.map((preset) => preset.key),
     Object.keys(PRESETS).sort((left, right) => Number(left) - Number(right))
   );
-  assert.equal(generatedFiles().size, 8);
+  assert.equal(generatedFiles().size, 15);
 
   for (const [file, expected] of generatedFiles()) {
     const actual = fs.readFileSync(path.join(root, "src", "shaders", file), "utf8")
@@ -49,13 +50,40 @@ test("keeps shader coefficient scans, grouped exponents, and libraries bounded",
   const source = generatedFiles().get("dctbs2-3bpp.frag.glsl");
   assert.match(source, /for \(int index = 0; index < 256; \+\+index\)/);
   assert.match(source, /uint readComponentBits/);
-  assert.match(source, /value = value \* 2u \+ \(\(source >> uint\(7 - \(absoluteBit & 7\)\)\) & 1u\)/);
+  assert.match(source, /uint componentWordAt/);
+  assert.match(source, /componentWordAt\(wordByteOffset\) << wordBit/);
+  assert.doesNotMatch(source, /for \(int bit = 0; bit < 16/);
   assert.match(source, /uint readSidecarBits/);
   assert.match(source, /int groupedScaleIndex/);
   assert.match(source, /bool sidecarReferenceVersion/);
   assert.match(source, /int resolveLibraryIndex/);
   assert.match(source, /int prototypeOffset = prototypeBase \+ \(libraryIndex - 1\) \* recordBytes/);
   assert.match(source, /yReferenceOrdinal = mcuIndex \* 4 \+ block/);
+});
+
+test("generates one unrolled baseline Cube shader for every payload profile", () => {
+  for (const preset of presets) {
+    const source = generatedFiles().get(cubeShaderFile(preset));
+    const decoder = source.match(
+      /\/\/ <dctbs2-profile-decoder>([\s\S]*?)\/\/ <\/dctbs2-profile-decoder>/
+    );
+    const expectedYCount = Math.floor((preset.y * 8 - 27) / 5);
+    const expectedChromaCount = Math.floor((preset.cb * 8 - 27) / 5);
+
+    assert.ok(decoder, `${preset.key} bpp Cube shader must contain a generated decoder`);
+    assert.match(source, new RegExp(`const int DCT_MCU_BYTES = ${preset.mcu};`));
+    assert.match(source, new RegExp(`const int DCT_Y_AC_COUNT = ${expectedYCount};`));
+    assert.match(source, new RegExp(`const int DCT_C_AC_COUNT = ${expectedChromaCount};`));
+    assert.doesNotMatch(decoder[1], /for \(|libraryVersion|splitLuma|profile < 0/);
+    assert.equal(
+      (decoder[1].match(/int position = DCT_SCAN_Y/g) || []).length,
+      expectedYCount
+    );
+    assert.equal(
+      (decoder[1].match(/int position = DCT_SCAN_C/g) || []).length,
+      expectedChromaCount
+    );
+  }
 });
 
 function test(name, callback) {

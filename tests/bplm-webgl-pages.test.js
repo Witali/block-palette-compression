@@ -12,7 +12,7 @@ const samplerSource = read("src/pages/cube-bpal-sampler-page.js");
 const rendererSource = read("src/core/textured-cube.js");
 const samplerShader = read("src/shaders/cube-bpal-sampler.frag.glsl");
 const compactVertexShader = read("src/shaders/cube-webgl2.vert.glsl");
-const compactFragmentShader = read("src/shaders/cube-webgl2.frag.glsl");
+const compactFragmentShader = read("src/shaders/cube-webgl2-dctbs2-1_5bpp.frag.glsl");
 const compactRendererSource = read("src/core/textured-cube-webgl2.js");
 
 test("accepts BPLM uploads on both WebGL pages", () => {
