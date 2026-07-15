@@ -71,6 +71,8 @@ use absolute DC coefficients, fixed quantization tables, and deterministic
 fixed-point reconstruction. `sampleBpdhPixel(decoded, x, y)` obtains a pixel
 from its coding unit without depending on neighboring units or decode order.
 
+![Hybrid BPAL/DCT compression page at a 1 bpp payload target](./docs/images/bpdh-hybrid-compression-page.png)
+
 The Node.js API separates compression from serialization:
 
 ```js
