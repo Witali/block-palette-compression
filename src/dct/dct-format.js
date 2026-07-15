@@ -19,10 +19,13 @@
   const MAGIC = Object.freeze([0x44, 0x43, 0x54, 0x42, 0x53, 0x32, 0x00, 0x00]);
   const VERSION = 2;
   const HEADER_BYTES = 64;
+  const FLAG_AUTO_QUALITY = 1;
+  const FLAG_SPLIT_LUMA_8X8 = 2;
+  const SUPPORTED_FLAGS = FLAG_AUTO_QUALITY | FLAG_SPLIT_LUMA_8X8;
   const MCU_WIDTH = 16;
   const MCU_HEIGHT = 16;
   const CHROMA_WIDTH = 8;
-  const SCALE_MULTIPLIERS = Object.freeze([1, 2, 4, 8]);
+  const SCALE_MULTIPLIERS = Object.freeze([1, 2, 4, 8, 16, 32, 64, 128]);
   const PROFILE_NAMES = Object.freeze(["low frequency", "horizontal", "vertical", "diagonal"]);
   // Higher-rate modes preserve the reference converter's four-luma-to-two-chroma
   // byte ratio while DCTBS2 keeps its independently addressable 4:2:2 MCU layout.
@@ -103,7 +106,8 @@
     validatePixels(pixels, width, height);
     const quality = validateQuality(options.quality === undefined ? 72 : options.quality);
     const layout = getDctFileLayout(width, height, options.preset);
-    const output = createDctOutput(layout, quality, options);
+    const splitLuma8x8 = shouldSplitLuma(layout, options);
+    const output = createDctOutput(layout, quality, options, splitLuma8x8);
 
     for (let mcuIndex = 0; mcuIndex < layout.mcuCount; mcuIndex += 1) {
       const mcuX = mcuIndex % layout.mcuColumns;
@@ -111,7 +115,7 @@
       const planes = extractMcuPlanes(pixels, width, height, mcuX, mcuY);
       const byteOffset = HEADER_BYTES + mcuIndex * layout.bytesPerMcu;
 
-      encodeComponent(output, byteOffset, layout.yBytes, planes.y, 16, 16, quality, false);
+      encodeLuma(output, byteOffset, layout.yBytes, planes.y, quality, splitLuma8x8);
       encodeComponent(
         output,
         byteOffset + layout.yBytes,
@@ -141,7 +145,8 @@
     const source = prepareJpegDctSource(jpeg);
     const quality = validateQuality(options.quality === undefined ? 72 : options.quality);
     const layout = getDctFileLayout(source.width, source.height, options.preset);
-    const output = createDctOutput(layout, quality, options);
+    const splitLuma8x8 = shouldSplitLuma(layout, options);
+    const output = createDctOutput(layout, quality, options, splitLuma8x8);
 
     for (let mcuIndex = 0; mcuIndex < layout.mcuCount; mcuIndex += 1) {
       const mcuX = mcuIndex % layout.mcuColumns;
@@ -149,7 +154,7 @@
       const planes = extractJpegMcuPlanes(source, mcuX, mcuY);
       const byteOffset = HEADER_BYTES + mcuIndex * layout.bytesPerMcu;
 
-      encodeComponent(output, byteOffset, layout.yBytes, planes.y, 16, 16, quality, false);
+      encodeLuma(output, byteOffset, layout.yBytes, planes.y, quality, splitLuma8x8);
       encodeComponent(
         output,
         byteOffset + layout.yBytes,
@@ -175,7 +180,7 @@
     return output;
   }
 
-  function createDctOutput(layout, quality, options) {
+  function createDctOutput(layout, quality, options, splitLuma8x8) {
     const output = new Uint8Array(layout.totalBytes);
     const view = new DataView(output.buffer);
 
@@ -191,11 +196,20 @@
     writeUint32(view, 40, layout.cbBytes);
     writeUint32(view, 44, layout.crBytes);
     writeUint32(view, 48, quality);
-    writeUint32(view, 52, options.autoQuality ? 1 : 0);
+    writeUint32(
+      view,
+      52,
+      (options.autoQuality ? FLAG_AUTO_QUALITY : 0) |
+        (splitLuma8x8 ? FLAG_SPLIT_LUMA_8X8 : 0)
+    );
     writeUint32(view, 56, layout.payloadBytes);
     writeUint32(view, 60, options.searchCandidateCount || 0);
 
     return output;
+  }
+
+  function shouldSplitLuma(layout, options) {
+    return layout.bpp >= 3 && options.splitLuma8x8 !== false;
   }
 
   function decodeDctFile(input) {
@@ -207,7 +221,7 @@
       const mcuX = mcuIndex % info.mcuColumns;
       const mcuY = Math.floor(mcuIndex / info.mcuColumns);
       const components = decodeMcuComponents(bytes, info, mcuIndex);
-      const yPlane = inverseDct(components.y.coefficients, 16, 16);
+      const yPlane = reconstructLumaPlane(components.y);
       const cbPlane = inverseDct(components.cb.coefficients, 8, 16);
       const crPlane = inverseDct(components.cr.coefficients, 8, 16);
 
@@ -252,11 +266,37 @@
     const mcuIndex = mcuY * info.mcuColumns + mcuX;
     const localX = x % MCU_WIDTH;
     const localY = y % MCU_HEIGHT;
-    const components = decodeMcuComponents(bytes, info, mcuIndex);
-    const luma = sampleInverseDct(components.y.coefficients, 16, 16, localX, localY) + 128;
+    const recordOffset = HEADER_BYTES + mcuIndex * info.bytesPerMcu;
+    const luma = sampleLumaRecord(
+      bytes,
+      recordOffset,
+      info.yBytes,
+      info.quality,
+      info.splitLuma8x8,
+      localX,
+      localY
+    ) + 128;
+    const cbComponent = decodeComponent(
+      bytes,
+      recordOffset + info.yBytes,
+      info.cbBytes,
+      8,
+      16,
+      info.quality,
+      true
+    );
+    const crComponent = decodeComponent(
+      bytes,
+      recordOffset + info.yBytes + info.cbBytes,
+      info.crBytes,
+      8,
+      16,
+      info.quality,
+      true
+    );
     const chromaX = Math.floor(localX / 2);
-    const cb = sampleInverseDct(components.cb.coefficients, 8, 16, chromaX, localY) + 128;
-    const cr = sampleInverseDct(components.cr.coefficients, 8, 16, chromaX, localY) + 128;
+    const cb = sampleInverseDct(cbComponent.coefficients, 8, 16, chromaX, localY) + 128;
+    const cr = sampleInverseDct(crComponent.coefficients, 8, 16, chromaX, localY) + 128;
 
     return yCbCrToRgba(luma, cb, cr);
   }
@@ -294,7 +334,8 @@
       payloadBytes !== layout.payloadBytes ||
       bytes.length !== HEADER_BYTES + payloadBytes ||
       quality < 1 || quality > 100 ||
-      (flags & ~1) !== 0
+      (flags & ~SUPPORTED_FLAGS) !== 0 ||
+      ((flags & FLAG_SPLIT_LUMA_8X8) !== 0 && layout.bpp < 3)
     ) {
       throw new RangeError("Invalid DCTBS2 layout");
     }
@@ -302,7 +343,8 @@
     return {
       version,
       quality,
-      autoQuality: (flags & 1) !== 0,
+      autoQuality: (flags & FLAG_AUTO_QUALITY) !== 0,
+      splitLuma8x8: (flags & FLAG_SPLIT_LUMA_8X8) !== 0,
       searchCandidateCount: readUint32(view, 60),
       ...layout,
     };
@@ -324,13 +366,10 @@
       y: Math.floor(mcuIndex / info.mcuColumns),
       byteOffset: HEADER_BYTES + mcuIndex * info.bytesPerMcu,
       bytes: info.bytesPerMcu,
-      components: Object.fromEntries(Object.entries(components).map(([name, component]) => [name, {
-        profile: component.profile,
-        profileName: PROFILE_NAMES[component.profile],
-        scaleIndex: component.scaleIndex,
-        scale: SCALE_MULTIPLIERS[component.scaleIndex],
-        coefficientCount: component.coefficientCount,
-      }])),
+      components: Object.fromEntries(Object.entries(components).map(([name, component]) => [
+        name,
+        summarizeComponent(component),
+      ])),
     };
   }
 
@@ -414,6 +453,29 @@
     }
   }
 
+  function encodeLuma(output, offset, byteCount, samples, quality, split) {
+    if (!split) {
+      encodeComponent(output, offset, byteCount, samples, 16, 16, quality, false);
+      return;
+    }
+
+    const blockBytes = byteCount / 4;
+    for (let blockY = 0; blockY < 2; blockY += 1) {
+      for (let blockX = 0; blockX < 2; blockX += 1) {
+        const blockIndex = blockY * 2 + blockX;
+        const block = new Float64Array(64);
+
+        for (let y = 0; y < 8; y += 1) {
+          for (let x = 0; x < 8; x += 1) {
+            block[y * 8 + x] = samples[(blockY * 8 + y) * 16 + blockX * 8 + x];
+          }
+        }
+
+        encodeComponent(output, offset + blockIndex * blockBytes, blockBytes, block, 8, 8, quality, false);
+      }
+    }
+  }
+
   function chooseComponentEncoding(coefficients, width, height, byteCount, quality, chroma) {
     const acCount = Math.floor((byteCount * 8 - 18) / 6);
     let best = null;
@@ -485,7 +547,7 @@
     const offset = HEADER_BYTES + mcuIndex * info.bytesPerMcu;
 
     return {
-      y: decodeComponent(bytes, offset, info.yBytes, 16, 16, info.quality, false),
+      y: decodeLuma(bytes, offset, info.yBytes, info.quality, info.splitLuma8x8),
       cb: decodeComponent(bytes, offset + info.yBytes, info.cbBytes, 8, 16, info.quality, true),
       cr: decodeComponent(
         bytes,
@@ -496,6 +558,86 @@
         info.quality,
         true
       ),
+    };
+  }
+
+  function decodeLuma(bytes, offset, byteCount, quality, split) {
+    if (!split) {
+      return decodeComponent(bytes, offset, byteCount, 16, 16, quality, false);
+    }
+
+    const blockBytes = byteCount / 4;
+    return {
+      blocks: Array.from({ length: 4 }, (_, blockIndex) => decodeComponent(
+        bytes,
+        offset + blockIndex * blockBytes,
+        blockBytes,
+        8,
+        8,
+        quality,
+        false
+      )),
+    };
+  }
+
+  function reconstructLumaPlane(component) {
+    if (!component.blocks) {
+      return inverseDct(component.coefficients, 16, 16);
+    }
+
+    const plane = new Float64Array(256);
+    component.blocks.forEach((block, blockIndex) => {
+      const samples = inverseDct(block.coefficients, 8, 8);
+      const blockX = blockIndex % 2;
+      const blockY = Math.floor(blockIndex / 2);
+
+      for (let y = 0; y < 8; y += 1) {
+        for (let x = 0; x < 8; x += 1) {
+          plane[(blockY * 8 + y) * 16 + blockX * 8 + x] = samples[y * 8 + x];
+        }
+      }
+    });
+    return plane;
+  }
+
+  function sampleLumaRecord(bytes, offset, byteCount, quality, split, x, y) {
+    if (!split) {
+      const component = decodeComponent(bytes, offset, byteCount, 16, 16, quality, false);
+      return sampleInverseDct(component.coefficients, 16, 16, x, y);
+    }
+
+    const blockBytes = byteCount / 4;
+    const blockIndex = Math.floor(y / 8) * 2 + Math.floor(x / 8);
+    const component = decodeComponent(
+      bytes,
+      offset + blockIndex * blockBytes,
+      blockBytes,
+      8,
+      8,
+      quality,
+      false
+    );
+    return sampleInverseDct(component.coefficients, 8, 8, x % 8, y % 8);
+  }
+
+  function summarizeComponent(component) {
+    if (!component.blocks) {
+      return {
+        profile: component.profile,
+        profileName: PROFILE_NAMES[component.profile],
+        scaleIndex: component.scaleIndex,
+        scale: SCALE_MULTIPLIERS[component.scaleIndex],
+        coefficientCount: component.coefficientCount,
+      };
+    }
+
+    return {
+      profile: null,
+      profileName: "four 8x8 luma blocks",
+      scaleIndex: null,
+      scale: null,
+      coefficientCount: component.blocks.reduce((total, block) => total + block.coefficientCount, 0),
+      blocks: component.blocks.map((block) => summarizeComponent(block)),
     };
   }
 
@@ -885,11 +1027,11 @@
       const planes = extractMcuPlanes(pixels, width, height, mcuX, mcuY);
       const record = new Uint8Array(layout.bytesPerMcu);
 
-      encodeComponent(record, 0, layout.yBytes, planes.y, 16, 16, quality, false);
+      encodeLuma(record, 0, layout.yBytes, planes.y, quality, layout.bpp >= 3);
       encodeComponent(record, layout.yBytes, layout.cbBytes, planes.cb, 8, 16, quality, true);
       encodeComponent(record, layout.yBytes + layout.cbBytes, layout.crBytes, planes.cr, 8, 16, quality, true);
 
-      const yComponent = decodeComponent(record, 0, layout.yBytes, 16, 16, quality, false);
+      const yComponent = decodeLuma(record, 0, layout.yBytes, quality, layout.bpp >= 3);
       const cbComponent = decodeComponent(record, layout.yBytes, layout.cbBytes, 8, 16, quality, true);
       const crComponent = decodeComponent(
         record,
@@ -900,7 +1042,7 @@
         quality,
         true
       );
-      const yPlane = inverseDct(yComponent.coefficients, 16, 16);
+      const yPlane = reconstructLumaPlane(yComponent);
       const cbPlane = inverseDct(cbComponent.coefficients, 8, 16);
       const crPlane = inverseDct(crComponent.coefficients, 8, 16);
 

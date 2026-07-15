@@ -2,14 +2,17 @@
 
 `dctcuda` is a CUDA encoder and decoder for the same independently addressable
 DCTBS2 v2 files used by `src/dct/dct-format.js`. The file remains a 64-byte
-header followed by fixed 16x16 MCU records. Every MCU contains independent Y,
-Cb, and Cr coefficients, so decoding a pixel requires its own record only and
+header followed by fixed 16x16 MCU records. Low-rate files use one 16x16 Y
+transform; the 3, 4.5, and 6 bpp modes use four independent 8x8 Y transforms
+to localize ringing around strong edges. Every MCU contains independent Y, Cb,
+and Cr coefficients, so decoding a pixel requires its own record only and
 never a full-image reconstruction.
 
 The encoder runs RGB-to-YCbCr conversion, 4:2:2 downsampling, separable DCT,
 profile selection, and quantization on the GPU. Both full-image decoding and
 single-pixel reconstruction use CUDA kernels. The `pixel` command reads one
-24-64 byte MCU record from disk and uploads only that record to the GPU.
+24-192 byte MCU record from disk and uploads only that record to the GPU. For
+a split-luma record, the kernel reconstructs only the selected 8x8 Y block.
 
 ## Build on Windows
 
@@ -81,5 +84,6 @@ node native\dct_cuda\tests\verify-js-compat.js `
 The test compares the complete seven-layout list and exercises every preset
 in both directions. It encodes on CUDA and decodes in JavaScript, encodes in
 JavaScript and decodes on CUDA, and compares CUDA single-pixel results with
-`sampleDctFilePixel`. It also imports a real JPEG from its Huffman/DCT data and
-checks that CUDA full-image and single-pixel decoding match JavaScript.
+`sampleDctFilePixel`. It also imports a real JPEG into a high-rate split-luma
+file and verifies backward-compatible decoding of a legacy high-rate 16x16 Y
+file. CUDA full-image and single-pixel results must match JavaScript.

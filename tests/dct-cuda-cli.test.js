@@ -28,6 +28,15 @@ test("keeps random pixel access bounded to one fixed MCU record", () => {
   assert.match(readme, /sampleDctFilePixel/);
 });
 
+test("uses deterministic split luma blocks for high-rate files", () => {
+  assert.match(source, /FLAG_SPLIT_LUMA_8X8/);
+  assert.match(source, /encode_component_kernel<8, 8, false>/);
+  assert.match(source, /sample_inverse_dct<8, 8>/);
+  assert.match(source, /record \+ luma_block \* block_bytes/);
+  assert.match(source, /preset\.nominal_bpp >= 3\.0/);
+  assert.match(readme, /four independent 8x8 Y transforms/);
+});
+
 test("ships reproducible nvcc and CMake build entry points", () => {
   assert.match(build, /Get-Command nvcc\.exe/);
   assert.match(build, /VsDevCmd\.bat/);

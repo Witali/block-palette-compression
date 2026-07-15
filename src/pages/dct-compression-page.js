@@ -261,7 +261,7 @@ function processImage() {
   const source = state.sourceImageData;
   const jpegImport = jpegImportInput.checked && Boolean(state.sourceJpegBytes);
   const autoQuality = !jpegImport && autoQualityInput.checked;
-  const worker = new Worker("./src/dct/dct-worker.js?v=dct-page-3");
+  const worker = new Worker("./src/dct/dct-worker.js?v=dct-page-6");
   const pixels = source.data.slice();
   const jpegBytes = jpegImport ? state.sourceJpegBytes.slice() : null;
 

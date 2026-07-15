@@ -31,6 +31,9 @@
 namespace {
 
 constexpr uint32_t DCT_VERSION = 2u;
+constexpr uint32_t FLAG_AUTO_QUALITY = 1u;
+constexpr uint32_t FLAG_SPLIT_LUMA_8X8 = 2u;
+constexpr uint32_t SUPPORTED_FLAGS = FLAG_AUTO_QUALITY | FLAG_SPLIT_LUMA_8X8;
 constexpr size_t HEADER_BYTES = 64u;
 constexpr int MCU_WIDTH = 16;
 constexpr int MCU_HEIGHT = 16;
@@ -72,6 +75,7 @@ constexpr std::array<int, 64> CHROMA_QUANTIZATION{{
 __constant__ double DEVICE_BASIS_16[16 * 16];
 __constant__ double DEVICE_BASIS_8[8 * 8];
 __constant__ int DEVICE_SCAN_Y[4 * 255];
+__constant__ int DEVICE_SCAN_8[4 * 63];
 __constant__ int DEVICE_SCAN_C[4 * 127];
 __constant__ int DEVICE_QY[64];
 __constant__ int DEVICE_QC[64];
@@ -85,6 +89,7 @@ struct DctInfo {
     uint32_t mcu_count = 0;
     uint32_t quality = 0;
     bool auto_quality = false;
+    bool split_luma_8x8 = false;
     uint32_t search_candidate_count = 0;
 };
 
@@ -173,8 +178,7 @@ bool make_balanced_preset(uint32_t units, Preset *preset) {
     preset->nominal_bpp = static_cast<double>(units) / 8.0;
     preset->bytes_per_mcu = units * 4u;
     if (units >= 24u) {
-        // Preserve the reference converter's four-luma-to-two-chroma byte ratio
-        // while retaining DCTBS2's independently addressable 4:2:2 MCU layout.
+        // Preserve the reference converter's four-luma-to-two-chroma byte ratio.
         const uint32_t source_block_bytes = units * 2u / 3u;
         preset->y_bytes = source_block_bytes * 4u;
         preset->cb_bytes = source_block_bytes;
@@ -286,10 +290,12 @@ void initialize_device_tables() {
     const auto basis16 = make_basis<16>();
     const auto basis8 = make_basis<8>();
     const auto scans_y = make_scans<16, 16>();
+    const auto scans_8 = make_scans<8, 8>();
     const auto scans_c = make_scans<8, 16>();
     cuda_check(cudaMemcpyToSymbol(DEVICE_BASIS_16, basis16.data(), sizeof(basis16)), "Upload 16-point DCT basis");
     cuda_check(cudaMemcpyToSymbol(DEVICE_BASIS_8, basis8.data(), sizeof(basis8)), "Upload 8-point DCT basis");
     cuda_check(cudaMemcpyToSymbol(DEVICE_SCAN_Y, scans_y.data(), sizeof(scans_y)), "Upload luma scans");
+    cuda_check(cudaMemcpyToSymbol(DEVICE_SCAN_8, scans_8.data(), sizeof(scans_8)), "Upload 8x8 scans");
     cuda_check(cudaMemcpyToSymbol(DEVICE_SCAN_C, scans_c.data(), sizeof(scans_c)), "Upload chroma scans");
     cuda_check(cudaMemcpyToSymbol(DEVICE_QY, LUMA_QUANTIZATION.data(), sizeof(LUMA_QUANTIZATION)), "Upload luma quantizer");
     cuda_check(cudaMemcpyToSymbol(DEVICE_QC, CHROMA_QUANTIZATION.data(), sizeof(CHROMA_QUANTIZATION)), "Upload chroma quantizer");
@@ -323,9 +329,12 @@ __device__ __forceinline__ double basis_value(int size, int frequency, int posit
         : DEVICE_BASIS_8[frequency * 8 + position];
 }
 
-__device__ __forceinline__ int scan_position(int width, int profile, int index) {
-    return width == 16
-        ? DEVICE_SCAN_Y[profile * 255 + index]
+__device__ __forceinline__ int scan_position(int width, int height, int profile, int index) {
+    if (width == 16) {
+        return DEVICE_SCAN_Y[profile * 255 + index];
+    }
+    return height == 8
+        ? DEVICE_SCAN_8[profile * 63 + index]
         : DEVICE_SCAN_C[profile * 127 + index];
 }
 
@@ -407,7 +416,7 @@ __device__ void encode_component_record(
     int best_dc = 0;
 
     for (int profile = 0; profile < 4; ++profile) {
-        for (int scale_index = 0; scale_index < 4; ++scale_index) {
+        for (int scale_index = 0; scale_index < 8; ++scale_index) {
             const int scale = 1 << scale_index;
             const double dc_step = quantization_step(0, 0, WIDTH, HEIGHT, quality, CHROMA) * scale;
             const int dc = clamp_int(round_signed(coefficients[0] / dc_step), -512, 511);
@@ -417,7 +426,7 @@ __device__ void encode_component_record(
             error = rn_add(error, -rn_square(coefficients[0]));
 
             for (int index = 0; index < ac_count; ++index) {
-                const int position = scan_position(WIDTH, profile, index);
+                const int position = scan_position(WIDTH, HEIGHT, profile, index);
                 const int u = position % WIDTH;
                 const int v = position / WIDTH;
                 const double step = quantization_step(u, v, WIDTH, HEIGHT, quality, CHROMA) * scale;
@@ -444,7 +453,7 @@ __device__ void encode_component_record(
     write_signed_bits(record, &bit_offset, best_dc, 10);
     const int scale = 1 << best_scale_index;
     for (int index = 0; index < ac_count; ++index) {
-        const int position = scan_position(WIDTH, best_profile, index);
+        const int position = scan_position(WIDTH, HEIGHT, best_profile, index);
         const int u = position % WIDTH;
         const int v = position / WIDTH;
         const double step = quantization_step(u, v, WIDTH, HEIGHT, quality, CHROMA) * scale;
@@ -464,6 +473,7 @@ __global__ void encode_component_kernel(
     uint32_t component_offset,
     uint32_t component_bytes,
     int component,
+    int luma_block,
     int quality,
     uint8_t *output
 ) {
@@ -478,13 +488,21 @@ __global__ void encode_component_kernel(
     const int position = threadIdx.x;
     const uint32_t mcu_x = mcu_index % mcu_columns;
     const uint32_t mcu_y = mcu_index / mcu_columns;
+    const int block_y = !CHROMA && HEIGHT == 8 ? (luma_block >> 1) * 8 : 0;
 
     if (position < COUNT) {
         const int local_x = position % WIDTH;
         const int local_y = position / WIDTH;
-        const uint32_t source_y = min(height - 1u, mcu_y * MCU_HEIGHT + static_cast<uint32_t>(local_y));
+        const uint32_t source_y = min(
+            height - 1u,
+            mcu_y * MCU_HEIGHT + static_cast<uint32_t>(block_y + local_y)
+        );
         if constexpr (!CHROMA) {
-            const uint32_t source_x = min(width - 1u, mcu_x * MCU_WIDTH + static_cast<uint32_t>(local_x));
+            const int block_x = WIDTH == 8 ? (luma_block & 1) * 8 : 0;
+            const uint32_t source_x = min(
+                width - 1u,
+                mcu_x * MCU_WIDTH + static_cast<uint32_t>(block_x + local_x)
+            );
             const size_t source = (static_cast<size_t>(source_y) * width + source_x) * 3u;
             const double red = rgb[source];
             const double green = rgb[source + 1u];
@@ -568,7 +586,7 @@ __device__ bool decode_component_record(
     const uint32_t header = read_bits(record, &bit_offset, 8);
     const int profile = static_cast<int>(header >> 4u);
     const int scale_index = static_cast<int>(header & 15u);
-    if (profile >= 4 || scale_index >= 4) {
+    if (profile >= 4 || scale_index >= 8) {
         return false;
     }
     const int scale = 1 << scale_index;
@@ -577,7 +595,7 @@ __device__ bool decode_component_record(
         quantization_step(0, 0, WIDTH, HEIGHT, quality, CHROMA) * scale;
     const int ac_count = (byte_count * 8 - 18) / 6;
     for (int index = 0; index < ac_count; ++index) {
-        const int position = scan_position(WIDTH, profile, index);
+        const int position = scan_position(WIDTH, HEIGHT, profile, index);
         const int u = position % WIDTH;
         const int v = position / WIDTH;
         const int stored = read_signed_bits(record, &bit_offset, 6);
@@ -628,6 +646,7 @@ __global__ void decode_image_kernel(
     uint32_t mcu_count,
     Preset preset,
     int quality,
+    bool split_luma_8x8,
     uint8_t *rgb,
     int *error_flag
 ) {
@@ -642,12 +661,25 @@ __global__ void decode_image_kernel(
         static_cast<size_t>(mcu_index) * preset.bytes_per_mcu;
 
     if (threadIdx.x == 0) {
-        const bool y_ok = decode_component_record<16, 16, false>(
-            record,
-            static_cast<int>(preset.y_bytes),
-            quality,
-            y_coefficients
-        );
+        bool y_ok = true;
+        if (split_luma_8x8) {
+            const int block_bytes = static_cast<int>(preset.y_bytes / 4u);
+            for (int block = 0; block < 4; ++block) {
+                y_ok = decode_component_record<8, 8, false>(
+                    record + block * block_bytes,
+                    block_bytes,
+                    quality,
+                    y_coefficients + block * 64
+                ) && y_ok;
+            }
+        } else {
+            y_ok = decode_component_record<16, 16, false>(
+                record,
+                static_cast<int>(preset.y_bytes),
+                quality,
+                y_coefficients
+            );
+        }
         const bool cb_ok = decode_component_record<8, 16, true>(
             record + preset.y_bytes,
             static_cast<int>(preset.cb_bytes),
@@ -680,7 +712,17 @@ __global__ void decode_image_kernel(
         return;
     }
 
-    const double luma = sample_inverse_dct<16, 16>(y_coefficients, local_x, local_y) + 128.0;
+    double luma;
+    if (split_luma_8x8) {
+        const int luma_block = (local_y / 8) * 2 + local_x / 8;
+        luma = sample_inverse_dct<8, 8>(
+            y_coefficients + luma_block * 64,
+            local_x % 8,
+            local_y % 8
+        ) + 128.0;
+    } else {
+        luma = sample_inverse_dct<16, 16>(y_coefficients, local_x, local_y) + 128.0;
+    }
     const double cb = sample_inverse_dct<8, 16>(cb_coefficients, local_x / 2, local_y) + 128.0;
     const double cr = sample_inverse_dct<8, 16>(cr_coefficients, local_x / 2, local_y) + 128.0;
     uint8_t rgba[4];
@@ -695,6 +737,7 @@ __global__ void sample_pixel_kernel(
     const uint8_t *record,
     Preset preset,
     int quality,
+    bool split_luma_8x8,
     int local_x,
     int local_y,
     uint8_t *rgba,
@@ -704,12 +747,24 @@ __global__ void sample_pixel_kernel(
     __shared__ double cb_coefficients[8 * 16];
     __shared__ double cr_coefficients[8 * 16];
     if (threadIdx.x == 0) {
-        const bool y_ok = decode_component_record<16, 16, false>(
-            record,
-            static_cast<int>(preset.y_bytes),
-            quality,
-            y_coefficients
-        );
+        bool y_ok;
+        if (split_luma_8x8) {
+            const int block_bytes = static_cast<int>(preset.y_bytes / 4u);
+            const int luma_block = (local_y / 8) * 2 + local_x / 8;
+            y_ok = decode_component_record<8, 8, false>(
+                record + luma_block * block_bytes,
+                block_bytes,
+                quality,
+                y_coefficients
+            );
+        } else {
+            y_ok = decode_component_record<16, 16, false>(
+                record,
+                static_cast<int>(preset.y_bytes),
+                quality,
+                y_coefficients
+            );
+        }
         const bool cb_ok = decode_component_record<8, 16, true>(
             record + preset.y_bytes,
             static_cast<int>(preset.cb_bytes),
@@ -726,7 +781,16 @@ __global__ void sample_pixel_kernel(
             *error_flag = 1;
             return;
         }
-        const double luma = sample_inverse_dct<16, 16>(y_coefficients, local_x, local_y) + 128.0;
+        double luma;
+        if (split_luma_8x8) {
+            luma = sample_inverse_dct<8, 8>(
+                y_coefficients,
+                local_x % 8,
+                local_y % 8
+            ) + 128.0;
+        } else {
+            luma = sample_inverse_dct<16, 16>(y_coefficients, local_x, local_y) + 128.0;
+        }
         const double cb = sample_inverse_dct<8, 16>(cb_coefficients, local_x / 2, local_y) + 128.0;
         const double cr = sample_inverse_dct<8, 16>(cr_coefficients, local_x / 2, local_y) + 128.0;
         convert_to_rgba(luma, cb, cr, rgba);
@@ -739,6 +803,7 @@ std::vector<uint8_t> make_header(
     const Preset &preset,
     uint32_t quality,
     bool auto_quality,
+    bool split_luma_8x8,
     uint32_t candidate_count
 ) {
     const uint32_t columns = (width + 15u) / 16u;
@@ -761,7 +826,12 @@ std::vector<uint8_t> make_header(
     write_u32(header.data(), 40u, preset.cb_bytes);
     write_u32(header.data(), 44u, preset.cr_bytes);
     write_u32(header.data(), 48u, quality);
-    write_u32(header.data(), 52u, auto_quality ? 1u : 0u);
+    write_u32(
+        header.data(),
+        52u,
+        (auto_quality ? FLAG_AUTO_QUALITY : 0u) |
+            (split_luma_8x8 ? FLAG_SPLIT_LUMA_8X8 : 0u)
+    );
     write_u32(header.data(), 56u, static_cast<uint32_t>(payload));
     write_u32(header.data(), 60u, candidate_count);
     return header;
@@ -788,11 +858,13 @@ DctInfo inspect_header(const uint8_t *bytes, uint64_t file_size) {
     const uint32_t flags = read_u32(bytes, 52u);
     const uint32_t payload = read_u32(bytes, 56u);
     info.search_candidate_count = read_u32(bytes, 60u);
-    info.auto_quality = (flags & 1u) != 0u;
+    info.auto_quality = (flags & FLAG_AUTO_QUALITY) != 0u;
+    info.split_luma_8x8 = (flags & FLAG_SPLIT_LUMA_8X8) != 0u;
 
     if (info.width == 0u || info.height == 0u || info.quality < 1u || info.quality > 100u ||
-        (flags & ~1u) != 0u || info.mcu_columns != (info.width + 15u) / 16u ||
+        (flags & ~SUPPORTED_FLAGS) != 0u || info.mcu_columns != (info.width + 15u) / 16u ||
         info.mcu_rows != (info.height + 15u) / 16u ||
+        (info.split_luma_8x8 && preset.nominal_bpp < 3.0) ||
         read_u32(bytes, 32u) != preset.bytes_per_mcu ||
         read_u32(bytes, 36u) != preset.y_bytes ||
         read_u32(bytes, 40u) != preset.cb_bytes ||
@@ -825,12 +897,14 @@ GpuResult encode_gpu(
     bool auto_quality,
     uint32_t candidate_count
 ) {
+    const bool split_luma_8x8 = preset.nominal_bpp >= 3.0;
     std::vector<uint8_t> header = make_header(
         width,
         height,
         preset,
         quality,
         auto_quality,
+        split_luma_8x8,
         candidate_count
     );
     const uint32_t columns = (width + 15u) / 16u;
@@ -849,20 +923,34 @@ GpuResult encode_gpu(
     CudaEvent started;
     CudaEvent finished;
     cuda_check(cudaEventRecord(started.get()), "Start encode timer");
-    encode_component_kernel<16, 16, false><<<count, CUDA_THREADS>>>(
-        device_rgb.get(), width, height, columns, count,
-        preset.bytes_per_mcu, 0u, preset.y_bytes, 0, static_cast<int>(quality), device_output.get()
-    );
-    cuda_check(cudaGetLastError(), "Launch luma DCT kernel");
+    if (split_luma_8x8) {
+        const uint32_t block_bytes = preset.y_bytes / 4u;
+        for (int block = 0; block < 4; ++block) {
+            encode_component_kernel<8, 8, false><<<count, 64>>>(
+                device_rgb.get(), width, height, columns, count,
+                preset.bytes_per_mcu, static_cast<uint32_t>(block) * block_bytes,
+                block_bytes, 0, block, static_cast<int>(quality), device_output.get()
+            );
+            cuda_check(cudaGetLastError(), "Launch split luma DCT kernel");
+        }
+    } else {
+        encode_component_kernel<16, 16, false><<<count, CUDA_THREADS>>>(
+            device_rgb.get(), width, height, columns, count,
+            preset.bytes_per_mcu, 0u, preset.y_bytes, 0, 0,
+            static_cast<int>(quality), device_output.get()
+        );
+        cuda_check(cudaGetLastError(), "Launch luma DCT kernel");
+    }
     encode_component_kernel<8, 16, true><<<count, CUDA_THREADS>>>(
         device_rgb.get(), width, height, columns, count,
-        preset.bytes_per_mcu, preset.y_bytes, preset.cb_bytes, 1, static_cast<int>(quality), device_output.get()
+        preset.bytes_per_mcu, preset.y_bytes, preset.cb_bytes, 1, 0,
+        static_cast<int>(quality), device_output.get()
     );
     cuda_check(cudaGetLastError(), "Launch Cb DCT kernel");
     encode_component_kernel<8, 16, true><<<count, CUDA_THREADS>>>(
         device_rgb.get(), width, height, columns, count,
         preset.bytes_per_mcu, preset.y_bytes + preset.cb_bytes, preset.cr_bytes, 2,
-        static_cast<int>(quality), device_output.get()
+        0, static_cast<int>(quality), device_output.get()
     );
     cuda_check(cudaGetLastError(), "Launch Cr DCT kernel");
     cuda_check(cudaEventRecord(finished.get()), "Stop encode timer");
@@ -886,7 +974,8 @@ GpuResult decode_gpu(const std::vector<uint8_t> &file, const DctInfo &info) {
     cuda_check(cudaEventRecord(started.get()), "Start decode timer");
     decode_image_kernel<<<info.mcu_count, CUDA_THREADS>>>(
         device_file.get(), info.width, info.height, info.mcu_columns, info.mcu_count,
-        info.preset, static_cast<int>(info.quality), device_rgb.get(), device_error.get()
+        info.preset, static_cast<int>(info.quality), info.split_luma_8x8,
+        device_rgb.get(), device_error.get()
     );
     cuda_check(cudaGetLastError(), "Launch DCTBS2 decode kernel");
     cuda_check(cudaEventRecord(finished.get()), "Stop decode timer");
@@ -922,6 +1011,7 @@ std::array<uint8_t, 4> sample_pixel_gpu(
     cuda_check(cudaMemset(device_error.get(), 0, sizeof(int)), "Clear pixel decoder error flag");
     sample_pixel_kernel<<<1, 1>>>(
         device_record.get(), info.preset, static_cast<int>(info.quality),
+        info.split_luma_8x8,
         static_cast<int>(x % 16u), static_cast<int>(y % 16u),
         device_rgba.get(), device_error.get()
     );

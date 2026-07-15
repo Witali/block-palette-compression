@@ -59,18 +59,59 @@ test("covers every rate from the preserved reference converter", () => {
   });
 });
 
+test("uses four independent luma blocks at high rates and reads legacy files", () => {
+  const source = makePixels(16, 16);
+  const split = encodeDctFile(source, 16, 16, { preset: "6", quality: 97 });
+  const legacy = encodeDctFile(source, 16, 16, {
+    preset: "6",
+    quality: 97,
+    splitLuma8x8: false,
+  });
+  const splitInfo = inspectDctFile(split);
+  const legacyInfo = inspectDctFile(legacy);
+  const splitMcu = inspectDctMcu(split, 0);
+
+  assert.equal(splitInfo.splitLuma8x8, true);
+  assert.equal(legacyInfo.splitLuma8x8, false);
+  assert.equal(split.length, legacy.length);
+  assert.equal(splitMcu.components.y.blocks.length, 4);
+  assert.equal(
+    splitMcu.components.y.coefficientCount,
+    splitMcu.components.y.blocks.reduce((total, block) => total + block.coefficientCount, 0)
+  );
+
+  const isolatedLookup = split.slice();
+  const yBlockBytes = PRESETS["6"].yBytes / 4;
+  isolatedLookup[HEADER_BYTES + yBlockBytes] = 0xf0;
+  assert.doesNotThrow(() => sampleDctFilePixel(isolatedLookup, 0, 0));
+  assert.throws(() => sampleDctFilePixel(isolatedLookup, 8, 0), /Invalid DCT component profile/);
+
+  for (const file of [split, legacy]) {
+    const decoded = decodeDctFile(file);
+    for (const [x, y] of [[0, 0], [8, 0], [0, 8], [15, 15]]) {
+      const sampled = sampleDctFilePixel(file, x, y);
+      const offset = (y * 16 + x) * 4;
+      assert.deepEqual(
+        [sampled.r, sampled.g, sampled.b, sampled.a],
+        Array.from(decoded.pixels.slice(offset, offset + 4))
+      );
+    }
+  }
+});
+
 test("imports JPEG Huffman coefficients without an RGB encoder input", () => {
   const jpegBytes = fs.readFileSync(path.join(root, "assets/benchmark-jpegs/clipart-apple.jpg"));
   const jpeg = GpuJpegDecoder.parse(jpegBytes);
-  const first = importJpegDctFile(jpeg, { preset: "1.5", quality: 72 });
-  const second = importJpegDctFile(jpeg, { preset: "1.5", quality: 72 });
+  const first = importJpegDctFile(jpeg, { preset: "6", quality: 72 });
+  const second = importJpegDctFile(jpeg, { preset: "6", quality: 72 });
   const info = inspectDctFile(first);
   const decoded = decodeDctFile(first);
 
   assert.deepEqual(first, second);
   assert.equal(info.width, jpeg.width);
   assert.equal(info.height, jpeg.height);
-  assert.equal(info.bytesPerMcu, PRESETS["1.5"].bytesPerMcu);
+  assert.equal(info.bytesPerMcu, PRESETS["6"].bytesPerMcu);
+  assert.equal(info.splitLuma8x8, true);
 
   for (const [x, y] of [
     [0, 0],
@@ -120,7 +161,18 @@ test("encodes DCT files deterministically and exposes bounded MCU metadata", () 
   assert.equal(mcu.bytes, 48);
   assert.deepEqual(Object.keys(mcu.components), ["y", "cb", "cr"]);
   assert.ok(mcu.components.y.coefficientCount > mcu.components.cb.coefficientCount);
-  assert.ok(mcu.components.y.scale >= 1 && mcu.components.y.scale <= 8);
+  assert.ok(mcu.components.y.scale >= 1 && mcu.components.y.scale <= 128);
+});
+
+test("decodes the extended quantizer range", () => {
+  const source = makePixels(16, 16);
+  const encoded = encodeDctFile(source, 16, 16, { preset: "2", quality: 75 });
+  const extendedScale = encoded.slice();
+
+  extendedScale[HEADER_BYTES] = (extendedScale[HEADER_BYTES] & 0xf0) | 4;
+
+  assert.doesNotThrow(() => decodeDctFile(extendedScale));
+  assert.equal(inspectDctMcu(extendedScale, 0).components.y.scale, 16);
 });
 
 test("finds an automatic quality and records the measured search", () => {
@@ -142,14 +194,20 @@ test("rejects truncated files, invalid modes, and invalid coordinates", () => {
   const source = makePixels(16, 16);
   const encoded = encodeDctFile(source, 16, 16, { preset: "2", quality: 75 });
   const invalidMode = encoded.slice();
+  const unsupportedFlags = encoded.slice();
+  const splitLowRate = encoded.slice();
 
   invalidMode[12] = 0;
   invalidMode[13] = 0;
   invalidMode[14] = 0;
   invalidMode[15] = 0;
+  unsupportedFlags[52] |= 4;
+  splitLowRate[52] |= 2;
 
   assert.throws(() => inspectDctFile(encoded.slice(0, -1)), /Invalid DCTBS2 layout/);
   assert.throws(() => inspectDctFile(invalidMode), /Unsupported DCTBS2/);
+  assert.throws(() => inspectDctFile(unsupportedFlags), /Invalid DCTBS2 layout/);
+  assert.throws(() => inspectDctFile(splitLowRate), /Invalid DCTBS2 layout/);
   assert.throws(() => sampleDctFilePixel(encoded, 16, 0), /coordinate is out of range/);
   assert.throws(() => encodeDctFile(source, 16, 16, { preset: "4" }), /Unsupported DCT preset/);
 });

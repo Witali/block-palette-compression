@@ -7,9 +7,10 @@ without decoding the rest of the image or following an entropy stream.
 
 ## Color and transform layout
 
-Each MCU contains three components:
+Each MCU contains luma and two chroma components:
 
-- Y: one orthonormal 16×16 DCT;
+- Y at 0.75–2 bpp: one orthonormal 16×16 DCT;
+- Y at 3–6 bpp: four independent orthonormal 8×8 DCTs;
 - Cb: one orthonormal 8×16 DCT;
 - Cr: one orthonormal 8×16 DCT.
 
@@ -17,10 +18,11 @@ Cb and Cr use horizontal 4:2:2 subsampling. Source pixels outside a partial
 edge MCU are extended by repeating the nearest valid pixel.
 
 The supported rates include the four MCU modes and all three higher-rate
-16/24/32-byte modes from the preserved reference converter. The reference
-uses four 8×8 luma records for those higher rates, so their byte budgets give
-two thirds of the MCU to luma. DCTBS2 v2 keeps its single 16×16 luma transform
-and 4:2:2 random-access layout, but preserves that Y-heavy allocation.
+16/24/32-byte modes from the preserved reference converter. The high-rate
+modes divide their Y allocation equally between four 8×8 records. This
+localizes ringing from strong edges without changing the fixed MCU size or
+the 4:2:2 random-access layout. Each high-rate Y block receives 16, 24, or 32
+bytes at 3, 4.5, or 6 bpp respectively.
 
 | Preset | Bytes/MCU | Y | Cb | Cr |
 | ---: | ---: | ---: | ---: | ---: |
@@ -53,17 +55,19 @@ All multi-byte integers are unsigned little-endian values.
 | 40 | 4 | Cb bytes per MCU |
 | 44 | 4 | Cr bytes per MCU |
 | 48 | 4 | JPEG-style quality value (1–100) |
-| 52 | 4 | flags; bit 0 means quality was selected automatically |
+| 52 | 4 | flags; bit 0 means quality was selected automatically; bit 1 selects four 8×8 Y records |
 | 56 | 4 | payload bytes |
 | 60 | 4 | number of quality candidates measured by the encoder |
 
 ## Component record
 
-Every component starts with one byte. Its high nibble selects one of four
-fixed coefficient scans (low-frequency, horizontal, vertical, or diagonal).
-Its low nibble selects the quantizer multiplier 1, 2, 4, or 8. Remaining
-values are a signed 10-bit DC coefficient followed by as many signed 6-bit AC
-coefficients as fit in the fixed component record. Unused tail bits are zero.
+Every component record starts with one byte. Its high nibble selects one of
+four fixed coefficient scans (low-frequency, horizontal, vertical, or
+diagonal). Its low nibble selects the quantizer multiplier 1, 2, 4, 8, 16,
+32, 64, or 128. Remaining values are a signed 10-bit DC coefficient followed
+by as many signed 6-bit AC coefficients as fit in the fixed component record.
+Unused tail bits are zero. A split-luma MCU places its four Y records in
+top-left, top-right, bottom-left, bottom-right order before Cb and Cr.
 
 The quantization step is reconstructed from the stored quality, the component
 dimensions, the fixed JPEG luma/chroma table, and the per-component multiplier.
@@ -80,20 +84,27 @@ mcu_index = mcu_y * mcu_columns + mcu_x
 mcu_byte  = 64 + mcu_index * bytes_per_mcu
 ```
 
-The decoder reads this one MCU, reconstructs Y at `(x mod 16, y mod 16)` and
-Cb/Cr at `((x mod 16) / 2, y mod 16)`, then converts the three samples to RGB.
-All loops are bounded by the fixed 16×16 and 8×16 transform dimensions. There
-are no data-dependent references to other MCUs.
+The decoder reads this one MCU. In a split-luma file it selects and reconstructs
+only the Y record identified by `(x mod 16) / 8` and `(y mod 16) / 8`, then
+samples it at `(x mod 8, y mod 8)`. In a legacy or low-rate file it samples the
+single 16×16 Y record.
+Cb/Cr are sampled at `((x mod 16) / 2, y mod 16)`, after which the three
+samples are converted to RGB. All loops are bounded by 16×16, 8×8, and 8×16
+transform dimensions. There are no data-dependent references to other MCUs.
+
+High-rate DCTBS2 v2 files written before the split-luma flag was introduced
+remain valid: an unset bit 1 always means one 16×16 Y record, including for a
+3, 4.5, or 6 bpp layout.
 
 ## JPEG DCT import
 
 The browser page can transcode grayscale and three-component YCbCr JPEG files
 without using decoded RGB pixels as encoder input. The CPU parser decodes the
 baseline or progressive Huffman scans and dequantizes the source 8×8 DCT
-blocks. Because DCTBS2 uses 16×16 luma and 8×16 chroma transforms, the importer
-deterministically reconstructs component samples, adapts JPEG subsampling to
-4:2:2, and transforms those Y/Cb/Cr planes into the selected fixed MCU record.
-There is no RGB conversion in this path. The resulting file uses the same
-layout and one-MCU coordinate lookup as a regular DCTBS2 encode. The page uses
-the selected quantization quality directly and disables the RGB-based automatic
-quality search while this one-pass import mode is active.
+blocks. The importer deterministically reconstructs component samples, adapts
+JPEG subsampling to 4:2:2, and transforms those Y/Cb/Cr planes into the
+selected 16×16 or split 8×8 fixed MCU layout. There is no RGB conversion in
+this path. The resulting file uses the same one-MCU coordinate lookup as a
+regular DCTBS2 encode. The page uses the selected quantization quality directly
+and disables the RGB-based automatic quality search while this one-pass import
+mode is active.

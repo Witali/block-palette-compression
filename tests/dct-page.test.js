@@ -29,6 +29,7 @@ test("offers every fixed MCU rate from the preserved converter", () => {
   assert.match(page, /2 bpp · 64 B\/MCU/);
   assert.match(page, /0\.75 bpp · 24 B\/MCU/);
   assert.match(page, /dctbs_converter_with_edge_dictionary\.html/);
+  assert.match(page, /four 8×8 luma transforms at high rates/);
 });
 
 test("keeps direct coordinate sampling separate from full-image decoding", () => {
@@ -43,6 +44,7 @@ test("keeps direct coordinate sampling separate from full-image decoding", () =>
 
 test("runs DCT encoding and automatic quality search in a worker", () => {
   assert.match(pageScript, /new Worker\("\.\/src\/dct\/dct-worker\.js/);
+  assert.match(worker, /dct-format\.js\?v=dct-page-6/);
   assert.match(worker, /findBestDctQuality/);
   assert.match(worker, /encodeDctFile/);
   assert.match(worker, /decodedPixels: decoded\.pixels\.buffer/);

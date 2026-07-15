@@ -266,7 +266,7 @@
     "dct.readPixel": "Read pixel",
     "dct.pixelMcu": "MCU {index} · byte {offset} · {bytes} B read",
     "dct.formatTitle": "Addressable DCTBS2 layout",
-    "dct.formatDescription": "Each independent MCU stores one 16×16 luma transform and two 8×16 chroma transforms. There is no entropy stream or dependency on neighboring MCUs.",
+    "dct.formatDescription": "Each independent MCU stores one 16×16 luma transform at low rates or four 8×8 luma transforms at high rates, plus two 8×16 chroma transforms. There is no entropy stream or dependency on neighboring MCUs.",
     "dct.referenceSource": "Original attached source",
     "dct.addressFormula": "Pixel address formula",
     "dct.progressTitle": "DCT compression progress",

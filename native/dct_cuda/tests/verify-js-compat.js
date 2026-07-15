@@ -38,6 +38,7 @@ try {
     verifyPreset(preset);
   }
   verifyJpegDctImport();
+  verifyLegacyHighRate();
   console.log("ok - CUDA and JavaScript DCTBS2 codecs are bidirectionally compatible");
 } finally {
   fs.rmSync(temporary, { recursive: true, force: true });
@@ -46,11 +47,12 @@ try {
 function verifyJpegDctImport() {
   const jpegBytes = fs.readFileSync(path.join(root, "assets", "stone-texture-small.jpg"));
   const jpeg = GpuJpegDecoder.parse(jpegBytes);
-  const encoded = importJpegDctFile(jpeg, { preset: "1.5", quality: 72 });
+  const encoded = importJpegDctFile(jpeg, { preset: "6", quality: 72 });
   const dctFile = path.join(temporary, "jpeg-import.dctbs2");
   const decodedPpm = path.join(temporary, "jpeg-import.ppm");
 
   fs.writeFileSync(dctFile, encoded);
+  assert.equal(inspectDctFile(encoded).splitLuma8x8, true);
   run(["decode", dctFile, decodedPpm]);
   assertRgbMatchesRgba(
     readPpm(decodedPpm, jpeg.width, jpeg.height),
@@ -67,6 +69,32 @@ function verifyJpegDctImport() {
   }
 
   console.log("ok - JPEG Huffman/DCT import decodes identically in CUDA and JavaScript");
+}
+
+function verifyLegacyHighRate() {
+  const encoded = encodeDctFile(rgba, width, height, {
+    preset: "6",
+    quality: 72,
+    splitLuma8x8: false,
+  });
+  const dctFile = path.join(temporary, "legacy-high-rate.dctbs2");
+  const decodedPpm = path.join(temporary, "legacy-high-rate.ppm");
+
+  assert.equal(inspectDctFile(encoded).splitLuma8x8, false);
+  fs.writeFileSync(dctFile, encoded);
+  run(["decode", dctFile, decodedPpm]);
+  assertRgbMatchesRgba(
+    readPpm(decodedPpm),
+    decodeDctFile(encoded).pixels,
+    "legacy high-rate decode"
+  );
+
+  const sampled = sampleDctFilePixel(encoded, 15, 8);
+  const output = run(["pixel", dctFile, "15", "8"]);
+  const match = /RGBA\(\d+,\d+\) = (\d+) (\d+) (\d+) (\d+)/.exec(output);
+  assert.ok(match, `legacy high-rate pixel output: ${output}`);
+  assert.deepEqual(match.slice(1).map(Number), [sampled.r, sampled.g, sampled.b, sampled.a]);
+  console.log("ok - legacy high-rate 16x16 luma decodes identically in CUDA and JavaScript");
 }
 
 function verifyPresetListing() {
@@ -101,12 +129,14 @@ function verifyPreset(preset) {
   const cudaInfo = inspectDctFile(cudaEncoded);
   assert.equal(cudaInfo.key, preset);
   assert.equal(cudaInfo.quality, 72);
+  assert.equal(cudaInfo.splitLuma8x8, Number(preset) >= 3);
 
   const javascriptDecodedCuda = decodeDctFile(cudaEncoded);
   run(["decode", cudaFile, cudaPpm]);
   assertRgbMatchesRgba(readPpm(cudaPpm), javascriptDecodedCuda.pixels, `CUDA encode ${preset}`);
 
   const javascriptEncoded = encodeDctFile(rgba, width, height, { preset, quality: 72 });
+  assert.equal(inspectDctFile(javascriptEncoded).splitLuma8x8, Number(preset) >= 3);
   fs.writeFileSync(jsFile, javascriptEncoded);
   const javascriptDecodedJs = decodeDctFile(javascriptEncoded);
   run(["decode", jsFile, jsPpm]);
