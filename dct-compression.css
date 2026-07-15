@@ -1,0 +1,151 @@
+#controls {
+  max-width: 900px;
+}
+
+.quality-label {
+  min-width: 220px;
+}
+
+.dct-check-option {
+  display: flex !important;
+  grid-column: auto;
+  align-items: center;
+  align-self: center;
+  gap: 8px !important;
+  max-width: 220px;
+  min-height: 40px;
+  padding: 0 10px;
+  border: 1px solid #313b48;
+  border-radius: 7px;
+  background: #171d25;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+}
+
+.dct-check-option input {
+  flex: 0 0 auto;
+  margin: 0;
+  accent-color: #4d96ed;
+}
+
+.dct-viewport {
+  min-height: 420px;
+}
+
+.dct-inspector {
+  min-height: 146px;
+}
+
+.pixel-form {
+  display: flex;
+  align-items: end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.pixel-form label {
+  display: grid;
+  gap: 6px;
+  color: #8794a3;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.pixel-form input {
+  width: 112px;
+  min-height: 40px;
+  padding: 0 11px;
+  border: 1px solid #313b48;
+  border-radius: 7px;
+  background: #171d25;
+  color: #eef3f8;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+
+.pixel-form output {
+  min-width: 230px;
+  min-height: 40px;
+  padding: 10px 12px;
+  border: 1px solid #303a46;
+  border-radius: 7px;
+  background: #191f27;
+  color: #dce7f2;
+  font: 700 13px/18px ui-monospace, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.pixel-swatch {
+  width: 40px;
+  height: 40px;
+  border: 1px solid #566273;
+  border-radius: 7px;
+  background: #11161c;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+.reference-link {
+  color: #83b8ff;
+  font-size: 13px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.reference-link:hover,
+.reference-link:focus-visible {
+  color: #b9d8ff;
+}
+
+.dct-formula {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.dct-formula code {
+  overflow-x: auto;
+  padding: 15px;
+  border: 1px solid #303a46;
+  border-radius: 7px;
+  background: #10151b;
+  color: #b9d8ff;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+@media (max-width: 920px) {
+  .dct-viewport {
+    min-height: 330px;
+  }
+
+  .dct-formula {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .quality-label,
+  .dct-check-option,
+  #controls label,
+  #controls select,
+  #controls button {
+    width: 100%;
+    max-width: none;
+  }
+
+  .dct-viewport {
+    min-height: 270px;
+  }
+
+  .pixel-form label,
+  .pixel-form input,
+  .pixel-form button,
+  .pixel-form output {
+    width: 100%;
+  }
+
+  .pixel-form output {
+    min-width: 0;
+  }
+}
