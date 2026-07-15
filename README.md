@@ -76,6 +76,7 @@ Detailed documentation:
 - [BPAL v5 file format](./BLOCK_PALETTE_FORMAT.md)
   ([Russian](./BLOCK_PALETTE_FORMAT_ru.md));
 - [standalone BPAL v5 CPU/SIMD and CUDA tools](./native/bpal5_simd/README.md);
+- [standalone CUDA DCTBS2 encoder, decoder, and pixel sampler](./native/dct_cuda/README.md);
 - [reproducible BPAL/BC/ASTC texture codec benchmark](./benchmark/README.md).
 
 ## Setup

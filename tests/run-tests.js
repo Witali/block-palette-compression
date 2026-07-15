@@ -11,6 +11,7 @@ async function runTests() {
   require("./block-palette-format.test.js");
   require("./dct-format.test.js");
   require("./dct-page.test.js");
+  require("./dct-cuda-cli.test.js");
   require("./adaptive-block-format.test.js");
   require("./adaptive-block-webgl2.test.js");
   require("./block-pattern-dictionary.test.js");
