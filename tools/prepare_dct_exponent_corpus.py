@@ -43,6 +43,7 @@ def main() -> None:
         file_id = hashlib.sha256(image_id.encode("utf-8")).hexdigest()[:20]
         source_path = args.source_dir / f"{file_id}.png"
         raw_path = args.output_dir / f"{file_id}.rgb"
+        png_path = args.output_dir / f"{file_id}.png"
 
         with Image.open(source_path) as image:
             rgb = image.convert("RGB")
@@ -52,6 +53,7 @@ def main() -> None:
             top = (rgb.height - args.crop_size) // 2
             crop = rgb.crop((left, top, left + args.crop_size, top + args.crop_size))
             raw_path.write_bytes(crop.tobytes())
+            crop.save(png_path, optimize=False)
 
         images.append(
             {
@@ -59,6 +61,7 @@ def main() -> None:
                 "width": args.crop_size,
                 "height": args.crop_size,
                 "file": raw_path.name,
+                "png": png_path.name,
             }
         )
 
