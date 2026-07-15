@@ -70,6 +70,11 @@ BPDH stores only the BPAL and DCT records selected by the mode map. DCT units
 use absolute DC coefficients, fixed quantization tables, and deterministic
 fixed-point reconstruction. `sampleBpdhPixel(decoded, x, y)` obtains a pixel
 from its coding unit without depending on neighboring units or decode order.
+The Demo Cube does not upload a reconstructed BPDH RGBA image. It keeps
+palette records and cached block-local YCbCr samples contiguous in a GPU atlas,
+then obtains the final RGB color with a coordinate-based fragment-shader
+function. Neighboring fragments reuse the same atlas regions through the GPU
+texture cache.
 
 ![Hybrid BPAL/DCT compression page at a 1 bpp payload target](./docs/images/bpdh-hybrid-compression-page.png)
 
@@ -102,8 +107,8 @@ The project contains:
 - [`bpdh.html`](https://witali.github.io/block-palette-compression/bpdh.html) — hybrid BPAL/DCT encoder, mode-map preview,
   coordinate decoder, PNG export, and BPDH download;
 - [`bpal-viewer.html`](https://witali.github.io/block-palette-compression/bpal-viewer.html) — BPAL, BPLM, BPDH, and regular image viewer;
-- [`cube.html`](https://witali.github.io/block-palette-compression/cube.html) — WebGL cube with optional BPAL double indexing in
-  the fragment shader;
+- [`cube.html`](https://witali.github.io/block-palette-compression/cube.html) — WebGL cube with BPAL/BPLM double indexing or
+  coordinate-based BPDH decoding in the fragment shader;
 - [`cube-bpal-sampler.html`](https://witali.github.io/block-palette-compression/cube-bpal-sampler.html) — programmable BPAL
   mipmapping with nearest, bilinear, trilinear, and anisotropic filtering.
 

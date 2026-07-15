@@ -2,7 +2,7 @@
  * Purpose: WebGL demo entry point that renders the rotating textured cube.
  * Processing blocks:
  * - Create the shared textured cube renderer.
- * - Load BPAL/BPLM textures and optionally create one GPU texture resource per cube.
+ * - Load BPAL/BPLM/BPDH textures and optionally create one GPU texture resource per cube.
  * - Run the animation loop, pointer controls, and FPS counter.
  */
 "use strict";
@@ -16,6 +16,7 @@ const heightStrengthInput = document.getElementById("height-strength");
 const heightStrengthValue = document.getElementById("height-strength-value");
 const webgl2CompactInput = document.getElementById("webgl2-compact");
 const cubeCountInput = document.getElementById("cube-count");
+const bpalExampleTypeSelect = document.getElementById("bpal-example-type");
 const bpalExampleSelect = document.getElementById("bpal-example");
 const bpalFileInput = document.getElementById("bpal-file");
 const perCubeTexturesInput = document.getElementById("per-cube-textures");
@@ -101,7 +102,7 @@ async function start() {
   try {
     await initializeBundledBpalTexture();
   } catch (error) {
-    console.warn("Bundled BPAL cube texture could not be loaded.", error);
+    console.warn("Bundled cube texture could not be loaded.", error);
     await cubeRenderer.loadTexture("assets/stone-texture-wic.jpg");
     primaryTextureResource = cubeRenderer.getCurrentBpalTextureResource();
     resetCubeTextureInstances();
@@ -229,16 +230,23 @@ function initializeRendererModeControl() {
 }
 
 function initializeBpalTextureControls() {
-  if (!bpalExampleSelect || !bpalFileInput || !bpalStatus) {
+  if (!bpalExampleTypeSelect || !bpalExampleSelect || !bpalFileInput || !bpalStatus) {
     return;
   }
+
+  bpalExampleTypeSelect.addEventListener("change", () => {
+    initializeBundledBpalTexture().catch((error) => {
+      console.error("Bundled texture catalog load failed.", error);
+      setBpalStatus(error && error.message ? error.message : String(error), true);
+    });
+  });
 
   bpalExampleSelect.addEventListener("change", () => {
     const example = window.BpalExampleCatalog.getSelectedExample(bpalExampleSelect);
 
     if (example) {
       loadBundledBpalTexture(example.url, example.name).catch((error) => {
-        console.error("Bundled BPAL texture load failed.", error);
+        console.error("Bundled texture load failed.", error);
         setBpalStatus(error && error.message ? error.message : String(error), true);
       });
     }
@@ -249,7 +257,7 @@ function initializeBpalTextureControls() {
 
     if (file) {
       loadBpalTextureFile(file).catch((error) => {
-        console.error("BPAL texture load failed.", error);
+        console.error("Texture load failed.", error);
         setBpalStatus(error && error.message ? error.message : String(error), true);
       });
     }
@@ -270,19 +278,39 @@ async function loadBpalTextureFile(file) {
 }
 
 async function initializeBundledBpalTexture() {
-  const manifest = await window.BpalExampleCatalog.loadManifest();
-  const example = window.BpalExampleCatalog.populateSelect(bpalExampleSelect, manifest);
+  const type = bpalExampleTypeSelect.value;
+  const catalogLoadId = ++bpalLoadId;
 
-  bundledBpalExamples = Array.from(bpalExampleSelect.options, (option) => ({
-    url: option.value,
-    name: option.textContent.trim(),
-  }));
+  setBpalControlsDisabled(true);
 
-  if (perCubeTexturesInput) {
-    perCubeTexturesInput.disabled = false;
+  try {
+    const manifest = await window.BpalExampleCatalog.loadManifestForType(type);
+
+    if (catalogLoadId !== bpalLoadId) {
+      return;
+    }
+
+    const example = window.BpalExampleCatalog.populateSelectForType(
+      bpalExampleSelect,
+      manifest,
+      type,
+    );
+
+    bundledBpalExamples = Array.from(bpalExampleSelect.options, (option) => ({
+      url: option.value,
+      name: option.textContent.trim(),
+    }));
+
+    if (perCubeTexturesInput) {
+      perCubeTexturesInput.disabled = false;
+    }
+
+    return loadBundledBpalTexture(example.url, example.name);
+  } finally {
+    if (catalogLoadId === bpalLoadId) {
+      setBpalControlsDisabled(false);
+    }
   }
-
-  return loadBundledBpalTexture(example.url, example.name);
 }
 
 async function loadBundledBpalTexture(url, fileName) {
@@ -300,8 +328,8 @@ async function loadBundledBpalTexture(url, fileName) {
 }
 
 async function loadBpalTextureSource(source, fileName, sourceUrl) {
-  if (!window.BpalTextureDecoder) {
-    throw new Error("BPAL texture decoder is unavailable");
+  if (!window.BpalTextureDecoder || !window.BpdhFormat || !window.BpdhTextureDecoder) {
+    throw new Error("Cube texture decoders are unavailable");
   }
 
   const loadId = ++bpalLoadId;
@@ -316,16 +344,30 @@ async function loadBpalTextureSource(source, fileName, sourceUrl) {
       return;
     }
 
-    const textureData = createBpalTextureData(bytes);
+    const textureData = createCubeTextureData(bytes);
     const { decoded, shaderTextureData } = textureData;
 
     cubeRenderer.resetMaterialMaps();
-    cubeRenderer.discardColorTexture();
-    cubeRenderer.loadBpalShaderTexture(shaderTextureData);
+    if (textureData.kind === "bpdh") {
+      cubeRenderer.setBpalShaderTextureEnabled(false);
+      cubeRenderer.discardColorTexture();
+      cubeRenderer.loadBpdhShaderTexture(textureData.bpdhShaderTextureData);
+      cubeRenderer.setBpdhShaderTextureEnabled(true);
+    } else {
+      cubeRenderer.setBpdhShaderTextureEnabled(false);
+      cubeRenderer.discardColorTexture();
+      cubeRenderer.loadBpalShaderTexture(shaderTextureData);
+      cubeRenderer.setBpalShaderTextureEnabled(true);
+    }
     primaryTextureResource = cubeRenderer.getCurrentBpalTextureResource();
+    if (textureData.kind === "bpdh") {
+      primaryTextureResource.bpalTextures = null;
+      primaryTextureResource.bpalTextureInfo = null;
+    } else {
+      primaryTextureResource.bpdhDataTexture = null;
+      primaryTextureResource.bpdhTextureInfo = null;
+    }
     primaryTextureData = textureData;
-
-    cubeRenderer.setBpalShaderTextureEnabled(true);
 
     if (sourceUrl) {
       cubeTextureDataCache.set(sourceUrl, textureData);
@@ -339,12 +381,15 @@ async function loadBpalTextureSource(source, fileName, sourceUrl) {
       width: decoded.width,
       height: decoded.height,
       version: decoded.version,
-      format: decoded.containerMagic || "BPAL",
-      formatVersion: decoded.containerVersion || decoded.version,
+      format: textureData.kind === "bpdh" ? "BPDH" : decoded.containerMagic || "BPAL",
+      formatVersion: textureData.kind === "bpdh"
+        ? decoded.version
+        : decoded.containerVersion || decoded.version,
       blockSize: decoded.blockSize,
       localColorCount: decoded.localColorCount,
       globalColorCount: decoded.globalColorCount,
       paletteMode: decoded.paletteMode,
+      textureKind: textureData.kind,
       shaderTextureEnabled: true,
     };
     window.__cubeBpalTexture = loadedBpalTexture;
@@ -359,6 +404,7 @@ async function loadBpalTextureSource(source, fileName, sourceUrl) {
 }
 
 function setBpalControlsDisabled(disabled) {
+  bpalExampleTypeSelect.disabled = disabled;
   bpalFileInput.disabled = disabled;
   bpalExampleSelect.disabled = disabled || bpalExampleSelect.options.length === 0;
 }
@@ -368,12 +414,15 @@ function updateLoadedBpalStatus() {
     return;
   }
 
-  const renderMode = loadedBpalTexture.shaderTextureEnabled
+  const renderMode = loadedBpalTexture.textureKind === "bpdh"
     ? localized(
+      "shader coordinate decoder, cached YCbCr blocks",
+      "координатный декодер в шейдере, кеш блоков YCbCr"
+    )
+    : localized(
       "shader-only double indexing, RGBA not uploaded",
       "только двойная индексация в шейдере, RGBA не загружена"
-    )
-    : localized("decoded RGBA texture", "готовая RGBA-текстура");
+    );
   const textureMode = cubeMotionState.perCubeTextures
     ? localized(
       `texture instances: ${cubeGridState.textureInstances.length}`,
@@ -381,8 +430,12 @@ function updateLoadedBpalStatus() {
     )
     : localized("one shared texture", "одна общая текстура");
   const rendererMode = compactRendererEnabled
-    ? localized("WebGL2 compact R32UI", "WebGL2 compact R32UI")
-    : localized("WebGL1 compatible", "WebGL1 совместимый");
+    ? loadedBpalTexture.textureKind === "bpal"
+      ? localized("WebGL2 compact R32UI", "WebGL2 compact R32UI")
+      : localized("WebGL2 BPDH shader", "WebGL2 BPDH-шейдер")
+    : loadedBpalTexture.textureKind === "bpal"
+      ? localized("WebGL1 compatible", "WebGL1 совместимый")
+      : localized("WebGL1 BPDH shader", "WebGL1 BPDH-шейдер");
   const gpuBytes = getAssignedGpuBytes();
 
   setBpalStatus(
@@ -393,7 +446,22 @@ function updateLoadedBpalStatus() {
   );
 }
 
-function createBpalTextureData(bytes) {
+function createCubeTextureData(bytes) {
+  if (window.BpdhFormat.isBpdhFile(bytes)) {
+    const decoded = window.BpdhFormat.parseBpdhFile(bytes);
+    const bpdhShaderTextureData = window.BpdhTextureDecoder.createShaderTextureData(
+      decoded,
+      gl.getParameter(gl.MAX_TEXTURE_SIZE),
+    );
+
+    return {
+      kind: "bpdh",
+      decoded,
+      bpdhShaderTextureData,
+      shaderTextureData: null,
+    };
+  }
+
   const decoded = decodeBlockPaletteTexture(bytes);
   const shaderTextureData = compactRendererEnabled
     ? window.BpalTextureDecoder.createCompactShaderTextureData(
@@ -411,14 +479,15 @@ function createBpalTextureData(bytes) {
       shaderTextureData.paletteAtlas.data.byteLength;
   }
 
-  return { decoded, shaderTextureData };
+  return { kind: "bpal", decoded, shaderTextureData };
 }
 
 function getAssignedGpuBytes() {
   const resources = new Set(cubeGridState.textureInstances.filter(Boolean));
 
   return Array.from(resources).reduce((total, resource) => (
-    total + (resource.bpalTextureInfo && resource.bpalTextureInfo.gpuBytes || 0)
+    total + (resource.bpalTextureInfo && resource.bpalTextureInfo.gpuBytes ||
+      resource.bpdhTextureInfo && resource.bpdhTextureInfo.gpuBytes || 0)
   ), 0);
 }
 
@@ -501,7 +570,7 @@ async function rebuildCubeTextureInstances() {
 
   try {
     textureData.forEach((data) => {
-      createdResources.push(cubeRenderer.createBpalTextureResource(data.shaderTextureData));
+      createdResources.push(createCubeTextureResource(data));
     });
   } catch (error) {
     createdResources.forEach((resource) => cubeRenderer.deleteBpalTextureResource(resource));
@@ -541,7 +610,7 @@ async function loadCubeTextureData(example) {
       throw new Error(`Could not load ${example.name}: ${response.status} ${response.statusText}`);
     }
 
-    const data = createBpalTextureData(await response.arrayBuffer());
+    const data = createCubeTextureData(await response.arrayBuffer());
 
     cubeTextureDataCache.set(example.url, data);
     return data;
@@ -551,6 +620,12 @@ async function loadCubeTextureData(example) {
 
   cubeTextureDataPromises.set(example.url, promise);
   return promise;
+}
+
+function createCubeTextureResource(textureData) {
+  return textureData.kind === "bpdh"
+    ? cubeRenderer.createBpdhTextureResource(textureData.bpdhShaderTextureData)
+    : cubeRenderer.createBpalTextureResource(textureData.shaderTextureData);
 }
 
 function decodeBlockPaletteTexture(bytes) {

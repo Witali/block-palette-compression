@@ -70,7 +70,7 @@
     return bytes;
   }
 
-  function decodeBpdhFile(input) {
+  function decodeBpdhFile(input, options) {
     const bytes = asUint8Array(input);
 
     if (bytes.length < HEADER_BYTES) {
@@ -224,21 +224,23 @@
       declared.dctBits,
       modes
     );
-    const pixels = reconstructPixels({
-      width,
-      height,
-      blocksX,
-      blocksY,
-      modes,
-      localColorCount,
-      globalColorCount,
-      palette,
-      blockPaletteSelectors,
-      blockPaletteIndices,
-      pixelIndices,
-      quantizationTables,
-      dctBlocks,
-    });
+    const pixels = options && options.reconstructPixels === false
+      ? null
+      : reconstructPixels({
+        width,
+        height,
+        blocksX,
+        blocksY,
+        modes,
+        localColorCount,
+        globalColorCount,
+        palette,
+        blockPaletteSelectors,
+        blockPaletteIndices,
+        pixelIndices,
+        quantizationTables,
+        dctBlocks,
+      });
     const layout = createLayoutResult({
       ...declared,
       ...offsets,
@@ -278,6 +280,10 @@
       pixels,
       storage: layout,
     };
+  }
+
+  function parseBpdhFile(input) {
+    return decodeBpdhFile(input, { reconstructPixels: false });
   }
 
   function getBpdhFileLayout(image) {
@@ -1227,6 +1233,7 @@
     MODE_DCT,
     encodeBpdhFile,
     decodeBpdhFile,
+    parseBpdhFile,
     isBpdhFile,
     getBpdhFileLayout,
     getDctMacroblockBitLength,

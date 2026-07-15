@@ -4,6 +4,8 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const BplmFormat = require("../src/palette/bplm-format.js");
+const BpdhFormat = require("../src/hybrid/bpdh-format.js");
+const BpdhTextureDecoder = require("../src/decoders/bpdh-texture.js");
 
 const root = path.resolve(__dirname, "..");
 const defaultTextureName = "stone-texture-wic.bplm";
@@ -11,20 +13,29 @@ const cubeHtml = fs.readFileSync(path.join(root, "cube.html"), "utf8");
 const samplerHtml = fs.readFileSync(path.join(root, "cube-bpal-sampler.html"), "utf8");
 const cubeSource = fs.readFileSync(path.join(root, "src", "pages", "cube-page.js"), "utf8");
 const samplerSource = fs.readFileSync(path.join(root, "src", "pages", "cube-bpal-sampler-page.js"), "utf8");
+const cubeFragmentShader = fs.readFileSync(path.join(root, "src", "shaders", "cube.frag.glsl"), "utf8");
+const compactFragmentShader = fs.readFileSync(path.join(root, "src", "shaders", "cube-webgl2.frag.glsl"), "utf8");
 
-test("loads the manifest-selected BPAL texture on both cube pages", () => {
-  for (const html of [cubeHtml, samplerHtml]) {
-    assert.match(html, /<select id="bpal-example" disabled><\/select>/);
-    assert.match(html, /src="\.\/src\/pages\/bpal-example-catalog\.js\?v=1"/);
-  }
+test("loads the manifest-selected BPAL texture on the sampler page", () => {
+  assert.match(samplerHtml, /<select id="bpal-example" disabled><\/select>/);
+  assert.match(samplerHtml, /src="\.\/src\/pages\/bpal-example-catalog\.js\?v=1"/);
+  assert.match(samplerSource, /await initializeBundledBpalTexture\(\)/);
+  assert.match(samplerSource, /BpalExampleCatalog\.loadManifest\(\)/);
+  assert.match(samplerSource, /BpalExampleCatalog\.populateSelect\(bpalExampleSelect, manifest\)/);
+  assert.match(samplerSource, /bpalExampleSelect\.addEventListener\("change"/);
+  assert.match(samplerSource, /loadBundledBpalTexture\(example\.url, example\.name\)/);
+});
 
-  for (const source of [cubeSource, samplerSource]) {
-    assert.match(source, /await initializeBundledBpalTexture\(\)/);
-    assert.match(source, /BpalExampleCatalog\.loadManifest\(\)/);
-    assert.match(source, /BpalExampleCatalog\.populateSelect\(bpalExampleSelect, manifest\)/);
-    assert.match(source, /bpalExampleSelect\.addEventListener\("change"/);
-    assert.match(source, /loadBundledBpalTexture\(example\.url, example\.name\)/);
-  }
+test("switches Demo Cube between the BPAL and BPDH folders", () => {
+  assert.ok(cubeHtml.indexOf('id="bpal-example-type"') < cubeHtml.indexOf('id="bpal-example"'));
+  assert.match(cubeHtml, /<option value="bpal"[^>]*>BPAL \/ BPLM<\/option>/);
+  assert.match(cubeHtml, /<option value="bpdh"[^>]*>BPDH<\/option>/);
+  assert.match(cubeHtml, /accept="\.bpal,\.bplm,\.bpdh,application\/octet-stream"/);
+  assert.match(cubeHtml, /src="\.\/src\/pages\/bpal-example-catalog\.js\?v=image-viewer-1"/);
+  assert.match(cubeSource, /BpalExampleCatalog\.loadManifestForType\(type\)/);
+  assert.match(cubeSource, /BpalExampleCatalog\.populateSelectForType\(/);
+  assert.match(cubeSource, /bpalExampleTypeSelect\.addEventListener\("change"/);
+  assert.match(cubeSource, /loadBundledBpalTexture\(example\.url, example\.name\)/);
 });
 
 test("uses shader-only BPAL sampling on the cube page", () => {
@@ -32,6 +43,54 @@ test("uses shader-only BPAL sampling on the cube page", () => {
   assert.match(cubeSource, /setBpalShaderTextureEnabled\(true\)/);
   assert.match(cubeSource, /discardColorTexture\(\)/);
   assert.doesNotMatch(cubeSource, /loadTexturePixels\(decoded\.pixels/);
+});
+
+test("uses coordinate-based BPDH shader sampling without an RGBA upload", () => {
+  assert.match(cubeHtml, /src="\.\/src\/decoders\/bpdh-texture\.js\?v=bpdh-cube-1"/);
+  assert.match(cubeSource, /BpdhFormat\.parseBpdhFile\(bytes\)/);
+  assert.match(cubeSource, /BpdhTextureDecoder\.createShaderTextureData\(/);
+  assert.match(cubeSource, /loadBpdhShaderTexture\(textureData\.bpdhShaderTextureData\)/);
+  assert.doesNotMatch(cubeSource, /loadTexturePixels\(/);
+
+  for (const shader of [cubeFragmentShader, compactFragmentShader]) {
+    assert.match(shader, /uniform float uUseBpdhTexture/);
+    assert.match(shader, /vec3 fetchBpdhColor\(/);
+    assert.match(shader, /vec3 sampleBpdhTexture\(/);
+    assert.match(shader, /sampleBpdhChroma\(/);
+  }
+});
+
+test("keeps cached BPDH shader samples deterministic for both block modes", () => {
+  const bytes = fs.readFileSync(path.join(root, "assets", "bpdh", "landscape-alaska.bpdh"));
+  const parsed = BpdhFormat.parseBpdhFile(bytes);
+  const texture = BpdhTextureDecoder.createShaderTextureData(parsed, 4096);
+
+  assert.equal(parsed.pixels, null);
+  assert.ok(texture.gpuBytes < parsed.width * parsed.height * 4);
+
+  for (const mode of [BpdhFormat.MODE_BPAL, BpdhFormat.MODE_DCT]) {
+    const blockIndex = parsed.modes.indexOf(mode);
+    const x = Math.min(parsed.width - 1, blockIndex % parsed.blocksX * 16 + 7);
+    const y = Math.min(parsed.height - 1, Math.floor(blockIndex / parsed.blocksX) * 16 + 7);
+
+    assert.ok(blockIndex >= 0);
+    assert.deepEqual(
+      BpdhTextureDecoder.sampleShaderTexturePixel(texture, x, y),
+      BpdhFormat.sampleBpdhPixel(parsed, x, y),
+    );
+  }
+
+  for (let yStep = 0; yStep <= 4; yStep += 1) {
+    for (let xStep = 0; xStep <= 4; xStep += 1) {
+      const x = Math.floor((parsed.width - 1) * xStep / 4);
+      const y = Math.floor((parsed.height - 1) * yStep / 4);
+
+      assert.deepEqual(
+        BpdhTextureDecoder.sampleShaderTexturePixel(texture, x, y),
+        BpdhFormat.sampleBpdhPixel(parsed, x, y),
+      );
+    }
+  }
 });
 
 test("switches Demo Cube between WebGL1 and compact WebGL2 rendering", () => {

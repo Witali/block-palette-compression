@@ -131,7 +131,7 @@
     });
   }
 
-  function decodeMacroblock(quantizedBlocks, quantizationTables) {
+  function decodeMacroblockComponents(quantizedBlocks, quantizationTables) {
     validateQuantizedBlocks(quantizedBlocks);
     validateQuantizationTables(quantizationTables);
 
@@ -151,6 +151,11 @@
 
       return samples;
     });
+    return decoded;
+  }
+
+  function decodeMacroblock(quantizedBlocks, quantizationTables) {
+    const decoded = decodeMacroblockComponents(quantizedBlocks, quantizationTables);
     const output = new Uint8ClampedArray(MACROBLOCK_SIZE * MACROBLOCK_SIZE * 4);
 
     for (let localY = 0; localY < MACROBLOCK_SIZE; localY += 1) {
@@ -405,6 +410,7 @@
     createQuantizationTables,
     transformMacroblock,
     quantizeMacroblock,
+    decodeMacroblockComponents,
     decodeMacroblock,
     calculateMacroblockSquaredError,
   };

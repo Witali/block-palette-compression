@@ -1,6 +1,6 @@
 "use strict";
 
-const CACHE_VERSION = "v8";
+const CACHE_VERSION = "v9";
 const SHELL_CACHE = `bpal-shell-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `bpal-runtime-${CACHE_VERSION}`;
 const SHARED_FILE_CACHE = "bpal-shared-files-v1";
@@ -33,6 +33,7 @@ const APP_SHELL = [
   "./src/core/textured-cube.js",
   "./src/core/textured-cube-webgl2.js",
   "./src/decoders/bpal-texture.js",
+  "./src/decoders/bpdh-texture.js",
   "./src/decoders/gpu-jpeg.js",
   "./src/i18n/en.js",
   "./src/i18n/i18n.js",

@@ -108,6 +108,9 @@
         };
       this.bpalTextureInfo = null;
       this.bpalShaderTextureEnabled = false;
+      this.bpdhDataTexture = createSolidTexture(gl, [0, 0, 0, 0], 7);
+      this.bpdhTextureInfo = null;
+      this.bpdhShaderTextureEnabled = false;
       this.bpalSamplerOptions = {
         filterMode: "trilinear",
         maxAnisotropy: 4,
@@ -124,7 +127,9 @@
       gl.uniform1i(this.locations.bpalBlockPalettes, 4);
       gl.uniform1i(this.locations.bpalGlobalPalette, 5);
       gl.uniform1i(this.locations.bpalPaletteSelectors, 6);
+      gl.uniform1i(this.locations.bpdhData, 7);
       gl.uniform1f(this.locations.useBpalTexture, 0);
+      gl.uniform1f(this.locations.useBpdhTexture, 0);
       gl.uniform3fv(this.locations.lightPosition, this.options.lightPosition || [3.0, 4.0, 5.0]);
       gl.uniform3fv(this.locations.lightColor, this.options.lightColor || [0.92, 0.9, 0.82]);
       gl.uniform3fv(this.locations.ambientColor, this.options.ambientColor || [0.22, 0.22, 0.22]);
@@ -241,6 +246,31 @@
       };
     }
 
+    createBpdhTextureResource(shaderData) {
+      validateBpdhShaderTextureData(shaderData);
+
+      const texture = this.gl.createTexture();
+
+      if (!texture) {
+        throw new Error("Could not create a WebGL texture for BPDH shader data");
+      }
+
+      try {
+        uploadBpalDataTexture(this.gl, texture, shaderData.dataAtlas, 7);
+      } catch (error) {
+        this.gl.deleteTexture(texture);
+        throw error;
+      }
+
+      return {
+        texture: null,
+        bpalTextures: null,
+        bpalTextureInfo: null,
+        bpdhDataTexture: texture,
+        bpdhTextureInfo: shaderData,
+      };
+    }
+
     deleteBpalTextureResource(resource) {
       if (!resource) {
         return;
@@ -250,7 +280,11 @@
         this.gl.deleteTexture(resource.texture);
       }
       deleteTextureSet(this.gl, resource.bpalTextures);
+      if (resource.bpdhDataTexture && resource.bpdhDataTexture !== this.bpdhDataTexture) {
+        this.gl.deleteTexture(resource.bpdhDataTexture);
+      }
       resource.texture = null;
+      resource.bpdhDataTexture = null;
     }
 
     getCurrentBpalTextureResource() {
@@ -258,6 +292,8 @@
         texture: this.texture,
         bpalTextures: this.bpalTextures,
         bpalTextureInfo: this.bpalTextureInfo,
+        bpdhDataTexture: this.bpdhDataTexture,
+        bpdhTextureInfo: this.bpdhTextureInfo,
       };
     }
 
@@ -316,12 +352,80 @@
       this.applyBpalTextureUniforms();
     }
 
-    applyBpalTextureUniforms(textureInfo) {
+    loadBpdhShaderTexture(shaderData) {
+      validateBpdhShaderTextureData(shaderData);
+
+      const texture = this.gl.createTexture();
+
+      if (!texture) {
+        throw new Error("Could not create a WebGL texture for BPDH shader data");
+      }
+
+      try {
+        uploadBpalDataTexture(this.gl, texture, shaderData.dataAtlas, 7);
+      } catch (error) {
+        this.gl.deleteTexture(texture);
+        throw error;
+      }
+
+      if (this.bpdhDataTexture) {
+        this.gl.deleteTexture(this.bpdhDataTexture);
+      }
+      this.bpdhDataTexture = texture;
+      this.bpdhTextureInfo = shaderData;
+      this.applyBpdhTextureUniforms();
+
+      return shaderData;
+    }
+
+    setBpdhShaderTextureEnabled(enabled) {
+      if (enabled && !this.bpdhTextureInfo) {
+        throw new Error("Load a BPDH texture before enabling shader decoding");
+      }
+
+      this.bpdhShaderTextureEnabled = Boolean(enabled);
+      this.applyBpdhTextureUniforms();
+    }
+
+    applyBpdhTextureUniforms(textureInfo, enabled) {
       const gl = this.gl;
-      const info = textureInfo === undefined ? this.bpalTextureInfo : textureInfo;
+      const info = textureInfo === undefined ? this.bpdhTextureInfo : textureInfo;
+      const shaderTextureEnabled = enabled === undefined
+        ? this.bpdhShaderTextureEnabled
+        : Boolean(enabled);
 
       gl.useProgram(this.program);
-      gl.uniform1f(this.locations.useBpalTexture, this.bpalShaderTextureEnabled && info ? 1 : 0);
+      gl.uniform1f(this.locations.useBpdhTexture, shaderTextureEnabled && info ? 1 : 0);
+
+      if (!info) {
+        return;
+      }
+
+      gl.uniform2f(this.locations.bpdhImageSize, info.width, info.height);
+      gl.uniform1f(this.locations.bpdhBlocksX, info.blocksX);
+      gl.uniform1f(this.locations.bpdhLocalColorCount, info.localColorCount);
+      gl.uniform1f(this.locations.bpdhGlobalColorCount, info.globalColorCount);
+      gl.uniform1f(this.locations.bpdhBlockMapOffset, info.blockMapOffset);
+      gl.uniform1f(this.locations.bpdhBpalRecordsOffset, info.bpalRecordsOffset);
+      gl.uniform1f(this.locations.bpdhBpalRecordStride, info.bpalRecordStride);
+      gl.uniform1f(this.locations.bpdhDctRecordsOffset, info.dctRecordsOffset);
+      gl.uniform1f(this.locations.bpdhDctRecordStride, info.dctRecordStride);
+      gl.uniform2f(
+        this.locations.bpdhDataAtlasSize,
+        info.dataAtlas.width,
+        info.dataAtlas.height
+      );
+    }
+
+    applyBpalTextureUniforms(textureInfo, enabled) {
+      const gl = this.gl;
+      const info = textureInfo === undefined ? this.bpalTextureInfo : textureInfo;
+      const shaderTextureEnabled = enabled === undefined
+        ? this.bpalShaderTextureEnabled
+        : Boolean(enabled);
+
+      gl.useProgram(this.program);
+      gl.uniform1f(this.locations.useBpalTexture, shaderTextureEnabled && info ? 1 : 0);
 
       if (!info) {
         return;
@@ -423,12 +527,20 @@
       const texture = resource
         ? resource.texture || this.fallbackTexture
         : this.texture;
-      const bpalTextures = resource && resource.bpalTextures
-        ? resource.bpalTextures
+      const bpalTextures = resource
+        ? resource.bpalTextures || this.bpalTextures
         : this.bpalTextures;
-      const textureInfo = resource && resource.bpalTextureInfo
-        ? resource.bpalTextureInfo
-        : this.bpalTextureInfo;
+      const textureInfo = resource ? resource.bpalTextureInfo : this.bpalTextureInfo;
+      const shaderTextureEnabled = resource
+        ? Boolean(resource.bpalTextureInfo)
+        : this.bpalShaderTextureEnabled;
+      const bpdhDataTexture = resource
+        ? resource.bpdhDataTexture || this.bpdhDataTexture
+        : this.bpdhDataTexture;
+      const bpdhTextureInfo = resource ? resource.bpdhTextureInfo : this.bpdhTextureInfo;
+      const bpdhShaderTextureEnabled = resource
+        ? Boolean(resource.bpdhTextureInfo)
+        : this.bpdhShaderTextureEnabled;
 
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, texture);
@@ -440,7 +552,10 @@
       gl.bindTexture(gl.TEXTURE_2D, bpalTextures.globalPalette);
       gl.activeTexture(gl.TEXTURE6);
       gl.bindTexture(gl.TEXTURE_2D, bpalTextures.paletteSelectors);
-      this.applyBpalTextureUniforms(textureInfo);
+      gl.activeTexture(gl.TEXTURE7);
+      gl.bindTexture(gl.TEXTURE_2D, bpdhDataTexture);
+      this.applyBpalTextureUniforms(textureInfo, shaderTextureEnabled);
+      this.applyBpdhTextureUniforms(bpdhTextureInfo, bpdhShaderTextureEnabled);
     }
 
     setBpalSamplerOptions(options) {
@@ -725,6 +840,18 @@
       bpalBlockPaletteAtlasSize: gl.getUniformLocation(program, "uBpalBlockPaletteAtlasSize"),
       bpalPaletteAtlasSize: gl.getUniformLocation(program, "uBpalPaletteAtlasSize"),
       bpalPaletteSelectorAtlasSize: gl.getUniformLocation(program, "uBpalPaletteSelectorAtlasSize"),
+      bpdhData: gl.getUniformLocation(program, "uBpdhData"),
+      useBpdhTexture: gl.getUniformLocation(program, "uUseBpdhTexture"),
+      bpdhImageSize: gl.getUniformLocation(program, "uBpdhImageSize"),
+      bpdhBlocksX: gl.getUniformLocation(program, "uBpdhBlocksX"),
+      bpdhLocalColorCount: gl.getUniformLocation(program, "uBpdhLocalColorCount"),
+      bpdhGlobalColorCount: gl.getUniformLocation(program, "uBpdhGlobalColorCount"),
+      bpdhBlockMapOffset: gl.getUniformLocation(program, "uBpdhBlockMapOffset"),
+      bpdhBpalRecordsOffset: gl.getUniformLocation(program, "uBpdhBpalRecordsOffset"),
+      bpdhBpalRecordStride: gl.getUniformLocation(program, "uBpdhBpalRecordStride"),
+      bpdhDctRecordsOffset: gl.getUniformLocation(program, "uBpdhDctRecordsOffset"),
+      bpdhDctRecordStride: gl.getUniformLocation(program, "uBpdhDctRecordStride"),
+      bpdhDataAtlasSize: gl.getUniformLocation(program, "uBpdhDataAtlasSize"),
       bpalMipCount: gl.getUniformLocation(program, "uBpalMipCount"),
       bpalMipInfo: Array.from(
         { length: MAX_BPAL_MIP_LEVELS },
@@ -1055,6 +1182,22 @@
       ))
     ) {
       throw new TypeError("BPAL shader texture data is invalid");
+    }
+  }
+
+  function validateBpdhShaderTextureData(data) {
+    if (
+      !data ||
+      !Number.isInteger(data.width) ||
+      !Number.isInteger(data.height) ||
+      !Number.isInteger(data.blocksX) ||
+      !Number.isInteger(data.localColorCount) ||
+      !Number.isInteger(data.globalColorCount) ||
+      !data.dataAtlas ||
+      !(data.dataAtlas.data instanceof Uint8Array) ||
+      data.dataAtlas.channels !== 4
+    ) {
+      throw new TypeError("BPDH shader texture data is invalid");
     }
   }
 
