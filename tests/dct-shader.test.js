@@ -20,7 +20,8 @@ test("ships one current-format WebGL2 DCTBS2 shader for every payload rate", () 
   assert.equal(generatedFiles().size, 8);
 
   for (const [file, expected] of generatedFiles()) {
-    const actual = fs.readFileSync(path.join(root, "src", "shaders", file), "utf8");
+    const actual = fs.readFileSync(path.join(root, "src", "shaders", file), "utf8")
+      .replace(/\r\n?/g, "\n");
     assert.equal(actual, expected, `${file} must be regenerated after format changes`);
   }
 });
