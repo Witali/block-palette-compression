@@ -47,6 +47,10 @@ const progressPercent = document.getElementById("progress-percent");
 const progressStage = document.getElementById("progress-stage");
 const progressDetail = document.getElementById("progress-detail");
 const progressCancelButton = document.getElementById("progress-cancel");
+const layoutSummary = document.getElementById("dct-layout-summary");
+const layoutRateChart = document.getElementById("dct-layout-rate-chart");
+const layoutMcuBar = document.getElementById("dct-layout-mcu-bar");
+const layoutSpatial = document.getElementById("dct-layout-spatial");
 
 const state = {
   sourceImageData: null,
@@ -72,6 +76,7 @@ const MAX_ZOOM = 32;
 const VIEWPORT_PADDING = 28;
 
 populatePresetOptions();
+renderDctLayoutDiagram();
 
 controls.addEventListener("submit", (event) => {
   event.preventDefault();
@@ -84,6 +89,7 @@ imageSelect.addEventListener("change", () => {
 });
 
 presetSelect.addEventListener("change", () => {
+  renderDctLayoutDiagram();
   setBusy(false);
   processImage();
 });
@@ -145,6 +151,7 @@ window.addEventListener("resize", () => {
 });
 window.addEventListener("languagechange", () => {
   updateQualityLabel();
+  renderDctLayoutDiagram();
   if (state.encoded) {
     renderReadyStatus();
   }
@@ -172,6 +179,106 @@ function populatePresetOptions() {
   if (!codec.PRESETS[selected]) {
     presetSelect.value = "1.5";
   }
+}
+
+function renderDctLayoutDiagram() {
+  const selectedKey = presetSelect.value || "1.5";
+  const selected = codec.PRESETS[selectedKey] || codec.PRESETS["1.5"];
+  const profiles = Object.entries(codec.PRESETS)
+    .sort((left, right) => left[1].bpp - right[1].bpp);
+  const maxBytes = Math.max(...profiles.map(([, profile]) => profile.bytesPerMcu));
+  const splitLuma = selected.bpp >= 3;
+
+  layoutSummary.textContent = t(
+    splitLuma ? "dct.layoutSummaryHigh" : "dct.layoutSummaryLow",
+    { rate: selectedKey, bytes: selected.bytesPerMcu }
+  );
+
+  const rows = profiles.map(([key, profile]) => {
+    const row = document.createElement("div");
+    const rate = document.createElement("span");
+    const track = document.createElement("span");
+    const fill = document.createElement("span");
+    const bytes = document.createElement("span");
+    const selectedRow = key === selectedKey;
+
+    row.className = `dct-layout-rate-row${selectedRow ? " is-selected" : ""}`;
+    row.setAttribute("role", "listitem");
+    row.setAttribute("aria-label", t("dct.layoutModeAria", {
+      rate: key,
+      bytes: profile.bytesPerMcu,
+      y: profile.yBytes,
+      cb: profile.cbBytes,
+      cr: profile.crBytes,
+    }));
+    if (selectedRow) {
+      row.setAttribute("aria-current", "true");
+    }
+
+    rate.textContent = t("dct.layoutRateLabel", { rate: key });
+    track.className = "dct-layout-rate-track";
+    fill.className = "dct-layout-rate-fill";
+    fill.style.width = `${profile.bytesPerMcu / maxBytes * 100}%`;
+    fill.append(
+      createDctLayoutSegment("y", profile.yBytes, `Y ${profile.yBytes}`),
+      createDctLayoutSegment("cb", profile.cbBytes, `Cb ${profile.cbBytes}`),
+      createDctLayoutSegment("cr", profile.crBytes, `Cr ${profile.crBytes}`)
+    );
+    track.append(fill);
+    bytes.textContent = t("dct.layoutByteLabel", { bytes: profile.bytesPerMcu });
+    row.append(rate, track, bytes);
+    return row;
+  });
+  layoutRateChart.replaceChildren(...rows);
+
+  layoutMcuBar.replaceChildren(
+    createDctLayoutSegment("y", selected.yBytes, `Y · ${selected.yBytes}`),
+    createDctLayoutSegment("cb", selected.cbBytes, `Cb · ${selected.cbBytes}`),
+    createDctLayoutSegment("cr", selected.crBytes, `Cr · ${selected.crBytes}`)
+  );
+  layoutMcuBar.setAttribute("aria-label", t("dct.layoutSelectedMcuAria", {
+    rate: selectedKey,
+    y: selected.yBytes,
+    cb: selected.cbBytes,
+    cr: selected.crBytes,
+  }));
+
+  const luma = document.createElement("span");
+  luma.className = `dct-layout-luma${splitLuma ? " is-split" : ""}`;
+  if (splitLuma) {
+    for (let block = 1; block <= 4; block += 1) {
+      luma.append(createDctLayoutBlock("y", `Y 8×8 · ${block}`));
+    }
+  } else {
+    luma.append(createDctLayoutBlock("y", "Y 16×16"));
+  }
+  layoutSpatial.replaceChildren(
+    luma,
+    createDctLayoutBlock("cb", "Cb 8×16"),
+    createDctLayoutBlock("cr", "Cr 8×16")
+  );
+  layoutSpatial.setAttribute(
+    "aria-label",
+    t(splitLuma ? "dct.layoutSpatialHighAria" : "dct.layoutSpatialLowAria")
+  );
+}
+
+function createDctLayoutSegment(component, bytes, label) {
+  const segment = document.createElement("span");
+  segment.className = `dct-layout-segment is-${component}`;
+  segment.style.flexGrow = String(bytes);
+  segment.style.flexBasis = "0";
+  segment.textContent = label;
+  segment.setAttribute("aria-hidden", "true");
+  return segment;
+}
+
+function createDctLayoutBlock(component, label) {
+  const block = document.createElement("span");
+  block.className = `dct-layout-block is-${component}`;
+  block.textContent = label;
+  block.setAttribute("aria-hidden", "true");
+  return block;
 }
 
 async function loadImage(url, name, suppliedBytes = null) {

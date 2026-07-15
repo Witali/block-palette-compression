@@ -9,7 +9,7 @@
     <link rel="icon" href="./assets/icons/app-icon.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="./assets/icons/app-icon-192.png">
     <link rel="stylesheet" href="./block-palette.css?v=dct-page-1">
-    <link rel="stylesheet" href="./dct-compression.css?v=dct-page-1">
+    <link rel="stylesheet" href="./dct-compression.css?v=dct-page-11">
     <link rel="stylesheet" href="./i18n.css">
   </head>
   <body>
@@ -148,6 +148,54 @@
           <code>prototypeOffset = libraryBase + (reference - 1) × componentBytes</code>
         </div>
       </section>
+
+      <section class="storage-section dct-layout-diagram" aria-labelledby="layout-diagram-title">
+        <div class="section-heading">
+          <div>
+            <h2 id="layout-diagram-title" data-i18n="dct.layoutDiagramTitle">DCTBS2 visual layout</h2>
+            <p data-i18n="dct.layoutDiagramDescription">The diagram follows the selected target rate and shows byte allocation, transform blocks, and the direct lookup of one pixel.</p>
+          </div>
+          <output id="dct-layout-summary" class="dct-layout-summary" aria-live="polite">1.5 bpp · MCU 48 B · Y 16×16</output>
+        </div>
+
+        <div class="dct-layout-panel">
+          <div class="dct-layout-panel-heading">
+            <h3 data-i18n="dct.layoutBytesByMode">Bytes per MCU by mode</h3>
+            <div class="dct-layout-legend" aria-label="DCT components" data-i18n-aria-label="dct.layoutLegendAria">
+              <span><i class="dct-layout-swatch is-y" aria-hidden="true"></i>Y</span>
+              <span><i class="dct-layout-swatch is-cb" aria-hidden="true"></i>Cb</span>
+              <span><i class="dct-layout-swatch is-cr" aria-hidden="true"></i>Cr</span>
+            </div>
+          </div>
+          <div id="dct-layout-rate-chart" class="dct-layout-rate-chart" role="list" aria-label="Byte distribution per MCU for every target rate" data-i18n-aria-label="dct.layoutRateChartAria"></div>
+        </div>
+
+        <div class="dct-layout-detail-grid">
+          <div class="dct-layout-panel">
+            <h3 data-i18n="dct.layoutSelectedMcu">Selected MCU record</h3>
+            <div id="dct-layout-mcu-bar" class="dct-layout-mcu-bar" role="img" aria-label="Selected MCU byte allocation"></div>
+          </div>
+          <div class="dct-layout-panel">
+            <h3 data-i18n="dct.layoutTransformBlocks">Transform blocks inside the 16×16 MCU</h3>
+            <div id="dct-layout-spatial" class="dct-layout-spatial" role="img" aria-label="DCT transform blocks inside the MCU"></div>
+          </div>
+        </div>
+
+        <div class="dct-layout-panel dct-layout-pixel-panel">
+          <h3 data-i18n="dct.layoutDirectPixel">Direct pixel lookup</h3>
+          <div class="dct-layout-path" role="img" aria-label="Coordinates to RGB pixel lookup path" data-i18n-aria-label="dct.layoutPathAria">
+            <span data-i18n="dct.layoutCoordinates">coordinates x, y</span>
+            <b aria-hidden="true">→</b>
+            <span data-i18n="dct.layoutMcuAddress">MCU address</span>
+            <b aria-hidden="true">→</b>
+            <span>Y + Cb + Cr</span>
+            <b aria-hidden="true">→</b>
+            <span data-i18n="dct.layoutIdctSample">IDCT sample</span>
+            <b aria-hidden="true">→</b>
+            <span data-i18n="dct.layoutRgbPixel">RGB pixel</span>
+          </div>
+        </div>
+      </section>
     </main>
 
     <dialog id="progress-dialog" class="progress-dialog" aria-labelledby="progress-title">
@@ -165,10 +213,10 @@
     </dialog>
 
     <script src="./src/dct/dct-format.js?v=dct-page-10"></script>
-    <script src="./src/i18n/en.js?v=dct-page-10"></script>
-    <script src="./src/i18n/ru.js?v=dct-page-10"></script>
+    <script src="./src/i18n/en.js?v=dct-page-11"></script>
+    <script src="./src/i18n/ru.js?v=dct-page-11"></script>
     <script src="./src/i18n/i18n.js"></script>
-    <script src="./src/pages/dct-compression-page.js?v=dct-page-10"></script>
+    <script src="./src/pages/dct-compression-page.js?v=dct-page-11"></script>
     <script src="./src/pwa/register-service-worker.js?v=1"></script>
   </body>
 </html>

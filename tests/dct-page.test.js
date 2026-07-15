@@ -32,6 +32,24 @@ test("offers every fixed MCU rate from the preserved converter", () => {
   assert.match(page, /four 8×8 luma transforms at high rates/);
 });
 
+test("embeds a DCTBS2 layout diagram synchronized with the target rate", () => {
+  assert.match(page, /id="dct-layout-rate-chart"/);
+  assert.match(page, /id="dct-layout-mcu-bar"/);
+  assert.match(page, /id="dct-layout-spatial"/);
+  assert.match(page, /class="dct-layout-path"/);
+  assert.match(page, /data-i18n="dct\.layoutDiagramTitle"/);
+  assert.match(pageScript, /function renderDctLayoutDiagram\(\)/);
+  assert.match(pageScript, /profile\.bytesPerMcu \/ maxBytes \* 100/);
+  assert.match(pageScript, /const splitLuma = selected\.bpp >= 3/);
+  assert.match(pageScript, /createDctLayoutBlock\("y", `Y 8×8 · \$\{block\}`\)/);
+
+  const presetHandler = pageScript.slice(
+    pageScript.indexOf('presetSelect.addEventListener("change"'),
+    pageScript.indexOf('qualityInput.addEventListener("input"')
+  );
+  assert.match(presetHandler, /renderDctLayoutDiagram\(\)/);
+});
+
 test("keeps direct coordinate sampling separate from full-image decoding", () => {
   const lookupStart = pageScript.indexOf("function readPixelAt");
   const lookupEnd = pageScript.indexOf("function updatePixelBounds", lookupStart);
