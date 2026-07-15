@@ -75,6 +75,7 @@ test("generates one unrolled baseline Cube shader for every payload profile", ()
     assert.match(source, new RegExp(`const int DCT_Y_AC_COUNT = ${expectedYCount};`));
     assert.match(source, new RegExp(`const int DCT_C_AC_COUNT = ${expectedChromaCount};`));
     assert.doesNotMatch(decoder[1], /for \(|libraryVersion|splitLuma|profile < 0/);
+    assert.doesNotMatch(source, /uHeightTexture|uHeightStrength|applyHeightNormal|reliefTexCoord/);
     assert.equal(
       (decoder[1].match(/int position = DCT_SCAN_Y/g) || []).length,
       expectedYCount

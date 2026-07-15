@@ -13,7 +13,7 @@
   const PROJECT_ROOT_URL = new URL("../../", SCRIPT_URL).href;
   const DEFAULT_SHADER_URLS = {
     vertex: resolveProjectUrl("src/shaders/cube.vert.glsl?v=material-maps"),
-    fragment: resolveProjectUrl("src/shaders/cube.frag.glsl?v=multi-palette-1"),
+    fragment: resolveProjectUrl("src/shaders/cube.frag.glsl?v=cube-flat-1"),
   };
   const DEFAULT_TESSELLATION_SEGMENTS = 64;
   const DEFAULT_GEOMETRY_DISPLACEMENT_SCALE = 0.28;
@@ -56,6 +56,7 @@
     constructor(gl, shaderSources, options) {
       this.gl = gl;
       this.options = options || {};
+      this.reliefEnabled = this.options.relief !== false;
       this.program = createProgram(gl, shaderSources.vertex, shaderSources.fragment);
       this.locations = createLocations(gl, this.program);
       this.tessellationSegments = clampInteger(
@@ -91,7 +92,9 @@
         0
       );
       this.texture = this.fallbackTexture;
-      this.heightTexture = createSolidTexture(gl, [128, 128, 128, 255], 1);
+      this.heightTexture = this.reliefEnabled
+        ? createSolidTexture(gl, [128, 128, 128, 255], 1)
+        : null;
       this.specularTexture = createSolidTexture(gl, [255, 255, 255, 255], 2);
       this.bpalTextures = this.options.compactBpal
         ? {
@@ -735,15 +738,17 @@
     }
 
     resetMaterialMaps() {
-      uploadPixelTexture(
-        this.gl,
-        this.heightTexture,
-        new Uint8Array([128, 128, 128, 255]),
-        1,
-        1,
-        1,
-        { flipY: false }
-      );
+      if (this.reliefEnabled) {
+        uploadPixelTexture(
+          this.gl,
+          this.heightTexture,
+          new Uint8Array([128, 128, 128, 255]),
+          1,
+          1,
+          1,
+          { flipY: false }
+        );
+      }
       uploadPixelTexture(
         this.gl,
         this.specularTexture,
@@ -756,15 +761,19 @@
 
       this.heightField = null;
       this.heightTexelSize = [1, 1];
-      this.replaceGeometry(this.createGeometry(), this.gl.DYNAMIC_DRAW);
-      this.gl.useProgram(this.program);
-      this.gl.uniform2fv(this.locations.heightTexelSize, this.heightTexelSize);
+      if (this.reliefEnabled) {
+        this.replaceGeometry(this.createGeometry(), this.gl.DYNAMIC_DRAW);
+        this.gl.useProgram(this.program);
+        this.gl.uniform2fv(this.locations.heightTexelSize, this.heightTexelSize);
+      }
     }
 
     async loadMaterialMapsForTexture(textureUrl, options) {
       const mapUrls = createMaterialMapUrls(textureUrl, options);
       const [heightResult] = await Promise.all([
-        loadOptionalHeightMap(this.gl, this.heightTexture, mapUrls.height, 1),
+        this.reliefEnabled
+          ? loadOptionalHeightMap(this.gl, this.heightTexture, mapUrls.height, 1)
+          : Promise.resolve(null),
         loadOptionalMaterialTexture(this.gl, this.specularTexture, mapUrls.specular, 2, "specular"),
       ]);
 
@@ -866,8 +875,10 @@
       }
 
       this.bindGeometry();
-      gl.activeTexture(gl.TEXTURE1);
-      gl.bindTexture(gl.TEXTURE_2D, this.heightTexture);
+      if (this.reliefEnabled) {
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, this.heightTexture);
+      }
       gl.activeTexture(gl.TEXTURE2);
       gl.bindTexture(gl.TEXTURE_2D, this.specularTexture);
       gl.uniformMatrix4fv(this.locations.projection, false, this.projection);
@@ -903,8 +914,8 @@
     createGeometry() {
       return createTessellatedCubeGeometry({
         segments: this.tessellationSegments,
-        heightField: this.heightField,
-        heightStrength: this.material.heightStrength,
+        heightField: this.reliefEnabled ? this.heightField : null,
+        heightStrength: this.reliefEnabled ? this.material.heightStrength : 0,
         displacementScale: this.geometryDisplacementScale,
       });
     }

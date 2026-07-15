@@ -14,6 +14,10 @@ const samplerHtml = fs.readFileSync(path.join(root, "cube-bpal-sampler.html"), "
 const cubeSource = fs.readFileSync(path.join(root, "src", "pages", "cube-page.js"), "utf8");
 const samplerSource = fs.readFileSync(path.join(root, "src", "pages", "cube-bpal-sampler-page.js"), "utf8");
 const cubeFragmentShader = fs.readFileSync(path.join(root, "src", "shaders", "cube.frag.glsl"), "utf8");
+const compactVertexShader = fs.readFileSync(
+  path.join(root, "src", "shaders", "cube-webgl2.vert.glsl"),
+  "utf8"
+);
 const compactFragmentShader = fs.readFileSync(
   path.join(root, "src", "shaders", "cube-webgl2-dctbs2-1_5bpp.frag.glsl"),
   "utf8"
@@ -100,11 +104,25 @@ test("keeps cached BPDH shader samples deterministic for both block modes", () =
 
 test("switches Demo Cube between WebGL1 and compact WebGL2 rendering", () => {
   assert.match(cubeHtml, /<input id="webgl2-compact" type="checkbox" checked>/);
-  assert.match(cubeHtml, /src="\.\/src\/core\/textured-cube-webgl2\.js\?v=dct-profile-1"/);
+  assert.match(cubeHtml, /src="\.\/src\/core\/textured-cube-webgl2\.js\?v=cube-flat-1"/);
   assert.match(cubeSource, /get\("renderer"\) !== "webgl1"/);
   assert.match(cubeSource, /url\.searchParams\.set\("renderer", "webgl1"\)/);
-  assert.match(cubeSource, /CompactTexturedCubeRenderer\.create\(gl\)/);
+  assert.match(cubeSource, /CompactTexturedCubeRenderer\.create\(gl, rendererOptions\)/);
   assert.match(cubeSource, /createCompactShaderTextureData\(/);
+});
+
+test("removes height-map relief from Demo Cube", () => {
+  assert.doesNotMatch(cubeHtml, /height-strength|cube\.relief|relief-control/);
+  assert.doesNotMatch(cubeSource, /heightStrength|setHeightStrength/);
+  assert.match(cubeSource, /relief: false, tessellationSegments: 1/);
+  assert.match(cubeSource, /materialMaps: false/);
+
+  for (const shader of [cubeFragmentShader, compactFragmentShader]) {
+    assert.doesNotMatch(shader, /uHeightTexture|uHeightStrength|uHeightTexelSize/);
+    assert.doesNotMatch(shader, /applyHeightNormal|reliefTexCoord/);
+  }
+
+  assert.doesNotMatch(compactVertexShader, /aTangent|aBitangent|vTangent|vBitangent/);
 });
 
 test("creates one independently switchable texture resource per cube", () => {

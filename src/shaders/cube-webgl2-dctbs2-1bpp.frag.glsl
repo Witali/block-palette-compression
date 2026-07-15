@@ -8,13 +8,10 @@ precision highp float;
 precision highp int;
 
 in vec3 vNormal;
-in vec3 vTangent;
-in vec3 vBitangent;
 in vec3 vWorldPosition;
 in vec2 vTexCoord;
 
 uniform sampler2D uStoneTexture;
-uniform sampler2D uHeightTexture;
 uniform sampler2D uSpecularTexture;
 uniform highp usampler2D uBpalPixelIndices;
 uniform highp usampler2D uBpalBlockPalettes;
@@ -54,8 +51,6 @@ uniform float uBpdhBpalRecordStride;
 uniform float uBpdhDctRecordsOffset;
 uniform float uBpdhDctRecordStride;
 uniform vec2 uBpdhDataAtlasSize;
-uniform vec2 uHeightTexelSize;
-uniform float uHeightStrength;
 uniform vec3 uLightPosition;
 uniform vec3 uLightColor;
 uniform vec3 uAmbientColor;
@@ -822,42 +817,25 @@ vec3 sampleBpdhTexture(vec2 uv) {
   return fetchBpdhColor(sourceCoord);
 }
 
-vec3 applyHeightNormal(vec2 uv, vec3 normal, vec3 tangent, vec3 bitangent) {
-  float heightCenter = texture(uHeightTexture, uv).r;
-  float heightRight = texture(uHeightTexture, uv + vec2(uHeightTexelSize.x, 0.0)).r;
-  float heightUp = texture(uHeightTexture, uv + vec2(0.0, uHeightTexelSize.y)).r;
-  vec2 slope = vec2(heightRight - heightCenter, heightUp - heightCenter) * uHeightStrength * 9.0;
-  vec3 tangentSpaceNormal = normalize(vec3(-slope.x, -slope.y, 1.0));
-
-  return normalize(mat3(tangent, bitangent, normal) * tangentSpaceNormal);
-}
-
 void main() {
   vec3 normal = normalize(vNormal);
-  vec3 tangent = normalize(vTangent - normal * dot(vTangent, normal));
-  vec3 bitangent = normalize(vBitangent - normal * dot(vBitangent, normal));
   vec3 lightDirection = normalize(uLightPosition - vWorldPosition);
   vec3 viewDirection = normalize(uViewPosition - vWorldPosition);
-  vec2 viewOffset = vec2(dot(viewDirection, tangent), dot(viewDirection, bitangent));
-  float height = texture(uHeightTexture, vTexCoord).r;
-  vec2 reliefTexCoord = vTexCoord - viewOffset * (height - 0.5) * uHeightStrength * 0.055;
-
-  normal = applyHeightNormal(reliefTexCoord, normal, tangent, bitangent);
   float diffuse = max(dot(normal, lightDirection), 0.0);
   vec3 halfVector = normalize(lightDirection + viewDirection);
-  float specularMask = texture(uSpecularTexture, reliefTexCoord).r;
+  float specularMask = texture(uSpecularTexture, vTexCoord).r;
   float specular = pow(max(dot(normal, halfVector), 0.0), max(uShininess, 1.0)) *
     uSpecularStrength * specularMask;
   vec3 stoneColor;
 
   if (uUseDctTexture > 0.5) {
-    stoneColor = sampleDctTexture(reliefTexCoord);
+    stoneColor = sampleDctTexture(vTexCoord);
   } else if (uUseBpdhTexture > 0.5) {
-    stoneColor = sampleBpdhTexture(reliefTexCoord);
+    stoneColor = sampleBpdhTexture(vTexCoord);
   } else if (uUseBpalTexture > 0.5) {
-    stoneColor = sampleBpalTexture(reliefTexCoord);
+    stoneColor = sampleBpalTexture(vTexCoord);
   } else {
-    stoneColor = texture(uStoneTexture, reliefTexCoord).rgb;
+    stoneColor = texture(uStoneTexture, vTexCoord).rgb;
   }
   vec3 color = stoneColor * (uAmbientColor + diffuse * uLightColor) + specular * uLightColor;
 

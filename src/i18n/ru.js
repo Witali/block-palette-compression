@@ -376,7 +376,6 @@
 
     "cube.title": "Вращающийся куб WebGL",
     "cube.controls": "Настройки материала",
-    "cube.relief": "Рельеф",
     "cube.count": "Кубы",
     "cube.textureFormat": "Формат текстуры",
     "cube.textureFormatBpal": "BPAL / BPLM",

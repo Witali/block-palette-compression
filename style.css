@@ -81,7 +81,6 @@ canvas {
 }
 
 .material-controls legend,
-.relief-control span,
 .cube-count-control > span,
 .bpal-example-control > span {
   margin-bottom: 5px;
@@ -122,17 +121,11 @@ canvas {
 }
 
 .material-option input:focus-visible + span,
-#height-strength:focus-visible,
 .cube-count-control select:focus-visible,
 .bpal-example-control select:focus-visible,
 .bpal-upload input:focus-visible + span {
   outline: 2px solid #8fbfff;
   outline-offset: 2px;
-}
-
-.relief-control {
-  display: grid;
-  gap: 5px;
 }
 
 .cube-count-control {
@@ -164,23 +157,6 @@ canvas {
 
 .bpal-example-control select:disabled {
   opacity: 0.48;
-}
-
-.relief-control span {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 0;
-}
-
-#height-strength-value {
-  color: #f5f7fa;
-  font-weight: 650;
-}
-
-#height-strength {
-  width: 150px;
-  accent-color: #4a91ee;
 }
 
 .bpal-upload {
@@ -228,7 +204,6 @@ canvas {
   }
 
   .material-controls fieldset,
-  .relief-control,
   .cube-count-control,
   .bpal-example-control,
   .bpal-upload,
@@ -238,10 +213,6 @@ canvas {
 
   .material-option {
     flex: 1;
-  }
-
-  #height-strength {
-    width: 100%;
   }
 
   .bpal-example-control select {

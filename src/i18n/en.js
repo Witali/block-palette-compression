@@ -376,7 +376,6 @@
 
     "cube.title": "WebGL Rotating Cube",
     "cube.controls": "Material controls",
-    "cube.relief": "Relief",
     "cube.count": "Cubes",
     "cube.textureFormat": "Texture format",
     "cube.textureFormatBpal": "BPAL / BPLM",

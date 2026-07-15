@@ -8,7 +8,7 @@
     <link rel="manifest" href="./app.webmanifest">
     <link rel="icon" href="./assets/icons/app-icon.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="./assets/icons/app-icon-192.png">
-    <link rel="stylesheet" href="./style.css?v=bpal-catalog-1">
+    <link rel="stylesheet" href="./style.css?v=cube-flat-1">
     <link rel="stylesheet" href="./i18n.css">
   </head>
   <body>
@@ -29,10 +29,6 @@
       <label class="material-option" title="Use bit-packed integer BPAL textures in WebGL2" data-i18n-title="cube.webgl2CompactTitle">
         <input id="webgl2-compact" type="checkbox" checked>
         <span data-i18n="cube.webgl2Compact">WebGL2 compact</span>
-      </label>
-      <label class="relief-control">
-        <span><span data-i18n="cube.relief">Relief</span> <output id="height-strength-value" for="height-strength">0.60</output></span>
-        <input id="height-strength" type="range" min="0" max="1" step="0.05" value="0.60">
       </label>
       <label class="cube-count-control">
         <span data-i18n="cube.count">Cubes</span>
@@ -86,12 +82,12 @@
     <script src="./src/hybrid/dct420.js?v=hybrid-1"></script>
     <script src="./src/hybrid/bpdh-format.js?v=hybrid-1"></script>
     <script src="./src/decoders/bpdh-texture.js?v=bpdh-cube-1"></script>
-    <script src="./src/core/textured-cube.js?v=dct-cache-1"></script>
-    <script src="./src/core/textured-cube-webgl2.js?v=dct-profile-1"></script>
+    <script src="./src/core/textured-cube.js?v=cube-flat-1"></script>
+    <script src="./src/core/textured-cube-webgl2.js?v=cube-flat-1"></script>
     <script src="./src/pages/cube-wheel-zoom.js?v=2"></script>
     <script src="./src/pages/cube-grid-layout.js?v=multi-cube-1"></script>
     <script src="./src/pages/bpal-example-catalog.js?v=image-viewer-1"></script>
-    <script src="./src/pages/cube-page.js?v=dct-cache-1"></script>
+    <script src="./src/pages/cube-page.js?v=cube-flat-1"></script>
     <script src="./src/pwa/register-service-worker.js?v=1"></script>
   </body>
 </html>

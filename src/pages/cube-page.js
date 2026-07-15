@@ -12,8 +12,6 @@ const localized = (english, russian) => window.I18n.getLanguage() === "ru" ? rus
 const canvas = document.getElementById("gl-canvas");
 const fpsCounter = document.getElementById("fps-counter");
 const materialControls = document.getElementById("material-controls");
-const heightStrengthInput = document.getElementById("height-strength");
-const heightStrengthValue = document.getElementById("height-strength-value");
 const webgl2CompactInput = document.getElementById("webgl2-compact");
 const cubeCountInput = document.getElementById("cube-count");
 const textureFormatSelect = document.getElementById("texture-format");
@@ -92,9 +90,10 @@ start().catch((error) => {
 
 async function start() {
   initializeRendererModeControl();
+  const rendererOptions = { relief: false, tessellationSegments: 1 };
   cubeRenderer = compactRendererEnabled
-    ? await CompactTexturedCubeRenderer.create(gl)
-    : await TexturedCubeRenderer.create(gl);
+    ? await CompactTexturedCubeRenderer.create(gl, rendererOptions)
+    : await TexturedCubeRenderer.create(gl, rendererOptions);
   window.__texturedCubeRenderer = cubeRenderer;
   window.__cubeRendererMode = compactRendererEnabled ? "webgl2-compact" : "webgl1";
   window.__cubeMotionState = cubeMotionState;
@@ -108,7 +107,7 @@ async function start() {
     await initializeBundledBpalTexture();
   } catch (error) {
     console.warn("Bundled cube texture could not be loaded.", error);
-    await cubeRenderer.loadTexture("assets/stone-texture-wic.jpg");
+    await cubeRenderer.loadTexture("assets/stone-texture-wic.jpg", { materialMaps: false });
     primaryTextureResource = cubeRenderer.getCurrentBpalTextureResource();
     resetCubeTextureInstances();
     setBpalStatus(localized("Default JPEG fallback", "Резервная JPEG-текстура"), false);
@@ -190,7 +189,7 @@ function updateFpsCounter(time) {
 }
 
 function initializeMaterialControls() {
-  if (!materialControls || !heightStrengthInput) {
+  if (!materialControls) {
     return;
   }
 
@@ -198,10 +197,6 @@ function initializeMaterialControls() {
     if (event.target && event.target.name === "material") {
       applySelectedMaterial();
     }
-  });
-  heightStrengthInput.addEventListener("input", () => {
-    cubeRenderer.setHeightStrength(Number(heightStrengthInput.value));
-    updateHeightStrengthLabel();
   });
   cubeCountInput.addEventListener("change", () => {
     cubeMotionState.cubeCount = Number(cubeCountInput.value);
@@ -908,12 +903,4 @@ function applySelectedMaterial() {
   const material = formData.get("material") || "matte";
 
   cubeRenderer.setMaterial(String(material));
-  heightStrengthInput.value = cubeRenderer.material.heightStrength.toFixed(2);
-  updateHeightStrengthLabel();
-}
-
-function updateHeightStrengthLabel() {
-  if (heightStrengthValue) {
-    heightStrengthValue.textContent = Number(heightStrengthInput.value).toFixed(2);
-  }
 }
