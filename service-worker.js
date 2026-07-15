@@ -1,6 +1,6 @@
 "use strict";
 
-const CACHE_VERSION = "v4";
+const CACHE_VERSION = "v13";
 const SHELL_CACHE = `bpal-shell-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `bpal-runtime-${CACHE_VERSION}`;
 const SHARED_FILE_CACHE = "bpal-shared-files-v1";
@@ -14,12 +14,14 @@ const APP_SHELL = [
   "./",
   "./index.html",
   "./block-palette.html",
+  "./dct-compression.html",
   "./bpal-viewer.html",
   "./cube.html",
   "./cube-bpal-sampler.html",
   "./app.webmanifest",
   "./home.css",
   "./block-palette.css",
+  "./dct-compression.css",
   "./bpal-viewer.css",
   "./style.css",
   "./bpal-sampler.css",
@@ -31,7 +33,10 @@ const APP_SHELL = [
   "./src/core/textured-cube.js",
   "./src/core/textured-cube-webgl2.js",
   "./src/decoders/bpal-texture.js",
+  "./src/decoders/dctbs2-texture.js",
   "./src/decoders/gpu-jpeg.js",
+  "./src/dct/dct-format.js",
+  "./src/dct/dct-worker.js",
   "./src/i18n/en.js",
   "./src/i18n/i18n.js",
   "./src/i18n/ru.js",
@@ -42,6 +47,7 @@ const APP_SHELL = [
   "./src/pages/cube-grid-layout.js",
   "./src/pages/cube-page.js",
   "./src/pages/cube-wheel-zoom.js",
+  "./src/pages/dct-compression-page.js",
   "./src/palette/block-palette-codec.js",
   "./src/palette/block-palette-format.js",
   "./src/palette/block-palette-optimizer.js",

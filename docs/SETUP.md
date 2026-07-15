@@ -124,3 +124,18 @@ PIC, and binary PNM images through the vendored `stb_image` loader and writes
 BPAL v5 textures. No separate image-library installation is required. See the
 [native command-line tools guide](../native/bpal5_simd/README.md) for all
 encoder settings, presets, CUDA pipeline details, and benchmarking.
+
+## Build the CUDA DCTBS2 tool
+
+The DCTBS2 encoder, decoder, and random-access pixel sampler can be compiled
+without CMake. From the repository root run:
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File native\dct_cuda\build.ps1
+.\.tmp\dctcuda-build\dctcuda.exe --version
+```
+
+The build script locates the Visual Studio C++ environment and either `nvcc`
+on `PATH` or the project-local CUDA compiler. See the
+[CUDA DCTBS2 command-line guide](../native/dct_cuda/README.md) for usage and
+the JavaScript compatibility check.

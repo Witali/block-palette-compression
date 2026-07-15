@@ -63,8 +63,8 @@ The project contains:
 - [`block-palette.html`](https://witali.github.io/block-palette-compression/block-palette.html) — CPU/WebGL2 encoder, preview,
   settings search, PNG export, and BPAL download;
 - [`bpal-viewer.html`](https://witali.github.io/block-palette-compression/bpal-viewer.html) — BPAL and regular image viewer;
-- [`cube.html`](https://witali.github.io/block-palette-compression/cube.html) — WebGL cube with optional BPAL double indexing in
-  the fragment shader;
+- [`cube.html`](https://witali.github.io/block-palette-compression/cube.html) — WebGL cube with switchable BPAL double indexing
+  or direct DCTBS2 inverse transforms in the fragment shader;
 - [`cube-bpal-sampler.html`](https://witali.github.io/block-palette-compression/cube-bpal-sampler.html) — programmable BPAL
   mipmapping with nearest, bilinear, trilinear, and anisotropic filtering.
 
@@ -76,6 +76,7 @@ Detailed documentation:
 - [BPAL v5 file format](./BLOCK_PALETTE_FORMAT.md)
   ([Russian](./BLOCK_PALETTE_FORMAT_ru.md));
 - [standalone BPAL v5 CPU/SIMD and CUDA tools](./native/bpal5_simd/README.md);
+- [standalone CUDA DCTBS2 encoder, decoder, and pixel sampler](./native/dct_cuda/README.md);
 - [reproducible BPAL/BC/ASTC texture codec benchmark](./benchmark/README.md).
 
 ## Setup

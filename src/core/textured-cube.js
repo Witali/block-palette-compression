@@ -108,6 +108,11 @@
         };
       this.bpalTextureInfo = null;
       this.bpalShaderTextureEnabled = false;
+      this.dctTexture = this.options.compactBpal
+        ? createSolidDctTexture(gl, 7)
+        : null;
+      this.dctTextureInfo = null;
+      this.dctShaderTextureEnabled = false;
       this.bpalSamplerOptions = {
         filterMode: "trilinear",
         maxAnisotropy: 4,
@@ -124,7 +129,9 @@
       gl.uniform1i(this.locations.bpalBlockPalettes, 4);
       gl.uniform1i(this.locations.bpalGlobalPalette, 5);
       gl.uniform1i(this.locations.bpalPaletteSelectors, 6);
+      gl.uniform1i(this.locations.dctData, 7);
       gl.uniform1f(this.locations.useBpalTexture, 0);
+      gl.uniform1f(this.locations.useDctTexture, 0);
       gl.uniform3fv(this.locations.lightPosition, this.options.lightPosition || [3.0, 4.0, 5.0]);
       gl.uniform3fv(this.locations.lightColor, this.options.lightColor || [0.92, 0.9, 0.82]);
       gl.uniform3fv(this.locations.ambientColor, this.options.ambientColor || [0.22, 0.22, 0.22]);
@@ -238,6 +245,37 @@
         texture: null,
         bpalTextures,
         bpalTextureInfo: shaderData,
+        dctTexture: null,
+        dctTextureInfo: null,
+      };
+    }
+
+    createDctTextureResource(shaderData) {
+      validateDctShaderTextureData(shaderData);
+
+      if (!this.options.compactBpal) {
+        throw new Error("DCTBS2 texture sampling requires WebGL2");
+      }
+
+      const texture = this.gl.createTexture();
+
+      if (!texture) {
+        throw new Error("Could not create a WebGL2 DCTBS2 texture resource");
+      }
+
+      try {
+        uploadDctDataTexture(this.gl, texture, shaderData.dataAtlas, 7);
+      } catch (error) {
+        this.gl.deleteTexture(texture);
+        throw error;
+      }
+
+      return {
+        texture: null,
+        bpalTextures: null,
+        bpalTextureInfo: null,
+        dctTexture: texture,
+        dctTextureInfo: shaderData,
       };
     }
 
@@ -250,7 +288,11 @@
         this.gl.deleteTexture(resource.texture);
       }
       deleteTextureSet(this.gl, resource.bpalTextures);
+      if (resource.dctTexture && resource.dctTexture !== this.dctTexture) {
+        this.gl.deleteTexture(resource.dctTexture);
+      }
       resource.texture = null;
+      resource.dctTexture = null;
     }
 
     getCurrentBpalTextureResource() {
@@ -258,6 +300,8 @@
         texture: this.texture,
         bpalTextures: this.bpalTextures,
         bpalTextureInfo: this.bpalTextureInfo,
+        dctTexture: this.dctTexture,
+        dctTextureInfo: this.dctTextureInfo,
       };
     }
 
@@ -307,13 +351,60 @@
       return shaderData;
     }
 
+    loadDctShaderTexture(shaderData) {
+      validateDctShaderTextureData(shaderData);
+
+      if (!this.options.compactBpal) {
+        throw new Error("DCTBS2 texture sampling requires WebGL2");
+      }
+
+      const texture = this.gl.createTexture();
+
+      if (!texture) {
+        throw new Error("Could not create a WebGL2 DCTBS2 data texture");
+      }
+
+      try {
+        uploadDctDataTexture(this.gl, texture, shaderData.dataAtlas, 7);
+      } catch (error) {
+        this.gl.deleteTexture(texture);
+        throw error;
+      }
+
+      if (this.dctTexture) {
+        this.gl.deleteTexture(this.dctTexture);
+      }
+      this.dctTexture = texture;
+      this.dctTextureInfo = shaderData;
+      this.applyDctTextureUniforms();
+
+      return shaderData;
+    }
+
     setBpalShaderTextureEnabled(enabled) {
       if (enabled && !this.bpalTextureInfo) {
         throw new Error("Load a BPAL texture before enabling shader indexing");
       }
 
       this.bpalShaderTextureEnabled = Boolean(enabled);
+      if (this.bpalShaderTextureEnabled) {
+        this.dctShaderTextureEnabled = false;
+      }
       this.applyBpalTextureUniforms();
+      this.applyDctTextureUniforms();
+    }
+
+    setDctShaderTextureEnabled(enabled) {
+      if (enabled && !this.dctTextureInfo) {
+        throw new Error("Load a DCTBS2 texture before enabling shader IDCT");
+      }
+
+      this.dctShaderTextureEnabled = Boolean(enabled);
+      if (this.dctShaderTextureEnabled) {
+        this.bpalShaderTextureEnabled = false;
+      }
+      this.applyBpalTextureUniforms();
+      this.applyDctTextureUniforms();
     }
 
     applyBpalTextureUniforms(textureInfo) {
@@ -321,7 +412,10 @@
       const info = textureInfo === undefined ? this.bpalTextureInfo : textureInfo;
 
       gl.useProgram(this.program);
-      gl.uniform1f(this.locations.useBpalTexture, this.bpalShaderTextureEnabled && info ? 1 : 0);
+      gl.uniform1f(
+        this.locations.useBpalTexture,
+        this.bpalShaderTextureEnabled && !this.dctShaderTextureEnabled && info ? 1 : 0
+      );
 
       if (!info) {
         return;
@@ -418,6 +512,23 @@
       this.applyBpalSamplerUniforms();
     }
 
+    applyDctTextureUniforms(textureInfo) {
+      const gl = this.gl;
+      const info = textureInfo === undefined ? this.dctTextureInfo : textureInfo;
+
+      gl.useProgram(this.program);
+      gl.uniform1f(this.locations.useDctTexture, this.dctShaderTextureEnabled && info ? 1 : 0);
+
+      if (!info || !this.options.compactBpal) {
+        return;
+      }
+
+      gl.uniform2i(this.locations.dctImageSize, info.width, info.height);
+      gl.uniform1i(this.locations.dctMcuColumns, info.mcuColumns);
+      gl.uniform1i(this.locations.dctQuality, info.quality);
+      gl.uniform1i(this.locations.dctDataTexWidth, info.dataAtlas.width);
+    }
+
     bindInstanceTextureResource(resource) {
       const gl = this.gl;
       const texture = resource
@@ -429,6 +540,12 @@
       const textureInfo = resource && resource.bpalTextureInfo
         ? resource.bpalTextureInfo
         : this.bpalTextureInfo;
+      const dctTexture = resource && resource.dctTexture
+        ? resource.dctTexture
+        : this.dctTexture;
+      const dctTextureInfo = resource && resource.dctTextureInfo
+        ? resource.dctTextureInfo
+        : this.dctTextureInfo;
 
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, texture);
@@ -440,7 +557,12 @@
       gl.bindTexture(gl.TEXTURE_2D, bpalTextures.globalPalette);
       gl.activeTexture(gl.TEXTURE6);
       gl.bindTexture(gl.TEXTURE_2D, bpalTextures.paletteSelectors);
+      if (this.options.compactBpal && dctTexture) {
+        gl.activeTexture(gl.TEXTURE7);
+        gl.bindTexture(gl.TEXTURE_2D, dctTexture);
+      }
       this.applyBpalTextureUniforms(textureInfo);
+      this.applyDctTextureUniforms(dctTextureInfo);
     }
 
     setBpalSamplerOptions(options) {
@@ -711,7 +833,9 @@
       bpalBlockPalettes: gl.getUniformLocation(program, "uBpalBlockPalettes"),
       bpalGlobalPalette: gl.getUniformLocation(program, "uBpalGlobalPalette"),
       bpalPaletteSelectors: gl.getUniformLocation(program, "uBpalPaletteSelectors"),
+      dctData: gl.getUniformLocation(program, "uDctData"),
       useBpalTexture: gl.getUniformLocation(program, "uUseBpalTexture"),
+      useDctTexture: gl.getUniformLocation(program, "uUseDctTexture"),
       bpalImageSize: gl.getUniformLocation(program, "uBpalImageSize"),
       bpalBlockSize: gl.getUniformLocation(program, "uBpalBlockSize"),
       bpalBlocksX: gl.getUniformLocation(program, "uBpalBlocksX"),
@@ -725,6 +849,10 @@
       bpalBlockPaletteAtlasSize: gl.getUniformLocation(program, "uBpalBlockPaletteAtlasSize"),
       bpalPaletteAtlasSize: gl.getUniformLocation(program, "uBpalPaletteAtlasSize"),
       bpalPaletteSelectorAtlasSize: gl.getUniformLocation(program, "uBpalPaletteSelectorAtlasSize"),
+      dctImageSize: gl.getUniformLocation(program, "uDctImageSize"),
+      dctMcuColumns: gl.getUniformLocation(program, "uDctMcuColumns"),
+      dctQuality: gl.getUniformLocation(program, "uDctQuality"),
+      dctDataTexWidth: gl.getUniformLocation(program, "uDctDataTexWidth"),
       bpalMipCount: gl.getUniformLocation(program, "uBpalMipCount"),
       bpalMipInfo: Array.from(
         { length: MAX_BPAL_MIP_LEVELS },
@@ -914,6 +1042,18 @@
     return texture;
   }
 
+  function createSolidDctTexture(gl, unit) {
+    const texture = gl.createTexture();
+
+    uploadDctDataTexture(gl, texture, {
+      width: 1,
+      height: 1,
+      data: new Uint8Array(4),
+    }, unit);
+
+    return texture;
+  }
+
   async function loadImageTexture(gl, texture, url, unit, options) {
     const image = await loadImage(resolveProjectUrl(url));
 
@@ -1031,6 +1171,27 @@
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
   }
 
+  function uploadDctDataTexture(gl, texture, atlas, unit) {
+    gl.activeTexture(gl.TEXTURE0 + unit);
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      gl.RGBA8UI,
+      atlas.width,
+      atlas.height,
+      0,
+      gl.RGBA_INTEGER,
+      gl.UNSIGNED_BYTE,
+      atlas.data
+    );
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  }
+
   function validateBpalShaderTextureData(data) {
     const atlases = data && [
       data.pixelAtlas,
@@ -1055,6 +1216,23 @@
       ))
     ) {
       throw new TypeError("BPAL shader texture data is invalid");
+    }
+  }
+
+  function validateDctShaderTextureData(data) {
+    if (
+      !data ||
+      data.format !== "dctbs2-rgba8ui" ||
+      !Number.isInteger(data.width) ||
+      !Number.isInteger(data.height) ||
+      !Number.isInteger(data.mcuColumns) ||
+      !Number.isInteger(data.quality) ||
+      !data.dataAtlas ||
+      !Number.isInteger(data.dataAtlas.width) ||
+      !Number.isInteger(data.dataAtlas.height) ||
+      !(data.dataAtlas.data instanceof Uint8Array)
+    ) {
+      throw new TypeError("DCTBS2 shader texture data is invalid");
     }
   }
 
