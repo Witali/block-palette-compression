@@ -97,7 +97,9 @@ The project contains:
 
 - [`block-palette.html`](https://witali.github.io/block-palette-compression/block-palette.html) — CPU/WebGL2 encoder, preview,
   settings search, PNG export, and BPAL download;
-- [`bpal-viewer.html`](https://witali.github.io/block-palette-compression/bpal-viewer.html) — BPAL and regular image viewer;
+- [`bpdh.html`](https://witali.github.io/block-palette-compression/bpdh.html) — hybrid BPAL/DCT encoder, mode-map preview,
+  coordinate decoder, PNG export, and BPDH download;
+- [`bpal-viewer.html`](https://witali.github.io/block-palette-compression/bpal-viewer.html) — BPAL, BPLM, BPDH, and regular image viewer;
 - [`cube.html`](https://witali.github.io/block-palette-compression/cube.html) — WebGL cube with optional BPAL double indexing in
   the fragment shader;
 - [`cube-bpal-sampler.html`](https://witali.github.io/block-palette-compression/cube-bpal-sampler.html) — programmable BPAL
@@ -149,19 +151,19 @@ does not need to be maintained by hand.
 The GitHub Pages site is an installable Progressive Web App. Supporting
 browsers can install it from their address bar or application menu. The app
 shell is available offline after the service worker finishes installing;
-large images and BPAL/BPLM examples are cached only after they are opened.
+large images and BPAL/BPLM/BPDH examples are cached only after they are opened.
 
 HTML navigations use the network first so deployments remain fresh, with a
 cached page as the offline fallback. Static resources return from the cache
 immediately and are refreshed in the background.
 
 When installed by a Chromium-based desktop browser, the PWA registers as a
-handler for `.bpal` and `.bplm` files. Opening either file type from the
+handler for `.bpal`, `.bplm`, and `.bpdh` files. Opening any of these file types from the
 operating system launches BPAL Viewer and passes the selected file to it. On
 platforms without the File Handling API, the viewer's file picker and drag and
 drop support remain available.
 
-On Android, install the PWA in Chrome, select a `.bpal` or `.bplm` file in the
+On Android, install the PWA in Chrome, select a `.bpal`, `.bplm`, or `.bpdh` file in the
 system file manager, and share it with BPAL. The service worker receives the
 Web Share Target POST request, stores the file temporarily, and opens it in
 BPAL Viewer. GitHub Pages does not need a server-side POST endpoint.

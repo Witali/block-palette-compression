@@ -388,8 +388,10 @@ async function loadFile(file) {
     const lowerName = file.name.toLowerCase();
     const isBlockPalette = hasBpalMagic(bytes) ||
       window.BplmFormat.isBplmFile(bytes) ||
+      window.BpdhFormat.isBpdhFile(bytes) ||
       lowerName.endsWith(".bpal") ||
-      lowerName.endsWith(".bplm");
+      lowerName.endsWith(".bplm") ||
+      lowerName.endsWith(".bpdh");
 
     if (loadId === state.loadId) {
       if (isBlockPalette) {
@@ -412,7 +414,9 @@ async function loadFile(file) {
 }
 
 function loadBlockPalette(bytes, fileName) {
-  if (window.BplmFormat.isBplmFile(bytes) || fileName.toLowerCase().endsWith(".bplm")) {
+  if (window.BpdhFormat.isBpdhFile(bytes) || fileName.toLowerCase().endsWith(".bpdh")) {
+    loadBpdh(bytes, fileName);
+  } else if (window.BplmFormat.isBplmFile(bytes) || fileName.toLowerCase().endsWith(".bplm")) {
     loadBplm(bytes, fileName);
   } else {
     loadBpal(bytes, fileName);
@@ -436,6 +440,26 @@ function loadBpal(bytes, fileName) {
     localColors: decoded.localColorCount,
     bitsPerPixel: decoded.storage.totalBytes * 8 / (decoded.width * decoded.height),
     blockSize: decoded.blockSize,
+  };
+  renderFileStatus();
+}
+
+function loadBpdh(bytes, fileName) {
+  const decoded = window.BpdhFormat.decodeBpdhFile(bytes);
+  const pixels = new Uint8ClampedArray(decoded.pixels);
+
+  clearMipState();
+  drawPixels(pixels, decoded.width, decoded.height);
+  state.fileDescription = {
+    type: "bpdh",
+    name: fileName,
+    width: decoded.width,
+    height: decoded.height,
+    version: decoded.version,
+    codingUnitSize: decoded.codingUnitSize,
+    bpalBlocks: decoded.bpalBlockCount,
+    dctBlocks: decoded.dctBlockCount,
+    bitsPerPixel: decoded.storage.totalBytes * 8 / (decoded.width * decoded.height),
   };
   renderFileStatus();
 }
@@ -506,7 +530,7 @@ function renderFileStatus() {
     return;
   }
 
-  const parameters = description.type === "bpal" || description.type === "bplm"
+  const parameters = description.type !== "image"
     ? {
         ...description,
         bitsPerPixel: window.I18n.formatNumber(description.bitsPerPixel, {
@@ -520,7 +544,9 @@ function renderFileStatus() {
     ? "viewer.bpalStatus"
     : description.type === "bplm"
       ? "viewer.bplmStatus"
-      : "viewer.imageStatus";
+      : description.type === "bpdh"
+        ? "viewer.bpdhStatus"
+        : "viewer.imageStatus";
 
   setStatus(t(statusKey, parameters));
 }

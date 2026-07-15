@@ -96,23 +96,47 @@ test("shows BPAL parameters in compression-settings order", () => {
 test("switches between reconstructed BPLM mip levels", () => {
   assert.match(viewerHtml, /id="mip-previous"[^>]*disabled/);
   assert.match(viewerHtml, /id="mip-next"[^>]*disabled/);
-  assert.match(viewerHtml, /accept="\.bpal,\.bplm,image\/\*"/);
+  assert.match(viewerHtml, /accept="\.bpal,\.bplm,\.bpdh,image\/\*"/);
   assert.match(viewerSource, /BplmFormat\.decodeBplmFile\(bytes\)/);
   assert.match(viewerSource, /BplmFormat\.reconstructBplmMipPixels\(image, mipIndex\)/);
   assert.match(viewerSource, /showBplmMip\(state\.mipIndex - 1\)/);
   assert.match(viewerSource, /showBplmMip\(state\.mipIndex \+ 1\)/);
 });
 
-test("loads BPLM dependencies before the viewer page", () => {
+test("loads BPLM and BPDH dependencies before the viewer page", () => {
   const decoderIndex = viewerHtml.indexOf("src/decoders/bpal-texture.js");
   const formatIndex = viewerHtml.indexOf("src/palette/bplm-format.js");
+  const dctIndex = viewerHtml.indexOf("src/hybrid/dct420.js");
+  const bpdhIndex = viewerHtml.indexOf("src/hybrid/bpdh-format.js");
   const catalogIndex = viewerHtml.indexOf("src/pages/bpal-example-catalog.js");
   const pageIndex = viewerHtml.indexOf("src/pages/bpal-viewer-page.js");
 
   assert.ok(decoderIndex >= 0);
   assert.ok(formatIndex > decoderIndex);
-  assert.ok(catalogIndex > formatIndex);
+  assert.ok(dctIndex > formatIndex);
+  assert.ok(bpdhIndex > dctIndex);
+  assert.ok(catalogIndex > bpdhIndex);
   assert.ok(pageIndex > catalogIndex);
+});
+
+test("recognizes and renders BPDH hybrid images", () => {
+  assert.match(viewerSource, /BpdhFormat\.isBpdhFile\(bytes\)/);
+  assert.match(viewerSource, /lowerName\.endsWith\("\.bpdh"\)/);
+  assert.match(viewerSource, /function loadBpdh\(bytes, fileName\)/);
+  assert.match(viewerSource, /BpdhFormat\.decodeBpdhFile\(bytes\)/);
+  assert.match(viewerSource, /bpalBlocks: decoded\.bpalBlockCount/);
+  assert.match(viewerSource, /dctBlocks: decoded\.dctBlockCount/);
+  assert.match(viewerSource, /type: "bpdh"/);
+  assert.match(viewerSource, /"viewer\.bpdhStatus"/);
+
+  for (const catalog of [english, russian]) {
+    const status = catalog["viewer.bpdhStatus"];
+
+    assert.match(status, /\{codingUnitSize\}/);
+    assert.match(status, /\{bpalBlocks\}/);
+    assert.match(status, /\{dctBlocks\}/);
+    assert.match(status, /\{bitsPerPixel\}/);
+  }
 });
 
 test("selects fit by default and toggles between fit and actual size", () => {

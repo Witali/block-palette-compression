@@ -284,6 +284,18 @@
     return calculateLayout(validateImage(image));
   }
 
+  function isBpdhFile(input) {
+    try {
+      const bytes = asUint8Array(input);
+
+      return bytes.length >= MAGIC_BYTES.length && MAGIC_BYTES.every(
+        (value, index) => bytes[index] === value
+      );
+    } catch (error) {
+      return false;
+    }
+  }
+
   function sampleBpdhPixel(image, x, y) {
     if (!image || typeof image !== "object") {
       throw new TypeError("BPDH sampler requires a decoded image");
@@ -1215,6 +1227,7 @@
     MODE_DCT,
     encodeBpdhFile,
     decodeBpdhFile,
+    isBpdhFile,
     getBpdhFileLayout,
     getDctMacroblockBitLength,
     sampleBpdhPixel,

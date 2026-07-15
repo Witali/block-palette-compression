@@ -59,12 +59,12 @@ test("registers the root service worker without breaking project-page paths", ()
   assert.match(registration, /updateViaCache: "none"/);
 });
 
-test("associates installed desktop PWAs with BPAL and BPLM files", () => {
+test("associates installed desktop PWAs with BPAL, BPLM, and BPDH files", () => {
   assert.deepEqual(manifest.file_handlers, [
     {
       action: "./bpal-viewer.html",
       accept: {
-        "application/octet-stream": [".bpal", ".bplm"],
+        "application/octet-stream": [".bpal", ".bplm", ".bpdh"],
       },
     },
   ]);
@@ -74,7 +74,7 @@ test("associates installed desktop PWAs with BPAL and BPLM files", () => {
   assert.match(viewerSource, /externalFileReceived \|\| initializationId !== state\.loadId/);
 });
 
-test("registers an Android Web Share Target for BPAL and BPLM files", () => {
+test("registers an Android Web Share Target for BPAL, BPLM, and BPDH files", () => {
   assert.deepEqual(manifest.share_target, {
     action: "./share-target",
     method: "POST",
@@ -83,7 +83,7 @@ test("registers an Android Web Share Target for BPAL and BPLM files", () => {
       files: [
         {
           name: "bpal_file",
-          accept: ["application/octet-stream", ".bpal", ".bplm"],
+          accept: ["application/octet-stream", ".bpal", ".bplm", ".bpdh"],
         },
       ],
     },

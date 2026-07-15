@@ -1,6 +1,6 @@
 "use strict";
 
-const CACHE_VERSION = "v6";
+const CACHE_VERSION = "v7";
 const SHELL_CACHE = `bpal-shell-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `bpal-runtime-${CACHE_VERSION}`;
 const SHARED_FILE_CACHE = "bpal-shared-files-v1";
@@ -8,7 +8,7 @@ const CURRENT_CACHES = new Set([SHELL_CACHE, RUNTIME_CACHE, SHARED_FILE_CACHE]);
 const SHARE_TARGET_URL = new URL("./share-target", self.registration.scope);
 const SHARED_FILE_DIRECTORY_URL = new URL("./shared-files/", self.registration.scope);
 
-// Keep the install small and deterministic. Large images and BPAL/BPLM samples
+// Keep the install small and deterministic. Large images and BPAL/BPLM/BPDH samples
 // are cached by the fetch handler only after the user requests them.
 const APP_SHELL = [
   "./",

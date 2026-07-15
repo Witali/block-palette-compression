@@ -12,6 +12,7 @@ const {
   MODE_DCT,
   encodeBpdhFile,
   decodeBpdhFile,
+  isBpdhFile,
   sampleBpdhPixel,
 } = require("../src/hybrid/bpdh-format.js");
 
@@ -36,6 +37,8 @@ test("selects BPAL for a sharp two-color block and DCT for a smooth block", () =
   const repeated = encodeBpdhFile(compressHybridImage(source, width, height, settings));
 
   assert.equal(String.fromCharCode(...encoded.slice(0, 4)), MAGIC);
+  assert.equal(isBpdhFile(encoded), true);
+  assert.equal(isBpdhFile(encoded.buffer), true);
   assert.equal(decoded.version, VERSION);
   assert.deepEqual(Array.from(result.modes), [MODE_BPAL, MODE_DCT]);
   assert.equal(result.bpalBlockCount, 1);
@@ -120,6 +123,8 @@ test("rejects invalid BPDH magic and truncated section data", () => {
 
   invalidMagic[0] = 0;
 
+  assert.equal(isBpdhFile(invalidMagic), false);
+  assert.equal(isBpdhFile(null), false);
   assert.throws(() => decodeBpdhFile(invalidMagic), /Invalid BPDH magic/);
   assert.throws(
     () => decodeBpdhFile(encoded.slice(0, -1)),
