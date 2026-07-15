@@ -24,7 +24,12 @@
   const CHROMA_WIDTH = 8;
   const SCALE_MULTIPLIERS = Object.freeze([1, 2, 4, 8]);
   const PROFILE_NAMES = Object.freeze(["low frequency", "horizontal", "vertical", "diagonal"]);
+  // Higher-rate modes preserve the reference converter's four-luma-to-two-chroma
+  // byte ratio while DCTBS2 keeps its independently addressable 4:2:2 MCU layout.
   const PRESETS = Object.freeze({
+    "6": freezePreset(6000, 6, 192, 128, 32, 32),
+    "4.5": freezePreset(4500, 4.5, 144, 96, 24, 24),
+    "3": freezePreset(3000, 3, 96, 64, 16, 16),
     "2": freezePreset(2000, 2, 64, 32, 16, 16),
     "1.5": freezePreset(1500, 1.5, 48, 24, 12, 12),
     "1": freezePreset(1000, 1, 32, 16, 8, 8),

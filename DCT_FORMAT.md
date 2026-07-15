@@ -16,14 +16,21 @@ Each MCU contains three components:
 Cb and Cr use horizontal 4:2:2 subsampling. Source pixels outside a partial
 edge MCU are extended by repeating the nearest valid pixel.
 
-The supported records are:
+The supported rates include the four MCU modes and all three higher-rate
+16/24/32-byte modes from the preserved reference converter. The reference
+uses four 8×8 luma records for those higher rates, so their byte budgets give
+two thirds of the MCU to luma. DCTBS2 v2 keeps its single 16×16 luma transform
+and 4:2:2 random-access layout, but preserves that Y-heavy allocation.
 
 | Preset | Bytes/MCU | Y | Cb | Cr |
 | ---: | ---: | ---: | ---: | ---: |
-| 2 bpp | 64 | 32 | 16 | 16 |
-| 1.5 bpp | 48 | 24 | 12 | 12 |
-| 1 bpp | 32 | 16 | 8 | 8 |
 | 0.75 bpp | 24 | 12 | 6 | 6 |
+| 1 bpp | 32 | 16 | 8 | 8 |
+| 1.5 bpp | 48 | 24 | 12 | 12 |
+| 2 bpp | 64 | 32 | 16 | 16 |
+| 3 bpp | 96 | 64 | 16 | 16 |
+| 4.5 bpp | 144 | 96 | 24 | 24 |
+| 6 bpp | 192 | 128 | 32 | 32 |
 
 The actual whole-file bpp can be slightly higher for non-multiple-of-16 image
 dimensions because the edge MCUs are stored at their complete fixed size.

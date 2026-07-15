@@ -35,24 +35,17 @@ constexpr size_t HEADER_BYTES = 64u;
 constexpr int MCU_WIDTH = 16;
 constexpr int MCU_HEIGHT = 16;
 constexpr int CUDA_THREADS = 256;
+constexpr std::array<uint32_t, 7> PRESET_UNITS{{6u, 8u, 12u, 16u, 24u, 36u, 48u}};
 constexpr std::array<uint8_t, 8> MAGIC{{0x44, 0x43, 0x54, 0x42, 0x53, 0x32, 0x00, 0x00}};
 
 struct Preset {
-    const char *name;
-    uint32_t mode_code;
-    double nominal_bpp;
-    uint32_t bytes_per_mcu;
-    uint32_t y_bytes;
-    uint32_t cb_bytes;
-    uint32_t cr_bytes;
+    uint32_t mode_code = 0u;
+    double nominal_bpp = 0.0;
+    uint32_t bytes_per_mcu = 0u;
+    uint32_t y_bytes = 0u;
+    uint32_t cb_bytes = 0u;
+    uint32_t cr_bytes = 0u;
 };
-
-constexpr std::array<Preset, 4> PRESETS{{
-    {"2", 2000u, 2.0, 64u, 32u, 16u, 16u},
-    {"1.5", 1500u, 1.5, 48u, 24u, 12u, 12u},
-    {"1", 1000u, 1.0, 32u, 16u, 8u, 8u},
-    {"0.75", 750u, 0.75, 24u, 12u, 6u, 6u},
-}};
 
 constexpr std::array<int, 64> LUMA_QUANTIZATION{{
     16,11,10,16,24,40,51,61,
@@ -172,22 +165,51 @@ void write_u32(uint8_t *bytes, size_t offset, uint32_t value) {
     bytes[offset + 3u] = static_cast<uint8_t>(value >> 24u);
 }
 
-const Preset *find_preset_name(const std::string &name) {
-    for (const Preset &preset : PRESETS) {
-        if (name == preset.name) {
-            return &preset;
-        }
+bool make_balanced_preset(uint32_t units, Preset *preset) {
+    if (std::find(PRESET_UNITS.begin(), PRESET_UNITS.end(), units) == PRESET_UNITS.end()) {
+        return false;
     }
-    return nullptr;
+    preset->mode_code = units * 125u;
+    preset->nominal_bpp = static_cast<double>(units) / 8.0;
+    preset->bytes_per_mcu = units * 4u;
+    if (units >= 24u) {
+        // Preserve the reference converter's four-luma-to-two-chroma byte ratio
+        // while retaining DCTBS2's independently addressable 4:2:2 MCU layout.
+        const uint32_t source_block_bytes = units * 2u / 3u;
+        preset->y_bytes = source_block_bytes * 4u;
+        preset->cb_bytes = source_block_bytes;
+        preset->cr_bytes = source_block_bytes;
+    } else {
+        preset->y_bytes = units * 2u;
+        preset->cb_bytes = units;
+        preset->cr_bytes = units;
+    }
+    return true;
 }
 
-const Preset *find_preset_mode(uint32_t mode_code) {
-    for (const Preset &preset : PRESETS) {
-        if (mode_code == preset.mode_code) {
-            return &preset;
-        }
+bool parse_preset_name(const std::string &name, Preset *preset) {
+    size_t parsed = 0u;
+    double bpp = 0.0;
+    try {
+        bpp = std::stod(name, &parsed);
+    } catch (const std::exception &) {
+        return false;
     }
-    return nullptr;
+    if (parsed != name.size() || !std::isfinite(bpp)) {
+        return false;
+    }
+    const long long units = std::llround(bpp * 8.0);
+    if (units < 0 || std::abs(bpp - static_cast<double>(units) / 8.0) >= 1e-9) {
+        return false;
+    }
+    return make_balanced_preset(static_cast<uint32_t>(units), preset);
+}
+
+bool find_preset_mode(uint32_t mode_code, Preset *preset) {
+    if (mode_code % 125u != 0u) {
+        return false;
+    }
+    return make_balanced_preset(mode_code / 125u, preset);
 }
 
 double scan_score(int profile, int u, int v) {
@@ -752,12 +774,12 @@ DctInfo inspect_header(const uint8_t *bytes, uint64_t file_size) {
     if (read_u32(bytes, 8u) != DCT_VERSION) {
         throw std::runtime_error("Unsupported DCTBS2 version");
     }
-    const Preset *preset = find_preset_mode(read_u32(bytes, 12u));
-    if (preset == nullptr) {
+    Preset preset;
+    if (!find_preset_mode(read_u32(bytes, 12u), &preset)) {
         throw std::runtime_error("Unsupported DCTBS2 mode");
     }
     DctInfo info;
-    info.preset = *preset;
+    info.preset = preset;
     info.width = read_u32(bytes, 16u);
     info.height = read_u32(bytes, 20u);
     info.mcu_columns = read_u32(bytes, 24u);
@@ -771,14 +793,14 @@ DctInfo inspect_header(const uint8_t *bytes, uint64_t file_size) {
     if (info.width == 0u || info.height == 0u || info.quality < 1u || info.quality > 100u ||
         (flags & ~1u) != 0u || info.mcu_columns != (info.width + 15u) / 16u ||
         info.mcu_rows != (info.height + 15u) / 16u ||
-        read_u32(bytes, 32u) != preset->bytes_per_mcu ||
-        read_u32(bytes, 36u) != preset->y_bytes ||
-        read_u32(bytes, 40u) != preset->cb_bytes ||
-        read_u32(bytes, 44u) != preset->cr_bytes) {
+        read_u32(bytes, 32u) != preset.bytes_per_mcu ||
+        read_u32(bytes, 36u) != preset.y_bytes ||
+        read_u32(bytes, 40u) != preset.cb_bytes ||
+        read_u32(bytes, 44u) != preset.cr_bytes) {
         throw std::runtime_error("Invalid DCTBS2 layout");
     }
     const uint64_t count = static_cast<uint64_t>(info.mcu_columns) * info.mcu_rows;
-    const uint64_t expected_payload = count * preset->bytes_per_mcu;
+    const uint64_t expected_payload = count * preset.bytes_per_mcu;
     if (count > UINT32_MAX || expected_payload != payload ||
         file_size != HEADER_BYTES + expected_payload) {
         throw std::runtime_error("Invalid DCTBS2 payload length");
@@ -1041,17 +1063,33 @@ void print_usage(const char *program) {
         "  %s decode INPUT.dctbs2 OUTPUT.ppm [--device N]\n"
         "  %s pixel INPUT.dctbs2 X Y [--device N]\n"
         "  %s info INPUT.dctbs2\n"
+        "  %s presets\n"
         "  %s --version\n\n"
         "Encode options:\n"
-        "  --preset BPP       2, 1.5, 1, or 0.75 (default 1.5)\n"
+        "  --preset BPP       0.75, 1, 1.5, 2, 3, 4.5, or 6 (default 1.5)\n"
         "  --quality N        Quantization quality 1..100 (default 72)\n"
         "  --find-quality     Search CUDA candidates and maximize RGB PSNR\n"
         "  --find-settings    Alias for --find-quality\n"
         "  --device N         CUDA device ordinal (default 0)\n\n"
         "Images: JPEG, PNG, TGA, BMP, PSD, GIF, HDR, PIC, and binary PNM.\n"
         "Decode output is binary PPM P6. The pixel command uploads only one MCU record.\n",
-        program, program, program, program, program
+        program, program, program, program, program, program
     );
+}
+
+int command_presets(int argc) {
+    if (argc != 2) {
+        throw std::runtime_error("The presets command does not accept arguments");
+    }
+    std::cout << "bpp\tbytes/MCU\tY\tCb\tCr\n";
+    for (uint32_t units : PRESET_UNITS) {
+        Preset preset;
+        make_balanced_preset(units, &preset);
+        std::cout << preset.nominal_bpp << '\t' << preset.bytes_per_mcu << '\t'
+                  << preset.y_bytes << '\t' << preset.cb_bytes << '\t'
+                  << preset.cr_bytes << '\n';
+    }
+    return 0;
 }
 
 int print_version() {
@@ -1077,16 +1115,16 @@ int command_encode(int argc, char **argv) {
         print_usage(argv[0]);
         return 2;
     }
-    const Preset *preset = find_preset_name("1.5");
+    Preset preset;
+    make_balanced_preset(12u, &preset);
     uint32_t quality = 72u;
     bool find_quality = false;
     int device = 0;
     for (int index = 4; index < argc; ++index) {
         const std::string option = argv[index];
         if (option == "--preset" && index + 1 < argc) {
-            preset = find_preset_name(argv[++index]);
-            if (preset == nullptr) {
-                throw std::runtime_error("Preset must be 2, 1.5, 1, or 0.75");
+            if (!parse_preset_name(argv[++index], &preset)) {
+                throw std::runtime_error("Preset must be 0.75, 1, 1.5, 2, 3, 4.5, or 6");
             }
         } else if (option == "--quality" && index + 1 < argc) {
             quality = parse_u32(argv[++index], "quality");
@@ -1117,7 +1155,7 @@ int command_encode(int argc, char **argv) {
         uint32_t coarse_best = quality;
         uint64_t coarse_error = UINT64_MAX;
         for (uint32_t candidate = 20u; candidate <= 95u; candidate += 5u) {
-            GpuResult encoded = encode_gpu(rgb, width, height, *preset, candidate, true, 0u);
+            GpuResult encoded = encode_gpu(rgb, width, height, preset, candidate, true, 0u);
             const DctInfo info = inspect_file(encoded.bytes);
             GpuResult decoded = decode_gpu(encoded.bytes, info);
             const uint64_t error = squared_error(rgb, decoded.bytes);
@@ -1140,7 +1178,7 @@ int command_encode(int argc, char **argv) {
             if (std::find(tested.begin(), tested.end(), candidate) != tested.end()) {
                 continue;
             }
-            GpuResult encoded = encode_gpu(rgb, width, height, *preset, candidate, true, 0u);
+            GpuResult encoded = encode_gpu(rgb, width, height, preset, candidate, true, 0u);
             const DctInfo info = inspect_file(encoded.bytes);
             GpuResult decoded = decode_gpu(encoded.bytes, info);
             const uint64_t error = squared_error(rgb, decoded.bytes);
@@ -1154,12 +1192,12 @@ int command_encode(int argc, char **argv) {
             }
         }
         candidate_count = static_cast<uint32_t>(tested.size());
-        selected = encode_gpu(rgb, width, height, *preset, quality, true, candidate_count);
+        selected = encode_gpu(rgb, width, height, preset, quality, true, candidate_count);
         const DctInfo info = inspect_file(selected.bytes);
         selected_decoded = decode_gpu(selected.bytes, info);
         selected_error = squared_error(rgb, selected_decoded.bytes);
     } else {
-        selected = encode_gpu(rgb, width, height, *preset, quality, false, 0u);
+        selected = encode_gpu(rgb, width, height, preset, quality, false, 0u);
         const DctInfo info = inspect_file(selected.bytes);
         selected_decoded = decode_gpu(selected.bytes, info);
         selected_error = squared_error(rgb, selected_decoded.bytes);
@@ -1173,7 +1211,7 @@ int command_encode(int argc, char **argv) {
         static_cast<double>(static_cast<uint64_t>(width) * height);
     const double psnr = psnr_from_error(selected_error, static_cast<uint64_t>(width) * height * 3u);
     std::cout << "Encoded DCTBS2 " << width << 'x' << height
-              << ": preset " << preset->name << " bpp, quality " << quality;
+              << ": preset " << preset.nominal_bpp << " bpp, quality " << quality;
     if (find_quality) {
         std::cout << " (auto, " << candidate_count << " candidates)";
     }
@@ -1206,7 +1244,7 @@ int command_decode(int argc, char **argv) {
     const GpuResult decoded = decode_gpu(file, info);
     write_ppm(argv[3], decoded.bytes, info.width, info.height);
     std::cout << "Decoded DCTBS2 " << info.width << 'x' << info.height
-              << ": preset " << info.preset.name << " bpp, quality " << info.quality
+              << ": preset " << info.preset.nominal_bpp << " bpp, quality " << info.quality
               << ", CUDA kernel " << std::fixed << std::setprecision(3)
               << decoded.kernel_ms << " ms, device " << properties.name << '\n';
     return 0;
@@ -1275,7 +1313,7 @@ int command_info(int argc, char **argv) {
     const double actual_bpp = static_cast<double>(file.size() * 8u) /
         static_cast<double>(static_cast<uint64_t>(info.width) * info.height);
     std::cout << "DCTBS2 v" << DCT_VERSION << ' ' << info.width << 'x' << info.height
-              << ", preset " << info.preset.name << " bpp, quality " << info.quality
+              << ", preset " << info.preset.nominal_bpp << " bpp, quality " << info.quality
               << ", " << info.mcu_columns << 'x' << info.mcu_rows << " MCUs, "
               << info.preset.bytes_per_mcu << " bytes/MCU, " << file.size()
               << " bytes, " << std::fixed << std::setprecision(3) << actual_bpp
@@ -1310,6 +1348,9 @@ int main(int argc, char **argv) {
         }
         if (command == "info") {
             return command_info(argc, argv);
+        }
+        if (command == "presets") {
+            return command_presets(argc);
         }
         print_usage(argv[0]);
         return 2;

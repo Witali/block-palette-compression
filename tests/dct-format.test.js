@@ -28,6 +28,31 @@ test("stores every DCT preset as fixed independently addressed MCU records", () 
   }
 });
 
+test("covers every rate from the preserved reference converter", () => {
+  assert.equal(Object.keys(PRESETS).length, 7);
+
+  for (const preset of ["0.75", "1", "1.5", "2", "3", "4.5", "6"]) {
+    assert.ok(PRESETS[preset], `missing ${preset} bpp`);
+  }
+
+  assert.deepEqual(PRESETS["3"], {
+    modeCode: 3000,
+    bpp: 3,
+    bytesPerMcu: 96,
+    yBytes: 64,
+    cbBytes: 16,
+    crBytes: 16,
+  });
+  assert.deepEqual(PRESETS["6"], {
+    modeCode: 6000,
+    bpp: 6,
+    bytesPerMcu: 192,
+    yBytes: 128,
+    cbBytes: 32,
+    crBytes: 32,
+  });
+});
+
 test("samples every reconstructed pixel without decoding the complete image", () => {
   const width = 21;
   const height = 18;
@@ -91,7 +116,7 @@ test("rejects truncated files, invalid modes, and invalid coordinates", () => {
   assert.throws(() => inspectDctFile(encoded.slice(0, -1)), /Invalid DCTBS2 layout/);
   assert.throws(() => inspectDctFile(invalidMode), /Unsupported DCTBS2/);
   assert.throws(() => sampleDctFilePixel(encoded, 16, 0), /coordinate is out of range/);
-  assert.throws(() => encodeDctFile(source, 16, 16, { preset: "3" }), /Unsupported DCT preset/);
+  assert.throws(() => encodeDctFile(source, 16, 16, { preset: "4" }), /Unsupported DCT preset/);
 });
 
 function makePixels(width, height) {

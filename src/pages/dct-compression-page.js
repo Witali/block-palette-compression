@@ -67,6 +67,8 @@ const MIN_ZOOM = 0.03;
 const MAX_ZOOM = 32;
 const VIEWPORT_PADDING = 28;
 
+populatePresetOptions();
+
 controls.addEventListener("submit", (event) => {
   event.preventDefault();
   processImage();
@@ -133,6 +135,23 @@ window.addEventListener("beforeunload", () => {
 updateQualityLabel();
 loadImage(imageSelect.value, optionLabel(imageSelect.selectedOptions[0])).catch(showError);
 
+function populatePresetOptions() {
+  const selected = presetSelect.value || "1.5";
+  const options = Object.entries(codec.PRESETS)
+    .sort((left, right) => right[1].bpp - left[1].bpp)
+    .map(([key, preset]) => new Option(
+      `${key} bpp · ${preset.bytesPerMcu} B/MCU`,
+      key,
+      false,
+      key === selected
+    ));
+
+  presetSelect.replaceChildren(...options);
+  if (!codec.PRESETS[selected]) {
+    presetSelect.value = "1.5";
+  }
+}
+
 async function loadImage(url, name) {
   stopWorker();
   setBusy(true);
@@ -193,7 +212,7 @@ function processImage() {
   const requestId = ++state.requestId;
   const source = state.sourceImageData;
   const autoQuality = autoQualityInput.checked;
-  const worker = new Worker("./src/dct/dct-worker.js?v=dct-page-1");
+  const worker = new Worker("./src/dct/dct-worker.js?v=dct-page-2");
   const pixels = source.data.slice();
 
   state.worker = worker;

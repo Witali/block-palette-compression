@@ -41,8 +41,14 @@ Encode an image at a fixed record size and quality:
   --preset 1 --quality 72
 ```
 
-Supported presets are `2`, `1.5`, `1`, and `0.75` nominal bpp. Edge padding
-can make actual bpp higher for dimensions that are not multiples of 16.
+Supported presets are `0.75`, `1`, `1.5`, `2`, `3`, `4.5`, and `6` nominal
+bpp. This includes all higher-rate 16/24/32-byte modes from the preserved
+reference converter. Edge padding can make actual bpp higher for dimensions
+that are not multiples of 16. List all layouts with:
+
+```powershell
+.\.tmp\dctcuda-build\dctcuda.exe presets
+```
 
 Search all CUDA quality candidates and keep the one with the best full-image
 RGB PSNR:
@@ -72,6 +78,7 @@ node native\dct_cuda\tests\verify-js-compat.js `
   .\.tmp\dctcuda-build\dctcuda.exe
 ```
 
-The test covers every preset. It encodes on CUDA and decodes in JavaScript,
-encodes in JavaScript and decodes on CUDA, and compares CUDA single-pixel
-results with `sampleDctFilePixel`.
+The test compares the complete seven-layout list and exercises every preset
+in both directions. It encodes on CUDA and decodes in JavaScript, encodes in
+JavaScript and decodes on CUDA, and compares CUDA single-pixel results with
+`sampleDctFilePixel`.

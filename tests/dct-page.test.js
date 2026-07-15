@@ -10,17 +10,22 @@ const home = read("index.html");
 const pageScript = read("src/pages/dct-compression-page.js");
 const worker = read("src/dct/dct-worker.js");
 const serviceWorker = read("service-worker.js");
+const { PRESETS } = require("../src/dct/dct-format.js");
 
 test("links the DCT compressor from the project home page", () => {
   assert.match(home, /href="\.\/dct-compression\.html"/);
   assert.match(home, /data-i18n="home\.dct\.title"/);
 });
 
-test("offers the fixed MCU rates from the attached DCT converter", () => {
-  for (const preset of ["2", "1.5", "1", "0.75"]) {
+test("offers every fixed MCU rate from the preserved converter", () => {
+  for (const preset of ["6", "4.5", "3", "2", "1.5", "1", "0.75"]) {
     assert.match(page, new RegExp(`<option value="${preset.replace(".", "\\.")}"`));
   }
 
+  assert.equal(Object.keys(PRESETS).length, 7);
+  assert.equal(PRESETS["6"].bytesPerMcu, 192);
+  assert.match(pageScript, /Object\.entries\(codec\.PRESETS\)/);
+  assert.match(pageScript, /presetSelect\.replaceChildren/);
   assert.match(page, /2 bpp · 64 B\/MCU/);
   assert.match(page, /0\.75 bpp · 24 B\/MCU/);
   assert.match(page, /dctbs_converter_with_edge_dictionary\.html/);

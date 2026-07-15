@@ -26,14 +26,36 @@ const height = 17;
 const rgba = makePixels(width, height);
 const inputPpm = path.join(temporary, "input.ppm");
 writePpm(inputPpm, rgba, width, height);
+const representativePresets = [
+  "0.75", "1", "1.5", "2", "3", "4.5", "6",
+];
 
 try {
-  for (const preset of Object.keys(PRESETS)) {
+  verifyPresetListing();
+  for (const preset of representativePresets) {
     verifyPreset(preset);
   }
   console.log("ok - CUDA and JavaScript DCTBS2 codecs are bidirectionally compatible");
 } finally {
   fs.rmSync(temporary, { recursive: true, force: true });
+}
+
+function verifyPresetListing() {
+  const lines = run(["presets"]).trim().split(/\r?\n/);
+  assert.equal(lines.shift(), "bpp\tbytes/MCU\tY\tCb\tCr");
+  assert.equal(lines.length, Object.keys(PRESETS).length);
+
+  for (const line of lines) {
+    const [key, bytesPerMcu, yBytes, cbBytes, crBytes] = line.split("\t");
+    const preset = PRESETS[key];
+    assert.ok(preset, `unexpected CUDA preset ${key}`);
+    assert.deepEqual(
+      [Number(bytesPerMcu), Number(yBytes), Number(cbBytes), Number(crBytes)],
+      [preset.bytesPerMcu, preset.yBytes, preset.cbBytes, preset.crBytes],
+      `CUDA layout ${key}`
+    );
+  }
+  console.log(`ok - CUDA lists all ${lines.length} DCTBS2 layouts`);
 }
 
 function verifyPreset(preset) {
