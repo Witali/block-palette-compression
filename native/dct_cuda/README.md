@@ -12,6 +12,13 @@ The decoder also accepts the optional clustered DCT prototype library written
 by the JavaScript encoder. A component adds one directly indexed prototype to
 its local residual before IDCT. The CUDA kernels read the fixed MCU plus at
 most one Y, Cb, and Cr prototype; they never follow a reference to another MCU.
+The original header-indexed layout supports three prototypes. New sidecar
+layouts support 16 or 32 prototypes by storing a fixed-width, LSB-first index
+stream separately from the MCU payload. The index position is calculated from
+the MCU and component ordinal, so both full-image and single-pixel kernels keep
+constant-time random access. Spectral sidecar layouts can put more low-ranked
+coefficients in the prototype and use part of the local AC budget for later
+positions in the codec's profile-specific significance scan.
 
 New files use grouped binary exponents for the selected AC coefficients. Each
 group stores one three-bit exponent and five-bit signed mantissas; the DC term
@@ -100,4 +107,5 @@ in both directions. It encodes on CUDA and decodes in JavaScript, encodes in
 JavaScript and decodes on CUDA, and compares CUDA single-pixel results with
 `sampleDctFilePixel`. It also imports a real JPEG into a high-rate split-luma
 file and verifies backward-compatible decoding of a legacy high-rate 16x16 Y
-file. CUDA full-image and single-pixel results must match JavaScript.
+file. It also checks regular 16-entry and spectral 32-entry sidecar libraries.
+CUDA full-image and single-pixel results must match JavaScript.

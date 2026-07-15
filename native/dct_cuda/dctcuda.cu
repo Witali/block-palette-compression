@@ -45,6 +45,13 @@ constexpr size_t HEADER_BYTES = 64u;
 constexpr size_t LIBRARY_HEADER_BYTES = 32u;
 constexpr uint32_t LIBRARY_VERSION_TAIL_REFERENCE = 1u;
 constexpr uint32_t LIBRARY_VERSION_HEADER_REFERENCE = 2u;
+constexpr uint32_t LIBRARY_VERSION_SPECTRAL_QUARTER = 3u;
+constexpr uint32_t LIBRARY_VERSION_SPECTRAL_HALF = 4u;
+constexpr uint32_t LIBRARY_VERSION_SPECTRAL_FULL = 5u;
+constexpr uint32_t LIBRARY_VERSION_SIDECAR_REFERENCE = 6u;
+constexpr uint32_t LIBRARY_VERSION_SIDECAR_SPECTRAL_QUARTER = 7u;
+constexpr uint32_t LIBRARY_VERSION_SIDECAR_SPECTRAL_HALF = 8u;
+constexpr uint32_t LIBRARY_VERSION_SIDECAR_SPECTRAL_FULL = 9u;
 constexpr int MCU_WIDTH = 16;
 constexpr int MCU_HEIGHT = 16;
 constexpr int CUDA_THREADS = 256;
@@ -114,6 +121,12 @@ struct DctInfo {
     uint32_t cb_library_offset = 0;
     uint32_t cr_library_offset = 0;
     uint32_t y_library_record_bytes = 0;
+    uint32_t y_reference_offset = 0;
+    uint32_t cb_reference_offset = 0;
+    uint32_t cr_reference_offset = 0;
+    uint32_t y_reference_bits = 0;
+    uint32_t cb_reference_bits = 0;
+    uint32_t cr_reference_bits = 0;
 };
 
 struct DctLibraryLayout {
@@ -125,6 +138,12 @@ struct DctLibraryLayout {
     uint32_t cb_offset = 0;
     uint32_t cr_offset = 0;
     uint32_t y_record_bytes = 0;
+    uint32_t y_reference_offset = 0;
+    uint32_t cb_reference_offset = 0;
+    uint32_t cr_reference_offset = 0;
+    uint32_t y_reference_bits = 0;
+    uint32_t cb_reference_bits = 0;
+    uint32_t cr_reference_bits = 0;
 };
 
 struct GpuResult {
@@ -757,12 +776,82 @@ __global__ void encode_component_kernel(
     }
 }
 
+__host__ __device__ bool is_header_library_version(int version) {
+    return version >= static_cast<int>(LIBRARY_VERSION_HEADER_REFERENCE) &&
+        version <= static_cast<int>(LIBRARY_VERSION_SPECTRAL_FULL);
+}
+
+__host__ __device__ bool is_sidecar_library_version(int version) {
+    return version >= static_cast<int>(LIBRARY_VERSION_SIDECAR_REFERENCE) &&
+        version <= static_cast<int>(LIBRARY_VERSION_SIDECAR_SPECTRAL_FULL);
+}
+
+__host__ __device__ int library_frequency_quarters(int version) {
+    if (version == static_cast<int>(LIBRARY_VERSION_SPECTRAL_QUARTER) ||
+        version == static_cast<int>(LIBRARY_VERSION_SIDECAR_SPECTRAL_QUARTER)) {
+        return 1;
+    }
+    if (version == static_cast<int>(LIBRARY_VERSION_SPECTRAL_HALF) ||
+        version == static_cast<int>(LIBRARY_VERSION_SIDECAR_SPECTRAL_HALF)) {
+        return 2;
+    }
+    if (version == static_cast<int>(LIBRARY_VERSION_SPECTRAL_FULL) ||
+        version == static_cast<int>(LIBRARY_VERSION_SIDECAR_SPECTRAL_FULL)) {
+        return 4;
+    }
+    return 0;
+}
+
+__host__ __device__ uint32_t sidecar_reference_bits(uint32_t entry_count) {
+    if (entry_count == 0u) {
+        return 0u;
+    }
+    uint32_t bits = 0u;
+    uint32_t maximum_value = entry_count;
+    while (maximum_value != 0u) {
+        ++bits;
+        maximum_value >>= 1u;
+    }
+    return bits;
+}
+
+__device__ int spectral_scan_index(int index, int ac_count, int scan_length, int library_version) {
+    const int quarters = library_frequency_quarters(library_version);
+    if (quarters == 0) {
+        return index;
+    }
+    const int requested_high = (ac_count * quarters + 2) / 4;
+    const int high_count = min(scan_length - ac_count, requested_high);
+    const int low_count = ac_count - high_count;
+    return index < low_count ? index : ac_count + index - low_count;
+}
+
+__device__ int read_sidecar_reference(
+    const uint8_t *library,
+    uint32_t byte_offset,
+    uint32_t bit_count,
+    uint32_t reference_index
+) {
+    if (library == nullptr || bit_count == 0u) {
+        return 0;
+    }
+    const uint64_t bit_offset = static_cast<uint64_t>(byte_offset) * 8u +
+        static_cast<uint64_t>(reference_index) * bit_count;
+    int value = 0;
+    for (uint32_t bit = 0; bit < bit_count; ++bit) {
+        const uint64_t position = bit_offset + bit;
+        value |= static_cast<int>((library[position >> 3u] >> (position & 7u)) & 1u) << bit;
+    }
+    return value;
+}
+
 template <int WIDTH, int HEIGHT, bool CHROMA>
 __device__ bool decode_legacy_component_record(
     const uint8_t *record,
     int byte_count,
     int quality,
     int library_version,
+    int external_library_index,
     double *coefficients,
     int *library_index,
     bool add_coefficients
@@ -775,7 +864,8 @@ __device__ bool decode_legacy_component_record(
     int bit_offset = 0;
     const uint32_t header = read_bits(record, &bit_offset, 8);
     const int packed_profile = static_cast<int>(header >> 4u);
-    const int profile = library_version == static_cast<int>(LIBRARY_VERSION_HEADER_REFERENCE)
+    const bool header_reference = is_header_library_version(library_version);
+    const int profile = header_reference
         ? packed_profile & 3 : packed_profile;
     const int scale_index = static_cast<int>(header & 15u);
     if (profile >= 4 || scale_index >= 8) {
@@ -788,8 +878,12 @@ __device__ bool decode_legacy_component_record(
     coefficients[0] = add_coefficients ? coefficients[0] + restored_dc : restored_dc;
     const bool tail_reference = library_version == static_cast<int>(LIBRARY_VERSION_TAIL_REFERENCE);
     const int ac_count = (byte_count * 8 - 18) / 6 - (tail_reference ? 1 : 0);
+    int resolved_library_index = header_reference ? packed_profile >> 2 :
+        is_sidecar_library_version(library_version) ? external_library_index : 0;
     for (int index = 0; index < ac_count; ++index) {
-        const int position = scan_position(WIDTH, HEIGHT, profile, index);
+        const int scan_index = resolved_library_index > 0
+            ? spectral_scan_index(index, ac_count, WIDTH * HEIGHT - 1, library_version) : index;
+        const int position = scan_position(WIDTH, HEIGHT, profile, scan_index);
         const int u = position % WIDTH;
         const int v = position / WIDTH;
         const int stored = read_signed_bits(record, &bit_offset, 6);
@@ -797,9 +891,10 @@ __device__ bool decode_legacy_component_record(
             quantization_step(u, v, WIDTH, HEIGHT, quality, CHROMA) * scale;
         coefficients[position] = add_coefficients ? coefficients[position] + restored : restored;
     }
-    *library_index = library_version == static_cast<int>(LIBRARY_VERSION_HEADER_REFERENCE)
-        ? packed_profile >> 2
-        : tail_reference ? static_cast<int>(read_bits(record, &bit_offset, 6)) : 0;
+    if (tail_reference) {
+        resolved_library_index = static_cast<int>(read_bits(record, &bit_offset, 6));
+    }
+    *library_index = resolved_library_index;
     return true;
 }
 
@@ -810,6 +905,7 @@ __device__ bool decode_grouped_component_record(
     int quality,
     int coefficient_coding,
     int library_version,
+    int external_library_index,
     double *coefficients,
     int *library_index,
     bool add_coefficients
@@ -822,7 +918,8 @@ __device__ bool decode_grouped_component_record(
     int bit_offset = 0;
     const uint32_t header = read_bits(record, &bit_offset, 8);
     const int packed_profile = static_cast<int>(header >> 4u);
-    const int profile = library_version == static_cast<int>(LIBRARY_VERSION_HEADER_REFERENCE)
+    const bool header_reference = is_header_library_version(library_version);
+    const int profile = header_reference
         ? packed_profile & 3 : packed_profile;
     const int dc_scale_index = static_cast<int>(header & 15u);
     if (profile >= 4 || dc_scale_index >= 8) {
@@ -838,6 +935,8 @@ __device__ bool decode_grouped_component_record(
     const bool tail_reference = library_version == static_cast<int>(LIBRARY_VERSION_TAIL_REFERENCE);
     const int ac_count = (byte_count * 8 - 18 - group_count * 3) / 5 -
         (tail_reference ? 1 : 0);
+    int resolved_library_index = header_reference ? packed_profile >> 2 :
+        is_sidecar_library_version(library_version) ? external_library_index : 0;
     int group_scales[3] = {0, 0, 0};
     for (int group = 0; group < group_count; ++group) {
         group_scales[group] = static_cast<int>(read_bits(record, &bit_offset, 3));
@@ -848,7 +947,9 @@ __device__ bool decode_grouped_component_record(
         const int group_finish = grouped_end(coefficient_coding, group, ac_count);
         const int scale = 1 << group_scales[group];
         for (int index = group_start; index < group_finish; ++index) {
-            const int position = scan_position(WIDTH, HEIGHT, profile, index);
+            const int scan_index = resolved_library_index > 0
+                ? spectral_scan_index(index, ac_count, WIDTH * HEIGHT - 1, library_version) : index;
+            const int position = scan_position(WIDTH, HEIGHT, profile, scan_index);
             const int u = position % WIDTH;
             const int v = position / WIDTH;
             const int stored = read_signed_bits(record, &bit_offset, 5);
@@ -858,9 +959,10 @@ __device__ bool decode_grouped_component_record(
         }
         group_start = group_finish;
     }
-    *library_index = library_version == static_cast<int>(LIBRARY_VERSION_HEADER_REFERENCE)
-        ? packed_profile >> 2
-        : tail_reference ? static_cast<int>(read_bits(record, &bit_offset, 5)) : 0;
+    if (tail_reference) {
+        resolved_library_index = static_cast<int>(read_bits(record, &bit_offset, 5));
+    }
+    *library_index = resolved_library_index;
     return true;
 }
 
@@ -872,6 +974,7 @@ __device__ bool decode_component_record(
     int coefficient_coding,
     const uint8_t *library,
     int library_version,
+    int external_library_index,
     uint32_t library_count,
     uint32_t library_offset,
     int library_record_bytes,
@@ -881,12 +984,13 @@ __device__ bool decode_component_record(
     bool valid;
     if (coefficient_coding == COEFFICIENT_CODING_LEGACY) {
         valid = decode_legacy_component_record<WIDTH, HEIGHT, CHROMA>(
-            record, byte_count, quality, library_version, coefficients, &library_index, false
+            record, byte_count, quality, library_version, external_library_index,
+            coefficients, &library_index, false
         );
     } else {
         valid = decode_grouped_component_record<WIDTH, HEIGHT, CHROMA>(
             record, byte_count, quality, coefficient_coding, library_version,
-            coefficients, &library_index, false
+            external_library_index, coefficients, &library_index, false
         );
     }
     if (!valid || library_index < 0 || static_cast<uint32_t>(library_index) > library_count) {
@@ -904,12 +1008,13 @@ __device__ bool decode_component_record(
         static_cast<size_t>(library_index - 1) * static_cast<size_t>(library_record_bytes);
     if (coefficient_coding == COEFFICIENT_CODING_LEGACY) {
         valid = decode_legacy_component_record<WIDTH, HEIGHT, CHROMA>(
-            prototype_record, library_record_bytes, quality, 0, coefficients, &ignored_index, true
+            prototype_record, library_record_bytes, quality, 0, 0,
+            coefficients, &ignored_index, true
         );
     } else {
         valid = decode_grouped_component_record<WIDTH, HEIGHT, CHROMA>(
             prototype_record, library_record_bytes, quality, coefficient_coding, 0,
-            coefficients, &ignored_index, true
+            0, coefficients, &ignored_index, true
         );
     }
     if (!valid) {
@@ -981,6 +1086,12 @@ __global__ void decode_image_kernel(
         if (split_luma_8x8) {
             const int block_bytes = static_cast<int>(preset.y_bytes / 4u);
             for (int block = 0; block < 4; ++block) {
+                const int library_index = read_sidecar_reference(
+                    library,
+                    library_layout.y_reference_offset,
+                    library_layout.y_reference_bits,
+                    mcu_index * 4u + static_cast<uint32_t>(block)
+                );
                 y_ok = decode_component_record<8, 8, false>(
                     record + block * block_bytes,
                     block_bytes,
@@ -988,6 +1099,7 @@ __global__ void decode_image_kernel(
                     coefficient_coding,
                     library,
                     static_cast<int>(library_layout.version),
+                    library_index,
                     library_layout.y_count,
                     library_layout.y_offset,
                     block_bytes,
@@ -995,6 +1107,12 @@ __global__ void decode_image_kernel(
                 ) && y_ok;
             }
         } else {
+            const int library_index = read_sidecar_reference(
+                library,
+                library_layout.y_reference_offset,
+                library_layout.y_reference_bits,
+                mcu_index
+            );
             y_ok = decode_component_record<16, 16, false>(
                 record,
                 static_cast<int>(preset.y_bytes),
@@ -1002,12 +1120,19 @@ __global__ void decode_image_kernel(
                 coefficient_coding,
                 library,
                 static_cast<int>(library_layout.version),
+                library_index,
                 library_layout.y_count,
                 library_layout.y_offset,
                 static_cast<int>(preset.y_bytes),
                 y_coefficients
             );
         }
+        const int cb_library_index = read_sidecar_reference(
+            library,
+            library_layout.cb_reference_offset,
+            library_layout.cb_reference_bits,
+            mcu_index
+        );
         const bool cb_ok = decode_component_record<8, 16, true>(
             record + preset.y_bytes,
             static_cast<int>(preset.cb_bytes),
@@ -1015,10 +1140,17 @@ __global__ void decode_image_kernel(
             coefficient_coding,
             library,
             static_cast<int>(library_layout.version),
+            cb_library_index,
             library_layout.cb_count,
             library_layout.cb_offset,
             static_cast<int>(preset.cb_bytes),
             cb_coefficients
+        );
+        const int cr_library_index = read_sidecar_reference(
+            library,
+            library_layout.cr_reference_offset,
+            library_layout.cr_reference_bits,
+            mcu_index
         );
         const bool cr_ok = decode_component_record<8, 16, true>(
             record + preset.y_bytes + preset.cb_bytes,
@@ -1027,6 +1159,7 @@ __global__ void decode_image_kernel(
             coefficient_coding,
             library,
             static_cast<int>(library_layout.version),
+            cr_library_index,
             library_layout.cr_count,
             library_layout.cr_offset,
             static_cast<int>(preset.cr_bytes),
@@ -1081,6 +1214,7 @@ __global__ void sample_pixel_kernel(
     int quality,
     bool split_luma_8x8,
     int coefficient_coding,
+    uint32_t mcu_index,
     int local_x,
     int local_y,
     uint8_t *rgba,
@@ -1094,6 +1228,12 @@ __global__ void sample_pixel_kernel(
         if (split_luma_8x8) {
             const int block_bytes = static_cast<int>(preset.y_bytes / 4u);
             const int luma_block = (local_y / 8) * 2 + local_x / 8;
+            const int library_index = read_sidecar_reference(
+                library,
+                library_layout.y_reference_offset,
+                library_layout.y_reference_bits,
+                mcu_index * 4u + static_cast<uint32_t>(luma_block)
+            );
             y_ok = decode_component_record<8, 8, false>(
                 record + luma_block * block_bytes,
                 block_bytes,
@@ -1101,12 +1241,19 @@ __global__ void sample_pixel_kernel(
                 coefficient_coding,
                 library,
                 static_cast<int>(library_layout.version),
+                library_index,
                 library_layout.y_count,
                 library_layout.y_offset,
                 block_bytes,
                 y_coefficients
             );
         } else {
+            const int library_index = read_sidecar_reference(
+                library,
+                library_layout.y_reference_offset,
+                library_layout.y_reference_bits,
+                mcu_index
+            );
             y_ok = decode_component_record<16, 16, false>(
                 record,
                 static_cast<int>(preset.y_bytes),
@@ -1114,12 +1261,19 @@ __global__ void sample_pixel_kernel(
                 coefficient_coding,
                 library,
                 static_cast<int>(library_layout.version),
+                library_index,
                 library_layout.y_count,
                 library_layout.y_offset,
                 static_cast<int>(preset.y_bytes),
                 y_coefficients
             );
         }
+        const int cb_library_index = read_sidecar_reference(
+            library,
+            library_layout.cb_reference_offset,
+            library_layout.cb_reference_bits,
+            mcu_index
+        );
         const bool cb_ok = decode_component_record<8, 16, true>(
             record + preset.y_bytes,
             static_cast<int>(preset.cb_bytes),
@@ -1127,10 +1281,17 @@ __global__ void sample_pixel_kernel(
             coefficient_coding,
             library,
             static_cast<int>(library_layout.version),
+            cb_library_index,
             library_layout.cb_count,
             library_layout.cb_offset,
             static_cast<int>(preset.cb_bytes),
             cb_coefficients
+        );
+        const int cr_library_index = read_sidecar_reference(
+            library,
+            library_layout.cr_reference_offset,
+            library_layout.cr_reference_bits,
+            mcu_index
         );
         const bool cr_ok = decode_component_record<8, 16, true>(
             record + preset.y_bytes + preset.cb_bytes,
@@ -1139,6 +1300,7 @@ __global__ void sample_pixel_kernel(
             coefficient_coding,
             library,
             static_cast<int>(library_layout.version),
+            cr_library_index,
             library_layout.cr_count,
             library_layout.cr_offset,
             static_cast<int>(preset.cr_bytes),
@@ -1278,17 +1440,35 @@ DctInfo inspect_file(const std::vector<uint8_t> &bytes) {
     info.cb_library_count = read_u32(library, 16u);
     info.cr_library_count = read_u32(library, 20u);
     info.y_library_record_bytes = read_u32(library, 24u);
-    const uint32_t maximum_entries = info.library_version == LIBRARY_VERSION_HEADER_REFERENCE
-        ? 3u : info.coefficient_coding == COEFFICIENT_CODING_LEGACY ? 63u : 31u;
+    const bool header_reference = is_header_library_version(static_cast<int>(info.library_version));
+    const bool sidecar_reference = is_sidecar_library_version(static_cast<int>(info.library_version));
+    const bool tail_reference = info.library_version == LIBRARY_VERSION_TAIL_REFERENCE;
+    const uint32_t maximum_entries = header_reference ? 3u : sidecar_reference ? 63u :
+        info.coefficient_coding == COEFFICIENT_CODING_LEGACY ? 63u : 31u;
     const uint32_t expected_y_bytes = info.split_luma_8x8
         ? info.preset.y_bytes / 4u : info.preset.y_bytes;
-    const uint64_t expected_library_bytes = LIBRARY_HEADER_BYTES +
+    info.y_reference_bits = sidecar_reference
+        ? sidecar_reference_bits(info.y_library_count) : 0u;
+    info.cb_reference_bits = sidecar_reference
+        ? sidecar_reference_bits(info.cb_library_count) : 0u;
+    info.cr_reference_bits = sidecar_reference
+        ? sidecar_reference_bits(info.cr_library_count) : 0u;
+    const uint64_t y_reference_count = static_cast<uint64_t>(info.mcu_count) *
+        (info.split_luma_8x8 ? 4u : 1u);
+    const uint64_t y_reference_bytes =
+        (y_reference_count * info.y_reference_bits + 7u) / 8u;
+    const uint64_t cb_reference_bytes =
+        (static_cast<uint64_t>(info.mcu_count) * info.cb_reference_bits + 7u) / 8u;
+    const uint64_t cr_reference_bytes =
+        (static_cast<uint64_t>(info.mcu_count) * info.cr_reference_bits + 7u) / 8u;
+    const uint64_t total_reference_bytes =
+        y_reference_bytes + cb_reference_bytes + cr_reference_bytes;
+    const uint64_t expected_library_bytes = LIBRARY_HEADER_BYTES + total_reference_bytes +
         static_cast<uint64_t>(info.y_library_count) * expected_y_bytes +
         static_cast<uint64_t>(info.cb_library_count) * info.preset.cb_bytes +
         static_cast<uint64_t>(info.cr_library_count) * info.preset.cr_bytes;
 
-    if ((info.library_version != LIBRARY_VERSION_HEADER_REFERENCE &&
-         info.library_version != LIBRARY_VERSION_TAIL_REFERENCE) ||
+    if ((!header_reference && !sidecar_reference && !tail_reference) ||
         info.y_library_count > maximum_entries || info.cb_library_count > maximum_entries ||
         info.cr_library_count > maximum_entries ||
         info.y_library_count + info.cb_library_count + info.cr_library_count == 0u ||
@@ -1298,7 +1478,12 @@ DctInfo inspect_file(const std::vector<uint8_t> &bytes) {
         throw std::runtime_error("Invalid DCT prototype library layout");
     }
 
-    info.y_library_offset = static_cast<uint32_t>(LIBRARY_HEADER_BYTES);
+    info.y_reference_offset = static_cast<uint32_t>(LIBRARY_HEADER_BYTES);
+    info.cb_reference_offset = static_cast<uint32_t>(LIBRARY_HEADER_BYTES + y_reference_bytes);
+    info.cr_reference_offset = static_cast<uint32_t>(
+        LIBRARY_HEADER_BYTES + y_reference_bytes + cb_reference_bytes
+    );
+    info.y_library_offset = static_cast<uint32_t>(LIBRARY_HEADER_BYTES + total_reference_bytes);
     info.cb_library_offset = info.y_library_offset + info.y_library_count * expected_y_bytes;
     info.cr_library_offset = info.cb_library_offset + info.cb_library_count * info.preset.cb_bytes;
     return info;
@@ -1317,6 +1502,12 @@ DctLibraryLayout make_library_layout(const DctInfo &info) {
     layout.cb_offset = info.cb_library_offset;
     layout.cr_offset = info.cr_library_offset;
     layout.y_record_bytes = info.y_library_record_bytes;
+    layout.y_reference_offset = info.y_reference_offset;
+    layout.cb_reference_offset = info.cb_reference_offset;
+    layout.cr_reference_offset = info.cr_reference_offset;
+    layout.y_reference_bits = info.y_reference_bits;
+    layout.cb_reference_bits = info.cb_reference_bits;
+    layout.cr_reference_bits = info.cr_reference_bits;
     return layout;
 }
 
@@ -1455,10 +1646,12 @@ std::array<uint8_t, 4> sample_pixel_gpu(
         ), "Upload DCT prototype library");
     }
     cuda_check(cudaMemset(device_error.get(), 0, sizeof(int)), "Clear pixel decoder error flag");
+    const uint32_t mcu_index = (y / MCU_HEIGHT) * info.mcu_columns + (x / MCU_WIDTH);
     sample_pixel_kernel<<<1, 1>>>(
         device_record.get(), info.library_enabled ? device_library.get() : nullptr,
         make_library_layout(info), info.preset, static_cast<int>(info.quality),
         info.split_luma_8x8, info.coefficient_coding,
+        mcu_index,
         static_cast<int>(x % 16u), static_cast<int>(y % 16u),
         device_rgba.get(), device_error.get()
     );

@@ -40,6 +40,7 @@ try {
   verifyJpegDctImport();
   verifyLegacyHighRate();
   verifyPrototypeLibrary();
+  verifySidecarPrototypeLibraries();
   console.log("ok - CUDA and JavaScript DCTBS2 codecs are bidirectionally compatible");
 } finally {
   fs.rmSync(temporary, { recursive: true, force: true });
@@ -131,6 +132,52 @@ function verifyPrototypeLibrary() {
   }
 
   console.log("ok - clustered DCT prototype library decodes identically in CUDA and JavaScript");
+}
+
+function verifySidecarPrototypeLibraries() {
+  const sidecarWidth = 65;
+  const sidecarHeight = 49;
+  const sidecarPixels = makePixels(sidecarWidth, sidecarHeight);
+  const variants = [
+    { size: 16, frequencySplit: 0, label: "sidecar-16" },
+    { size: 32, frequencySplit: 0.25, label: "sidecar-32-spectral" },
+  ];
+
+  for (const variant of variants) {
+    const encoded = encodeDctFile(sidecarPixels, sidecarWidth, sidecarHeight, {
+      preset: "3",
+      quality: 92,
+      dctLibrary: true,
+      librarySize: variant.size,
+      libraryReferenceCoding: "sidecar",
+      libraryFrequencySplit: variant.frequencySplit,
+      libraryCandidateCount: 4,
+    });
+    const dctFile = path.join(temporary, `${variant.label}.dctbs2`);
+    const decodedPpm = path.join(temporary, `${variant.label}.ppm`);
+    const info = inspectDctFile(encoded);
+
+    assert.equal(info.library.referenceCoding, "sidecar");
+    assert.equal(info.library.frequencySplit, variant.frequencySplit);
+    assert.equal(info.library.y.count, variant.size);
+    fs.writeFileSync(dctFile, encoded);
+    run(["decode", dctFile, decodedPpm]);
+    assertRgbMatchesRgba(
+      readPpm(decodedPpm, sidecarWidth, sidecarHeight),
+      decodeDctFile(encoded).pixels,
+      variant.label
+    );
+
+    for (const [x, y] of [[0, 0], [31, 24], [64, 48]]) {
+      const sampled = sampleDctFilePixel(encoded, x, y);
+      const output = run(["pixel", dctFile, String(x), String(y)]);
+      const match = /RGBA\(\d+,\d+\) = (\d+) (\d+) (\d+) (\d+)/.exec(output);
+      assert.ok(match, `${variant.label} pixel output: ${output}`);
+      assert.deepEqual(match.slice(1).map(Number), [sampled.r, sampled.g, sampled.b, sampled.a]);
+    }
+  }
+
+  console.log("ok - 16/32-entry sidecar and spectral libraries decode identically in CUDA and JavaScript");
 }
 
 function verifyPresetListing() {

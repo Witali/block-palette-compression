@@ -25,7 +25,11 @@ test("keeps random pixel access bounded to one fixed MCU record and its prototyp
   assert.match(source, /HEADER_BYTES \+ static_cast<size_t>\(mcu_index\) \* info\.preset\.bytes_per_mcu/);
   assert.match(source, /device_record\.get\(\), record\.data\(\), record\.size\(\), cudaMemcpyHostToDevice/);
   assert.match(source, /info\.library_enabled \? device_library\.get\(\) : nullptr/);
+  assert.match(source, /read_sidecar_reference/);
+  assert.match(source, /mcu_index \* 4u \+ static_cast<uint32_t>\(luma_block\)/);
   assert.match(readme, /does\s+not upload the other MCU records/);
+  assert.match(readme, /16 or 32 prototypes/);
+  assert.match(readme, /constant-time random access/);
   assert.match(readme, /sampleDctFilePixel/);
 });
 
