@@ -164,6 +164,37 @@ test("encodes DCT files deterministically and exposes bounded MCU metadata", () 
   assert.ok(mcu.components.y.scale >= 1 && mcu.components.y.scale <= 128);
 });
 
+test("uses grouped binary exponents by default while preserving legacy files", () => {
+  const source = makePixels(16, 16);
+  const expected = {
+    "0.75": "grouped-5-equal-2",
+    "1": "grouped-5-equal-2",
+    "1.5": "grouped-5-front",
+    "2": "grouped-5-equal-2",
+    "3": "grouped-5-front",
+    "4.5": "grouped-5-front",
+    "6": "grouped-5-front",
+  };
+
+  for (const [preset, coefficientCodingKey] of Object.entries(expected)) {
+    const encoded = encodeDctFile(source, 16, 16, { preset, quality: 92 });
+    const info = inspectDctFile(encoded);
+    const mcu = inspectDctMcu(encoded, 0);
+    const lumaRecords = mcu.components.y.blocks || [mcu.components.y];
+
+    assert.equal(info.coefficientCodingKey, coefficientCodingKey);
+    assert.ok(lumaRecords.every((record) => record.groupScaleIndices.length >= 2));
+  }
+
+  const legacy = encodeDctFile(source, 16, 16, {
+    preset: "1.5",
+    quality: 92,
+    coefficientCoding: "legacy",
+  });
+  assert.equal(inspectDctFile(legacy).coefficientCodingKey, "legacy");
+  assert.equal(inspectDctMcu(legacy, 0).components.y.groupScaleIndices.length, 1);
+});
+
 test("decodes the extended quantizer range", () => {
   const source = makePixels(16, 16);
   const encoded = encodeDctFile(source, 16, 16, { preset: "2", quality: 75 });
@@ -195,6 +226,7 @@ test("rejects truncated files, invalid modes, and invalid coordinates", () => {
   const encoded = encodeDctFile(source, 16, 16, { preset: "2", quality: 75 });
   const invalidMode = encoded.slice();
   const unsupportedFlags = encoded.slice();
+  const invalidCoefficientCoding = encoded.slice();
   const splitLowRate = encoded.slice();
 
   invalidMode[12] = 0;
@@ -202,11 +234,13 @@ test("rejects truncated files, invalid modes, and invalid coordinates", () => {
   invalidMode[14] = 0;
   invalidMode[15] = 0;
   unsupportedFlags[52] |= 4;
+  invalidCoefficientCoding[53] = 15;
   splitLowRate[52] |= 2;
 
   assert.throws(() => inspectDctFile(encoded.slice(0, -1)), /Invalid DCTBS2 layout/);
   assert.throws(() => inspectDctFile(invalidMode), /Unsupported DCTBS2/);
   assert.throws(() => inspectDctFile(unsupportedFlags), /Invalid DCTBS2 layout/);
+  assert.throws(() => inspectDctFile(invalidCoefficientCoding), /Invalid DCTBS2 layout/);
   assert.throws(() => inspectDctFile(splitLowRate), /Invalid DCTBS2 layout/);
   assert.throws(() => sampleDctFilePixel(encoded, 16, 0), /coordinate is out of range/);
   assert.throws(() => encodeDctFile(source, 16, 16, { preset: "4" }), /Unsupported DCT preset/);

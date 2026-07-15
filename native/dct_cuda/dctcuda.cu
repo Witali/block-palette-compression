@@ -33,7 +33,13 @@ namespace {
 constexpr uint32_t DCT_VERSION = 2u;
 constexpr uint32_t FLAG_AUTO_QUALITY = 1u;
 constexpr uint32_t FLAG_SPLIT_LUMA_8X8 = 2u;
-constexpr uint32_t SUPPORTED_FLAGS = FLAG_AUTO_QUALITY | FLAG_SPLIT_LUMA_8X8;
+constexpr uint32_t COEFFICIENT_CODING_SHIFT = 8u;
+constexpr uint32_t COEFFICIENT_CODING_MASK = 15u << COEFFICIENT_CODING_SHIFT;
+constexpr uint32_t SUPPORTED_FLAGS = FLAG_AUTO_QUALITY | FLAG_SPLIT_LUMA_8X8 |
+    COEFFICIENT_CODING_MASK;
+constexpr int COEFFICIENT_CODING_LEGACY = 0;
+constexpr int COEFFICIENT_CODING_GROUPED_EQUAL_2 = 1;
+constexpr int COEFFICIENT_CODING_GROUPED_FRONT = 2;
 constexpr size_t HEADER_BYTES = 64u;
 constexpr int MCU_WIDTH = 16;
 constexpr int MCU_HEIGHT = 16;
@@ -90,6 +96,7 @@ struct DctInfo {
     uint32_t quality = 0;
     bool auto_quality = false;
     bool split_luma_8x8 = false;
+    int coefficient_coding = COEFFICIENT_CODING_LEGACY;
     uint32_t search_candidate_count = 0;
 };
 
@@ -214,6 +221,12 @@ bool find_preset_mode(uint32_t mode_code, Preset *preset) {
         return false;
     }
     return make_balanced_preset(mode_code / 125u, preset);
+}
+
+int default_coefficient_coding(const Preset &preset) {
+    return preset.mode_code == 750u || preset.mode_code == 1000u || preset.mode_code == 2000u
+        ? COEFFICIENT_CODING_GROUPED_EQUAL_2
+        : COEFFICIENT_CODING_GROUPED_FRONT;
 }
 
 double scan_score(int profile, int u, int v) {
@@ -398,7 +411,7 @@ __device__ int read_signed_bits(const uint8_t *record, int *bit_offset, int bit_
 }
 
 template <int WIDTH, int HEIGHT, bool CHROMA>
-__device__ void encode_component_record(
+__device__ void encode_legacy_component_record(
     const double *coefficients,
     uint8_t *record,
     int byte_count,
@@ -462,6 +475,149 @@ __device__ void encode_component_record(
     }
 }
 
+__device__ int grouped_count(int coefficient_coding) {
+    return coefficient_coding == COEFFICIENT_CODING_GROUPED_EQUAL_2 ? 2 : 3;
+}
+
+__device__ int grouped_end(int coefficient_coding, int group, int ac_count) {
+    if (coefficient_coding == COEFFICIENT_CODING_GROUPED_EQUAL_2) {
+        return (group + 1) * ac_count / 2;
+    }
+    if (group == 0) {
+        return (ac_count + 5) / 6;
+    }
+    if (group == 1) {
+        return (ac_count + 1) / 2;
+    }
+    return ac_count;
+}
+
+template <int WIDTH, int HEIGHT, bool CHROMA>
+__device__ void encode_grouped_component_record(
+    const double *coefficients,
+    uint8_t *record,
+    int byte_count,
+    int quality,
+    int coefficient_coding
+) {
+    const int group_count = grouped_count(coefficient_coding);
+    const int ac_count = (byte_count * 8 - 18 - group_count * 3) / 5;
+    double base_error = 0.0;
+    for (int position = 0; position < WIDTH * HEIGHT; ++position) {
+        base_error = rn_add(base_error, rn_square(coefficients[position]));
+    }
+
+    int best_dc_scale = 0;
+    int best_dc = 0;
+    double best_dc_delta = DBL_MAX;
+    for (int scale_index = 0; scale_index < 8; ++scale_index) {
+        const int scale = 1 << scale_index;
+        const double step = quantization_step(0, 0, WIDTH, HEIGHT, quality, CHROMA) * scale;
+        const int stored = clamp_int(round_signed(coefficients[0] / step), -512, 511);
+        const double restored = static_cast<double>(stored) * step;
+        const double delta = rn_add(
+            rn_square(coefficients[0] - restored),
+            -rn_square(coefficients[0])
+        );
+        if (delta < best_dc_delta || (delta == best_dc_delta && scale_index < best_dc_scale)) {
+            best_dc_delta = delta;
+            best_dc_scale = scale_index;
+            best_dc = stored;
+        }
+    }
+
+    double best_error = DBL_MAX;
+    int best_profile = 0;
+    int best_group_scales[3] = {0, 0, 0};
+    for (int profile = 0; profile < 4; ++profile) {
+        double error = rn_add(base_error, best_dc_delta);
+        int group_scales[3] = {0, 0, 0};
+        int group_start = 0;
+
+        for (int group = 0; group < group_count; ++group) {
+            const int group_finish = grouped_end(coefficient_coding, group, ac_count);
+            double best_group_delta = DBL_MAX;
+            int best_group_scale = 0;
+
+            for (int scale_index = 0; scale_index < 8; ++scale_index) {
+                const int scale = 1 << scale_index;
+                double delta = 0.0;
+                for (int index = group_start; index < group_finish; ++index) {
+                    const int position = scan_position(WIDTH, HEIGHT, profile, index);
+                    const int u = position % WIDTH;
+                    const int v = position / WIDTH;
+                    const double step = quantization_step(u, v, WIDTH, HEIGHT, quality, CHROMA) * scale;
+                    const int stored = clamp_int(round_signed(coefficients[position] / step), -16, 15);
+                    const double restored = static_cast<double>(stored) * step;
+                    const double coefficient_delta = rn_add(
+                        rn_square(coefficients[position] - restored),
+                        -rn_square(coefficients[position])
+                    );
+                    delta = rn_add(delta, coefficient_delta);
+                }
+                if (delta < best_group_delta ||
+                    (delta == best_group_delta && scale_index < best_group_scale)) {
+                    best_group_delta = delta;
+                    best_group_scale = scale_index;
+                }
+            }
+
+            group_scales[group] = best_group_scale;
+            error = rn_add(error, best_group_delta);
+            group_start = group_finish;
+        }
+
+        const bool better = error < best_error || (error == best_error && profile < best_profile);
+        if (better) {
+            best_error = error;
+            best_profile = profile;
+            for (int group = 0; group < group_count; ++group) {
+                best_group_scales[group] = group_scales[group];
+            }
+        }
+    }
+
+    int bit_offset = 0;
+    write_bits(record, &bit_offset, static_cast<uint32_t>((best_profile << 4) | best_dc_scale), 8);
+    write_signed_bits(record, &bit_offset, best_dc, 10);
+    for (int group = 0; group < group_count; ++group) {
+        write_bits(record, &bit_offset, static_cast<uint32_t>(best_group_scales[group]), 3);
+    }
+    int group_start = 0;
+    for (int group = 0; group < group_count; ++group) {
+        const int group_finish = grouped_end(coefficient_coding, group, ac_count);
+        const int scale = 1 << best_group_scales[group];
+        for (int index = group_start; index < group_finish; ++index) {
+            const int position = scan_position(WIDTH, HEIGHT, best_profile, index);
+            const int u = position % WIDTH;
+            const int v = position / WIDTH;
+            const double step = quantization_step(u, v, WIDTH, HEIGHT, quality, CHROMA) * scale;
+            const int stored = clamp_int(round_signed(coefficients[position] / step), -16, 15);
+            write_signed_bits(record, &bit_offset, stored, 5);
+        }
+        group_start = group_finish;
+    }
+}
+
+template <int WIDTH, int HEIGHT, bool CHROMA>
+__device__ void encode_component_record(
+    const double *coefficients,
+    uint8_t *record,
+    int byte_count,
+    int quality,
+    int coefficient_coding
+) {
+    if (coefficient_coding == COEFFICIENT_CODING_LEGACY) {
+        encode_legacy_component_record<WIDTH, HEIGHT, CHROMA>(
+            coefficients, record, byte_count, quality
+        );
+    } else {
+        encode_grouped_component_record<WIDTH, HEIGHT, CHROMA>(
+            coefficients, record, byte_count, quality, coefficient_coding
+        );
+    }
+}
+
 template <int WIDTH, int HEIGHT, bool CHROMA>
 __global__ void encode_component_kernel(
     const uint8_t *rgb,
@@ -475,6 +631,7 @@ __global__ void encode_component_kernel(
     int component,
     int luma_block,
     int quality,
+    int coefficient_coding,
     uint8_t *output
 ) {
     const uint32_t mcu_index = blockIdx.x;
@@ -567,13 +724,14 @@ __global__ void encode_component_kernel(
             coefficients,
             record,
             static_cast<int>(component_bytes),
-            quality
+            quality,
+            coefficient_coding
         );
     }
 }
 
 template <int WIDTH, int HEIGHT, bool CHROMA>
-__device__ bool decode_component_record(
+__device__ bool decode_legacy_component_record(
     const uint8_t *record,
     int byte_count,
     int quality,
@@ -603,6 +761,71 @@ __device__ bool decode_component_record(
             quantization_step(u, v, WIDTH, HEIGHT, quality, CHROMA) * scale;
     }
     return true;
+}
+
+template <int WIDTH, int HEIGHT, bool CHROMA>
+__device__ bool decode_grouped_component_record(
+    const uint8_t *record,
+    int byte_count,
+    int quality,
+    int coefficient_coding,
+    double *coefficients
+) {
+    for (int position = 0; position < WIDTH * HEIGHT; ++position) {
+        coefficients[position] = 0.0;
+    }
+    int bit_offset = 0;
+    const uint32_t header = read_bits(record, &bit_offset, 8);
+    const int profile = static_cast<int>(header >> 4u);
+    const int dc_scale_index = static_cast<int>(header & 15u);
+    if (profile >= 4 || dc_scale_index >= 8) {
+        return false;
+    }
+    const int dc = read_signed_bits(record, &bit_offset, 10);
+    coefficients[0] = static_cast<double>(dc) *
+        quantization_step(0, 0, WIDTH, HEIGHT, quality, CHROMA) *
+        (1 << dc_scale_index);
+
+    const int group_count = grouped_count(coefficient_coding);
+    const int ac_count = (byte_count * 8 - 18 - group_count * 3) / 5;
+    int group_scales[3] = {0, 0, 0};
+    for (int group = 0; group < group_count; ++group) {
+        group_scales[group] = static_cast<int>(read_bits(record, &bit_offset, 3));
+    }
+
+    int group_start = 0;
+    for (int group = 0; group < group_count; ++group) {
+        const int group_finish = grouped_end(coefficient_coding, group, ac_count);
+        const int scale = 1 << group_scales[group];
+        for (int index = group_start; index < group_finish; ++index) {
+            const int position = scan_position(WIDTH, HEIGHT, profile, index);
+            const int u = position % WIDTH;
+            const int v = position / WIDTH;
+            const int stored = read_signed_bits(record, &bit_offset, 5);
+            coefficients[position] = static_cast<double>(stored) *
+                quantization_step(u, v, WIDTH, HEIGHT, quality, CHROMA) * scale;
+        }
+        group_start = group_finish;
+    }
+    return true;
+}
+
+template <int WIDTH, int HEIGHT, bool CHROMA>
+__device__ bool decode_component_record(
+    const uint8_t *record,
+    int byte_count,
+    int quality,
+    int coefficient_coding,
+    double *coefficients
+) {
+    if (coefficient_coding == COEFFICIENT_CODING_LEGACY) {
+        return decode_legacy_component_record<WIDTH, HEIGHT, CHROMA>(
+            record, byte_count, quality, coefficients
+        );
+    }
+    return decode_grouped_component_record<WIDTH, HEIGHT, CHROMA>(
+        record, byte_count, quality, coefficient_coding, coefficients
+    );
 }
 
 template <int WIDTH, int HEIGHT>
@@ -647,6 +870,7 @@ __global__ void decode_image_kernel(
     Preset preset,
     int quality,
     bool split_luma_8x8,
+    int coefficient_coding,
     uint8_t *rgb,
     int *error_flag
 ) {
@@ -669,6 +893,7 @@ __global__ void decode_image_kernel(
                     record + block * block_bytes,
                     block_bytes,
                     quality,
+                    coefficient_coding,
                     y_coefficients + block * 64
                 ) && y_ok;
             }
@@ -677,6 +902,7 @@ __global__ void decode_image_kernel(
                 record,
                 static_cast<int>(preset.y_bytes),
                 quality,
+                coefficient_coding,
                 y_coefficients
             );
         }
@@ -684,12 +910,14 @@ __global__ void decode_image_kernel(
             record + preset.y_bytes,
             static_cast<int>(preset.cb_bytes),
             quality,
+            coefficient_coding,
             cb_coefficients
         );
         const bool cr_ok = decode_component_record<8, 16, true>(
             record + preset.y_bytes + preset.cb_bytes,
             static_cast<int>(preset.cr_bytes),
             quality,
+            coefficient_coding,
             cr_coefficients
         );
         if (!y_ok || !cb_ok || !cr_ok) {
@@ -738,6 +966,7 @@ __global__ void sample_pixel_kernel(
     Preset preset,
     int quality,
     bool split_luma_8x8,
+    int coefficient_coding,
     int local_x,
     int local_y,
     uint8_t *rgba,
@@ -755,6 +984,7 @@ __global__ void sample_pixel_kernel(
                 record + luma_block * block_bytes,
                 block_bytes,
                 quality,
+                coefficient_coding,
                 y_coefficients
             );
         } else {
@@ -762,6 +992,7 @@ __global__ void sample_pixel_kernel(
                 record,
                 static_cast<int>(preset.y_bytes),
                 quality,
+                coefficient_coding,
                 y_coefficients
             );
         }
@@ -769,12 +1000,14 @@ __global__ void sample_pixel_kernel(
             record + preset.y_bytes,
             static_cast<int>(preset.cb_bytes),
             quality,
+            coefficient_coding,
             cb_coefficients
         );
         const bool cr_ok = decode_component_record<8, 16, true>(
             record + preset.y_bytes + preset.cb_bytes,
             static_cast<int>(preset.cr_bytes),
             quality,
+            coefficient_coding,
             cr_coefficients
         );
         if (!y_ok || !cb_ok || !cr_ok) {
@@ -804,6 +1037,7 @@ std::vector<uint8_t> make_header(
     uint32_t quality,
     bool auto_quality,
     bool split_luma_8x8,
+    int coefficient_coding,
     uint32_t candidate_count
 ) {
     const uint32_t columns = (width + 15u) / 16u;
@@ -830,7 +1064,8 @@ std::vector<uint8_t> make_header(
         header.data(),
         52u,
         (auto_quality ? FLAG_AUTO_QUALITY : 0u) |
-            (split_luma_8x8 ? FLAG_SPLIT_LUMA_8X8 : 0u)
+            (split_luma_8x8 ? FLAG_SPLIT_LUMA_8X8 : 0u) |
+            (static_cast<uint32_t>(coefficient_coding) << COEFFICIENT_CODING_SHIFT)
     );
     write_u32(header.data(), 56u, static_cast<uint32_t>(payload));
     write_u32(header.data(), 60u, candidate_count);
@@ -860,9 +1095,13 @@ DctInfo inspect_header(const uint8_t *bytes, uint64_t file_size) {
     info.search_candidate_count = read_u32(bytes, 60u);
     info.auto_quality = (flags & FLAG_AUTO_QUALITY) != 0u;
     info.split_luma_8x8 = (flags & FLAG_SPLIT_LUMA_8X8) != 0u;
+    info.coefficient_coding = static_cast<int>(
+        (flags & COEFFICIENT_CODING_MASK) >> COEFFICIENT_CODING_SHIFT
+    );
 
     if (info.width == 0u || info.height == 0u || info.quality < 1u || info.quality > 100u ||
         (flags & ~SUPPORTED_FLAGS) != 0u || info.mcu_columns != (info.width + 15u) / 16u ||
+        info.coefficient_coding > COEFFICIENT_CODING_GROUPED_FRONT ||
         info.mcu_rows != (info.height + 15u) / 16u ||
         (info.split_luma_8x8 && preset.nominal_bpp < 3.0) ||
         read_u32(bytes, 32u) != preset.bytes_per_mcu ||
@@ -898,6 +1137,7 @@ GpuResult encode_gpu(
     uint32_t candidate_count
 ) {
     const bool split_luma_8x8 = preset.nominal_bpp >= 3.0;
+    const int coefficient_coding = default_coefficient_coding(preset);
     std::vector<uint8_t> header = make_header(
         width,
         height,
@@ -905,6 +1145,7 @@ GpuResult encode_gpu(
         quality,
         auto_quality,
         split_luma_8x8,
+        coefficient_coding,
         candidate_count
     );
     const uint32_t columns = (width + 15u) / 16u;
@@ -929,7 +1170,8 @@ GpuResult encode_gpu(
             encode_component_kernel<8, 8, false><<<count, 64>>>(
                 device_rgb.get(), width, height, columns, count,
                 preset.bytes_per_mcu, static_cast<uint32_t>(block) * block_bytes,
-                block_bytes, 0, block, static_cast<int>(quality), device_output.get()
+                block_bytes, 0, block, static_cast<int>(quality), coefficient_coding,
+                device_output.get()
             );
             cuda_check(cudaGetLastError(), "Launch split luma DCT kernel");
         }
@@ -937,20 +1179,20 @@ GpuResult encode_gpu(
         encode_component_kernel<16, 16, false><<<count, CUDA_THREADS>>>(
             device_rgb.get(), width, height, columns, count,
             preset.bytes_per_mcu, 0u, preset.y_bytes, 0, 0,
-            static_cast<int>(quality), device_output.get()
+            static_cast<int>(quality), coefficient_coding, device_output.get()
         );
         cuda_check(cudaGetLastError(), "Launch luma DCT kernel");
     }
     encode_component_kernel<8, 16, true><<<count, CUDA_THREADS>>>(
         device_rgb.get(), width, height, columns, count,
         preset.bytes_per_mcu, preset.y_bytes, preset.cb_bytes, 1, 0,
-        static_cast<int>(quality), device_output.get()
+        static_cast<int>(quality), coefficient_coding, device_output.get()
     );
     cuda_check(cudaGetLastError(), "Launch Cb DCT kernel");
     encode_component_kernel<8, 16, true><<<count, CUDA_THREADS>>>(
         device_rgb.get(), width, height, columns, count,
         preset.bytes_per_mcu, preset.y_bytes + preset.cb_bytes, preset.cr_bytes, 2,
-        0, static_cast<int>(quality), device_output.get()
+        0, static_cast<int>(quality), coefficient_coding, device_output.get()
     );
     cuda_check(cudaGetLastError(), "Launch Cr DCT kernel");
     cuda_check(cudaEventRecord(finished.get()), "Stop encode timer");
@@ -975,6 +1217,7 @@ GpuResult decode_gpu(const std::vector<uint8_t> &file, const DctInfo &info) {
     decode_image_kernel<<<info.mcu_count, CUDA_THREADS>>>(
         device_file.get(), info.width, info.height, info.mcu_columns, info.mcu_count,
         info.preset, static_cast<int>(info.quality), info.split_luma_8x8,
+        info.coefficient_coding,
         device_rgb.get(), device_error.get()
     );
     cuda_check(cudaGetLastError(), "Launch DCTBS2 decode kernel");
@@ -1011,7 +1254,7 @@ std::array<uint8_t, 4> sample_pixel_gpu(
     cuda_check(cudaMemset(device_error.get(), 0, sizeof(int)), "Clear pixel decoder error flag");
     sample_pixel_kernel<<<1, 1>>>(
         device_record.get(), info.preset, static_cast<int>(info.quality),
-        info.split_luma_8x8,
+        info.split_luma_8x8, info.coefficient_coding,
         static_cast<int>(x % 16u), static_cast<int>(y % 16u),
         device_rgba.get(), device_error.get()
     );

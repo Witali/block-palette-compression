@@ -21,12 +21,19 @@
   const HEADER_BYTES = 64;
   const FLAG_AUTO_QUALITY = 1;
   const FLAG_SPLIT_LUMA_8X8 = 2;
-  const SUPPORTED_FLAGS = FLAG_AUTO_QUALITY | FLAG_SPLIT_LUMA_8X8;
+  const COEFFICIENT_CODING_SHIFT = 8;
+  const COEFFICIENT_CODING_MASK = 15 << COEFFICIENT_CODING_SHIFT;
+  const SUPPORTED_FLAGS = FLAG_AUTO_QUALITY | FLAG_SPLIT_LUMA_8X8 | COEFFICIENT_CODING_MASK;
   const MCU_WIDTH = 16;
   const MCU_HEIGHT = 16;
   const CHROMA_WIDTH = 8;
   const SCALE_MULTIPLIERS = Object.freeze([1, 2, 4, 8, 16, 32, 64, 128]);
   const PROFILE_NAMES = Object.freeze(["low frequency", "horizontal", "vertical", "diagonal"]);
+  const COEFFICIENT_CODINGS = Object.freeze([
+    freezeCoefficientCoding("legacy", 6, 0, "shared"),
+    freezeCoefficientCoding("grouped-5-equal-2", 5, 2, "equal"),
+    freezeCoefficientCoding("grouped-5-front", 5, 3, "front"),
+  ]);
   // Higher-rate modes preserve the reference converter's four-luma-to-two-chroma
   // byte ratio while DCTBS2 keeps its independently addressable 4:2:2 MCU layout.
   const PRESETS = Object.freeze({
@@ -68,6 +75,24 @@
     return Object.freeze({ modeCode, bpp, bytesPerMcu, yBytes, cbBytes, crBytes });
   }
 
+  function freezeCoefficientCoding(key, mantissaBits, groupCount, grouping) {
+    return Object.freeze({ key, mantissaBits, groupCount, grouping });
+  }
+
+  function getCoefficientCoding(key, presetKey) {
+    const defaultKey = presetKey === "0.75" || presetKey === "1" || presetKey === "2"
+      ? "grouped-5-equal-2"
+      : "grouped-5-front";
+    const normalized = String(key === undefined ? defaultKey : key);
+    const coding = COEFFICIENT_CODINGS.find((candidate) => candidate.key === normalized);
+
+    if (!coding) {
+      throw new RangeError(`Unsupported DCT coefficient coding: ${key}`);
+    }
+
+    return coding;
+  }
+
   function getDctPreset(key) {
     const normalized = String(key === undefined ? "1.5" : key);
     const preset = PRESETS[normalized];
@@ -106,8 +131,9 @@
     validatePixels(pixels, width, height);
     const quality = validateQuality(options.quality === undefined ? 72 : options.quality);
     const layout = getDctFileLayout(width, height, options.preset);
+    const coefficientCoding = getCoefficientCoding(options.coefficientCoding, layout.key);
     const splitLuma8x8 = shouldSplitLuma(layout, options);
-    const output = createDctOutput(layout, quality, options, splitLuma8x8);
+    const output = createDctOutput(layout, quality, options, splitLuma8x8, coefficientCoding);
 
     for (let mcuIndex = 0; mcuIndex < layout.mcuCount; mcuIndex += 1) {
       const mcuX = mcuIndex % layout.mcuColumns;
@@ -115,7 +141,7 @@
       const planes = extractMcuPlanes(pixels, width, height, mcuX, mcuY);
       const byteOffset = HEADER_BYTES + mcuIndex * layout.bytesPerMcu;
 
-      encodeLuma(output, byteOffset, layout.yBytes, planes.y, quality, splitLuma8x8);
+      encodeLuma(output, byteOffset, layout.yBytes, planes.y, quality, splitLuma8x8, coefficientCoding);
       encodeComponent(
         output,
         byteOffset + layout.yBytes,
@@ -124,7 +150,8 @@
         8,
         16,
         quality,
-        true
+        true,
+        coefficientCoding
       );
       encodeComponent(
         output,
@@ -134,7 +161,8 @@
         8,
         16,
         quality,
-        true
+        true,
+        coefficientCoding
       );
     }
 
@@ -145,8 +173,9 @@
     const source = prepareJpegDctSource(jpeg);
     const quality = validateQuality(options.quality === undefined ? 72 : options.quality);
     const layout = getDctFileLayout(source.width, source.height, options.preset);
+    const coefficientCoding = getCoefficientCoding(options.coefficientCoding, layout.key);
     const splitLuma8x8 = shouldSplitLuma(layout, options);
-    const output = createDctOutput(layout, quality, options, splitLuma8x8);
+    const output = createDctOutput(layout, quality, options, splitLuma8x8, coefficientCoding);
 
     for (let mcuIndex = 0; mcuIndex < layout.mcuCount; mcuIndex += 1) {
       const mcuX = mcuIndex % layout.mcuColumns;
@@ -154,7 +183,7 @@
       const planes = extractJpegMcuPlanes(source, mcuX, mcuY);
       const byteOffset = HEADER_BYTES + mcuIndex * layout.bytesPerMcu;
 
-      encodeLuma(output, byteOffset, layout.yBytes, planes.y, quality, splitLuma8x8);
+      encodeLuma(output, byteOffset, layout.yBytes, planes.y, quality, splitLuma8x8, coefficientCoding);
       encodeComponent(
         output,
         byteOffset + layout.yBytes,
@@ -163,7 +192,8 @@
         8,
         16,
         quality,
-        true
+        true,
+        coefficientCoding
       );
       encodeComponent(
         output,
@@ -173,14 +203,15 @@
         8,
         16,
         quality,
-        true
+        true,
+        coefficientCoding
       );
     }
 
     return output;
   }
 
-  function createDctOutput(layout, quality, options, splitLuma8x8) {
+  function createDctOutput(layout, quality, options, splitLuma8x8, coefficientCoding) {
     const output = new Uint8Array(layout.totalBytes);
     const view = new DataView(output.buffer);
 
@@ -200,7 +231,8 @@
       view,
       52,
       (options.autoQuality ? FLAG_AUTO_QUALITY : 0) |
-        (splitLuma8x8 ? FLAG_SPLIT_LUMA_8X8 : 0)
+        (splitLuma8x8 ? FLAG_SPLIT_LUMA_8X8 : 0) |
+        (COEFFICIENT_CODINGS.indexOf(coefficientCoding) << COEFFICIENT_CODING_SHIFT)
     );
     writeUint32(view, 56, layout.payloadBytes);
     writeUint32(view, 60, options.searchCandidateCount || 0);
@@ -273,6 +305,7 @@
       info.yBytes,
       info.quality,
       info.splitLuma8x8,
+      info.coefficientCoding,
       localX,
       localY
     ) + 128;
@@ -283,7 +316,8 @@
       8,
       16,
       info.quality,
-      true
+      true,
+      info.coefficientCoding
     );
     const crComponent = decodeComponent(
       bytes,
@@ -292,7 +326,8 @@
       8,
       16,
       info.quality,
-      true
+      true,
+      info.coefficientCoding
     );
     const chromaX = Math.floor(localX / 2);
     const cb = sampleInverseDct(cbComponent.coefficients, 8, 16, chromaX, localY) + 128;
@@ -322,6 +357,8 @@
     const layout = getDctFileLayout(width, height, presetKey);
     const quality = readUint32(view, 48);
     const flags = readUint32(view, 52);
+    const coefficientCodingIndex = (flags & COEFFICIENT_CODING_MASK) >> COEFFICIENT_CODING_SHIFT;
+    const coefficientCoding = COEFFICIENT_CODINGS[coefficientCodingIndex];
     const payloadBytes = readUint32(view, 56);
 
     if (
@@ -334,6 +371,7 @@
       payloadBytes !== layout.payloadBytes ||
       bytes.length !== HEADER_BYTES + payloadBytes ||
       quality < 1 || quality > 100 ||
+      !coefficientCoding ||
       (flags & ~SUPPORTED_FLAGS) !== 0 ||
       ((flags & FLAG_SPLIT_LUMA_8X8) !== 0 && layout.bpp < 3)
     ) {
@@ -345,6 +383,8 @@
       quality,
       autoQuality: (flags & FLAG_AUTO_QUALITY) !== 0,
       splitLuma8x8: (flags & FLAG_SPLIT_LUMA_8X8) !== 0,
+      coefficientCoding,
+      coefficientCodingKey: coefficientCoding.key,
       searchCandidateCount: readUint32(view, 60),
       ...layout,
     };
@@ -376,6 +416,7 @@
   function findBestDctQuality(pixels, width, height, options = {}) {
     validatePixels(pixels, width, height);
     const preset = getDctPreset(options.preset);
+    const coefficientCoding = getCoefficientCoding(options.coefficientCoding, preset.key);
     const layout = getDctFileLayout(width, height, preset.key);
     const onProgress = typeof options.onProgress === "function" ? options.onProgress : () => {};
     const coarse = [];
@@ -390,7 +431,18 @@
     let completed = 0;
 
     for (const quality of coarse) {
-      sampleResults.push({ quality, error: measureSampleError(pixels, width, height, layout, quality, sampleIndices) });
+      sampleResults.push({
+        quality,
+        error: measureSampleError(
+          pixels,
+          width,
+          height,
+          layout,
+          quality,
+          sampleIndices,
+          coefficientCoding
+        ),
+      });
       completed += 1;
       onProgress({ stage: "sample", completed, total: estimatedTotal, quality });
     }
@@ -405,7 +457,18 @@
 
     for (const quality of refine) {
       if (!sampleResults.some((result) => result.quality === quality)) {
-        sampleResults.push({ quality, error: measureSampleError(pixels, width, height, layout, quality, sampleIndices) });
+        sampleResults.push({
+          quality,
+          error: measureSampleError(
+            pixels,
+            width,
+            height,
+            layout,
+            quality,
+            sampleIndices,
+            coefficientCoding
+          ),
+        });
       }
       completed += 1;
       onProgress({ stage: "refine", completed, total: estimatedTotal, quality });
@@ -420,6 +483,7 @@
         preset: preset.key,
         quality,
         autoQuality: true,
+        coefficientCoding: coefficientCoding.key,
         searchCandidateCount: sampleResults.length + finalists.length,
       });
       const decoded = decodeDctFile(encoded);
@@ -440,22 +504,36 @@
     };
   }
 
-  function encodeComponent(output, offset, byteCount, samples, width, height, quality, chroma) {
+  function encodeComponent(output, offset, byteCount, samples, width, height, quality, chroma, coding) {
     const coefficients = forwardDct(samples, width, height);
-    const candidate = chooseComponentEncoding(coefficients, width, height, byteCount, quality, chroma);
+    const candidate = chooseComponentEncoding(
+      coefficients,
+      width,
+      height,
+      byteCount,
+      quality,
+      chroma,
+      coding
+    );
     const writer = new BitWriter(output, offset, byteCount);
 
     writer.write((candidate.profile << 4) | candidate.scaleIndex, 8);
     writer.writeSigned(candidate.dc, 10);
 
+    if (coding.groupCount > 0) {
+      for (const scaleIndex of candidate.groupScaleIndices) {
+        writer.write(scaleIndex, 3);
+      }
+    }
+
     for (const value of candidate.ac) {
-      writer.writeSigned(value, 6);
+      writer.writeSigned(value, coding.mantissaBits);
     }
   }
 
-  function encodeLuma(output, offset, byteCount, samples, quality, split) {
+  function encodeLuma(output, offset, byteCount, samples, quality, split, coding) {
     if (!split) {
-      encodeComponent(output, offset, byteCount, samples, 16, 16, quality, false);
+      encodeComponent(output, offset, byteCount, samples, 16, 16, quality, false, coding);
       return;
     }
 
@@ -471,12 +549,34 @@
           }
         }
 
-        encodeComponent(output, offset + blockIndex * blockBytes, blockBytes, block, 8, 8, quality, false);
+        encodeComponent(
+          output,
+          offset + blockIndex * blockBytes,
+          blockBytes,
+          block,
+          8,
+          8,
+          quality,
+          false,
+          coding
+        );
       }
     }
   }
 
-  function chooseComponentEncoding(coefficients, width, height, byteCount, quality, chroma) {
+  function chooseComponentEncoding(coefficients, width, height, byteCount, quality, chroma, coding) {
+    if (coding.groupCount > 0) {
+      return chooseGroupedComponentEncoding(
+        coefficients,
+        width,
+        height,
+        byteCount,
+        quality,
+        chroma,
+        coding
+      );
+    }
+
     const acCount = Math.floor((byteCount * 8 - 18) / 6);
     let best = null;
 
@@ -515,7 +615,112 @@
     return best;
   }
 
-  function decodeComponent(bytes, offset, byteCount, width, height, quality, chroma) {
+  function chooseGroupedComponentEncoding(coefficients, width, height, byteCount, quality, chroma, coding) {
+    const layout = getGroupedAcLayout(byteCount, coding);
+    let best = null;
+
+    for (let profile = 0; profile < PROFILE_NAMES.length; profile += 1) {
+      const scan = getScan(profile, width, height).slice(0, layout.acCount);
+      const dcChoice = chooseQuantizedGroup(
+        coefficients,
+        [0],
+        width,
+        height,
+        quality,
+        chroma,
+        10
+      );
+      const ac = [];
+      const groupScaleIndices = [];
+      let error = squaredNorm(coefficients) + dcChoice.errorDelta;
+      let groupStart = 0;
+
+      for (const groupEnd of layout.groupEnds) {
+        const positions = scan.slice(groupStart, groupEnd);
+        const group = chooseQuantizedGroup(
+          coefficients,
+          positions,
+          width,
+          height,
+          quality,
+          chroma,
+          coding.mantissaBits
+        );
+
+        groupScaleIndices.push(group.scaleIndex);
+        ac.push(...group.values);
+        error += group.errorDelta;
+        groupStart = groupEnd;
+      }
+
+      const candidate = {
+        profile,
+        scaleIndex: dcChoice.scaleIndex,
+        dc: dcChoice.values[0],
+        ac,
+        groupScaleIndices,
+        error,
+      };
+
+      if (!best || compareComponentCandidates(candidate, best) < 0) {
+        best = candidate;
+      }
+    }
+
+    return best;
+  }
+
+  function chooseQuantizedGroup(coefficients, positions, width, height, quality, chroma, bitCount) {
+    const minimum = -(2 ** (bitCount - 1));
+    const maximum = 2 ** (bitCount - 1) - 1;
+    let best = null;
+
+    for (let scaleIndex = 0; scaleIndex < SCALE_MULTIPLIERS.length; scaleIndex += 1) {
+      const scale = SCALE_MULTIPLIERS[scaleIndex];
+      const values = [];
+      let errorDelta = 0;
+
+      for (const position of positions) {
+        const u = position % width;
+        const v = Math.floor(position / width);
+        const step = quantizationStep(u, v, width, height, quality, chroma) * scale;
+        const stored = clamp(roundSigned(coefficients[position] / step), minimum, maximum);
+        const restored = stored * step;
+
+        values.push(stored);
+        errorDelta += (coefficients[position] - restored) ** 2 - coefficients[position] ** 2;
+      }
+
+      const candidate = { scaleIndex, values, errorDelta };
+      if (!best || candidate.errorDelta < best.errorDelta ||
+          (candidate.errorDelta === best.errorDelta && candidate.scaleIndex < best.scaleIndex)) {
+        best = candidate;
+      }
+    }
+
+    return best;
+  }
+
+  function getGroupedAcLayout(byteCount, coding) {
+    const acCount = Math.max(
+      0,
+      Math.floor((byteCount * 8 - 18 - coding.groupCount * 3) / coding.mantissaBits)
+    );
+    let groupEnds;
+
+    if (coding.grouping === "front") {
+      groupEnds = [Math.ceil(acCount / 6), Math.ceil(acCount / 2), acCount];
+    } else {
+      groupEnds = Array.from(
+        { length: coding.groupCount },
+        (_, groupIndex) => Math.floor((groupIndex + 1) * acCount / coding.groupCount)
+      );
+    }
+
+    return { acCount, groupEnds };
+  }
+
+  function decodeComponent(bytes, offset, byteCount, width, height, quality, chroma, coding) {
     const reader = new BitReader(bytes, offset, byteCount);
     const header = reader.read(8);
     const profile = header >> 4;
@@ -526,29 +731,56 @@
     }
 
     const coefficients = new Float64Array(width * height);
-    const scale = SCALE_MULTIPLIERS[scaleIndex];
     const dc = reader.readSigned(10);
-    const acCount = Math.floor((byteCount * 8 - 18) / 6);
+    const groupedLayout = coding.groupCount > 0 ? getGroupedAcLayout(byteCount, coding) : null;
+    const acCount = groupedLayout ? groupedLayout.acCount : Math.floor((byteCount * 8 - 18) / 6);
     const scan = getScan(profile, width, height).slice(0, acCount);
 
-    coefficients[0] = dc * quantizationStep(0, 0, width, height, quality, chroma) * scale;
+    coefficients[0] = dc * quantizationStep(0, 0, width, height, quality, chroma) *
+      SCALE_MULTIPLIERS[scaleIndex];
 
-    for (const position of scan) {
-      const u = position % width;
-      const v = Math.floor(position / width);
-      coefficients[position] = reader.readSigned(6) *
-        quantizationStep(u, v, width, height, quality, chroma) * scale;
+    const groupScaleIndices = groupedLayout ? groupedLayout.groupEnds.map(() => reader.read(3)) : [scaleIndex];
+    const groupEnds = groupedLayout ? groupedLayout.groupEnds : [acCount];
+    let groupStart = 0;
+
+    for (let groupIndex = 0; groupIndex < groupEnds.length; groupIndex += 1) {
+      const scale = SCALE_MULTIPLIERS[groupScaleIndices[groupIndex]];
+
+      for (let index = groupStart; index < groupEnds[groupIndex]; index += 1) {
+        const position = scan[index];
+        const u = position % width;
+        const v = Math.floor(position / width);
+        coefficients[position] = reader.readSigned(coding.mantissaBits) *
+          quantizationStep(u, v, width, height, quality, chroma) * scale;
+      }
+      groupStart = groupEnds[groupIndex];
     }
 
-    return { coefficients, profile, scaleIndex, coefficientCount: acCount + 1 };
+    return { coefficients, profile, scaleIndex, groupScaleIndices, coefficientCount: acCount + 1 };
   }
 
   function decodeMcuComponents(bytes, info, mcuIndex) {
     const offset = HEADER_BYTES + mcuIndex * info.bytesPerMcu;
 
     return {
-      y: decodeLuma(bytes, offset, info.yBytes, info.quality, info.splitLuma8x8),
-      cb: decodeComponent(bytes, offset + info.yBytes, info.cbBytes, 8, 16, info.quality, true),
+      y: decodeLuma(
+        bytes,
+        offset,
+        info.yBytes,
+        info.quality,
+        info.splitLuma8x8,
+        info.coefficientCoding
+      ),
+      cb: decodeComponent(
+        bytes,
+        offset + info.yBytes,
+        info.cbBytes,
+        8,
+        16,
+        info.quality,
+        true,
+        info.coefficientCoding
+      ),
       cr: decodeComponent(
         bytes,
         offset + info.yBytes + info.cbBytes,
@@ -556,14 +788,15 @@
         8,
         16,
         info.quality,
-        true
+        true,
+        info.coefficientCoding
       ),
     };
   }
 
-  function decodeLuma(bytes, offset, byteCount, quality, split) {
+  function decodeLuma(bytes, offset, byteCount, quality, split, coding) {
     if (!split) {
-      return decodeComponent(bytes, offset, byteCount, 16, 16, quality, false);
+      return decodeComponent(bytes, offset, byteCount, 16, 16, quality, false, coding);
     }
 
     const blockBytes = byteCount / 4;
@@ -575,7 +808,8 @@
         8,
         8,
         quality,
-        false
+        false,
+        coding
       )),
     };
   }
@@ -600,9 +834,9 @@
     return plane;
   }
 
-  function sampleLumaRecord(bytes, offset, byteCount, quality, split, x, y) {
+  function sampleLumaRecord(bytes, offset, byteCount, quality, split, coding, x, y) {
     if (!split) {
-      const component = decodeComponent(bytes, offset, byteCount, 16, 16, quality, false);
+      const component = decodeComponent(bytes, offset, byteCount, 16, 16, quality, false, coding);
       return sampleInverseDct(component.coefficients, 16, 16, x, y);
     }
 
@@ -615,7 +849,8 @@
       8,
       8,
       quality,
-      false
+      false,
+      coding
     );
     return sampleInverseDct(component.coefficients, 8, 8, x % 8, y % 8);
   }
@@ -627,6 +862,8 @@
         profileName: PROFILE_NAMES[component.profile],
         scaleIndex: component.scaleIndex,
         scale: SCALE_MULTIPLIERS[component.scaleIndex],
+        groupScaleIndices: component.groupScaleIndices,
+        groupScales: component.groupScaleIndices.map((scaleIndex) => SCALE_MULTIPLIERS[scaleIndex]),
         coefficientCount: component.coefficientCount,
       };
     }
@@ -1018,7 +1255,7 @@
     return Math.max(1, table[tableY * 8 + tableX] * qualityScale * dimensionScale);
   }
 
-  function measureSampleError(pixels, width, height, layout, quality, mcuIndices) {
+  function measureSampleError(pixels, width, height, layout, quality, mcuIndices, coding) {
     let squaredError = 0;
 
     for (const mcuIndex of mcuIndices) {
@@ -1027,12 +1264,31 @@
       const planes = extractMcuPlanes(pixels, width, height, mcuX, mcuY);
       const record = new Uint8Array(layout.bytesPerMcu);
 
-      encodeLuma(record, 0, layout.yBytes, planes.y, quality, layout.bpp >= 3);
-      encodeComponent(record, layout.yBytes, layout.cbBytes, planes.cb, 8, 16, quality, true);
-      encodeComponent(record, layout.yBytes + layout.cbBytes, layout.crBytes, planes.cr, 8, 16, quality, true);
+      encodeLuma(record, 0, layout.yBytes, planes.y, quality, layout.bpp >= 3, coding);
+      encodeComponent(record, layout.yBytes, layout.cbBytes, planes.cb, 8, 16, quality, true, coding);
+      encodeComponent(
+        record,
+        layout.yBytes + layout.cbBytes,
+        layout.crBytes,
+        planes.cr,
+        8,
+        16,
+        quality,
+        true,
+        coding
+      );
 
-      const yComponent = decodeLuma(record, 0, layout.yBytes, quality, layout.bpp >= 3);
-      const cbComponent = decodeComponent(record, layout.yBytes, layout.cbBytes, 8, 16, quality, true);
+      const yComponent = decodeLuma(record, 0, layout.yBytes, quality, layout.bpp >= 3, coding);
+      const cbComponent = decodeComponent(
+        record,
+        layout.yBytes,
+        layout.cbBytes,
+        8,
+        16,
+        quality,
+        true,
+        coding
+      );
       const crComponent = decodeComponent(
         record,
         layout.yBytes + layout.cbBytes,
@@ -1040,7 +1296,8 @@
         8,
         16,
         quality,
-        true
+        true,
+        coding
       );
       const yPlane = reconstructLumaPlane(yComponent);
       const cbPlane = inverseDct(cbComponent.coefficients, 8, 16);
@@ -1269,6 +1526,7 @@
     MCU_HEIGHT,
     PRESETS,
     PROFILE_NAMES,
+    COEFFICIENT_CODINGS,
     getDctPreset,
     getDctFileLayout,
     encodeDctFile,

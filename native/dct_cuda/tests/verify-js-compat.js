@@ -76,11 +76,13 @@ function verifyLegacyHighRate() {
     preset: "6",
     quality: 72,
     splitLuma8x8: false,
+    coefficientCoding: "legacy",
   });
   const dctFile = path.join(temporary, "legacy-high-rate.dctbs2");
   const decodedPpm = path.join(temporary, "legacy-high-rate.ppm");
 
   assert.equal(inspectDctFile(encoded).splitLuma8x8, false);
+  assert.equal(inspectDctFile(encoded).coefficientCodingKey, "legacy");
   fs.writeFileSync(dctFile, encoded);
   run(["decode", dctFile, decodedPpm]);
   assertRgbMatchesRgba(
@@ -130,6 +132,10 @@ function verifyPreset(preset) {
   assert.equal(cudaInfo.key, preset);
   assert.equal(cudaInfo.quality, 72);
   assert.equal(cudaInfo.splitLuma8x8, Number(preset) >= 3);
+  assert.equal(
+    cudaInfo.coefficientCodingKey,
+    ["0.75", "1", "2"].includes(preset) ? "grouped-5-equal-2" : "grouped-5-front"
+  );
 
   const javascriptDecodedCuda = decodeDctFile(cudaEncoded);
   run(["decode", cudaFile, cudaPpm]);
