@@ -150,12 +150,16 @@ test("removes height-map relief from Demo Cube", () => {
   assert.doesNotMatch(compactVertexShader, /aTangent|aBitangent|vTangent|vBitangent/);
 });
 
-test("creates one independently switchable texture resource per cube", () => {
+test("creates one independently switchable resource per cube for every texture format", () => {
   assert.match(cubeHtml, /<input id="per-cube-textures" type="checkbox" checked disabled>/);
   assert.match(cubeSource, /Array\.from\(\{ length: count - 1 \}/);
   assert.match(cubeSource, /setCubeTextureInstances\(\[primaryTextureResource, \.\.\.createdResources\]\)/);
   assert.match(cubeSource, /setCubeTextureInstances\(Array\.from\(/);
   assert.match(cubeSource, /cubeMotionState\.perCubeTextures = perCubeTexturesInput\.checked/);
+  assert.match(cubeSource, /primaryTextureData = \{[\s\S]*kind: "dct",[\s\S]*shaderTextureData/);
+  assert.match(cubeSource, /loadedTextureKind === "dct"[\s\S]*Array\.from\(\{ length: count - 1 \}, \(\) => primaryTextureData\)/);
+  assert.match(cubeSource, /cubeRenderer\.createDctTextureResource\(textureData\.shaderTextureData\)/);
+  assert.match(cubeSource, /perCubeTexturesInput\.disabled = disabled;/);
 });
 
 test("decodes the default cube BPLM texture and its stored mip chain", () => {

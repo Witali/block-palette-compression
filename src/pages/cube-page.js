@@ -2,7 +2,7 @@
  * Purpose: WebGL demo entry point that renders the rotating textured cube.
  * Processing blocks:
  * - Create the shared textured cube renderer.
- * - Load BPAL/BPLM/BPDH textures and optionally create one GPU texture resource per cube.
+ * - Load BPAL/BPLM/DCTBS2/BPDH textures and optionally create one GPU resource per cube.
  * - Run the animation loop, pointer controls, and FPS counter.
  */
 "use strict";
@@ -408,7 +408,10 @@ async function loadBundledDctTexture() {
     primaryTextureResource.bpalTextureInfo = null;
     primaryTextureResource.bpdhDataTexture = null;
     primaryTextureResource.bpdhTextureInfo = null;
-    primaryTextureData = null;
+    primaryTextureData = {
+      kind: "dct",
+      shaderTextureData,
+    };
     loadedTextureKind = "dct";
 
     resetCubeTextureInstances();
@@ -430,6 +433,7 @@ async function loadBundledDctTexture() {
     window.__cubeBpdhTexture = null;
     window.__cubeDctTexture = loadedBpalTexture;
 
+    requestCubeTextureRebuild();
     updateLoadedBpalStatus();
   } finally {
     if (loadId === bpalLoadId) {
@@ -553,7 +557,7 @@ function setBpalControlsDisabled(disabled) {
   bpalFileInput.disabled = disabled || !catalogSelected;
   bpalExampleSelect.disabled = disabled || !catalogSelected || bpalExampleSelect.options.length === 0;
   if (perCubeTexturesInput) {
-    perCubeTexturesInput.disabled = disabled || !catalogSelected;
+    perCubeTexturesInput.disabled = disabled;
   }
 }
 
@@ -583,6 +587,7 @@ function updateLoadedBpalStatus() {
         `DCTBS2 v${loadedBpalTexture.version} · ` +
         `${dctRate} · ` +
         `${decodeDescription}, ` + localized("RGBA not uploaded", "RGBA не загружена") +
+        ` · ${getTextureInstanceDescription()}` +
         ` · GPU ${formatBytes(getAssignedGpuBytes())}`,
       false
     );
@@ -598,12 +603,7 @@ function updateLoadedBpalStatus() {
       "shader-only double indexing, RGBA not uploaded",
       "только двойная индексация в шейдере, RGBA не загружена"
     );
-  const textureMode = cubeMotionState.perCubeTextures
-    ? localized(
-      `texture instances: ${cubeGridState.textureInstances.length}`,
-      `экземпляров текстур: ${cubeGridState.textureInstances.length}`
-    )
-    : localized("one shared texture", "одна общая текстура");
+  const textureMode = getTextureInstanceDescription();
   const rendererMode = compactRendererEnabled
     ? loadedBpalTexture.textureKind === "bpal"
       ? localized("WebGL2 compact R32UI", "WebGL2 compact R32UI")
@@ -619,6 +619,15 @@ function updateLoadedBpalStatus() {
       `${renderMode} · ${textureMode} · GPU ${formatBytes(gpuBytes)}`,
     false
   );
+}
+
+function getTextureInstanceDescription() {
+  return cubeMotionState.perCubeTextures
+    ? localized(
+      `texture instances: ${cubeGridState.textureInstances.length}`,
+      `экземпляров текстур: ${cubeGridState.textureInstances.length}`
+    )
+    : localized("one shared texture", "одна общая текстура");
 }
 
 function createCubeTextureData(bytes) {
@@ -719,7 +728,7 @@ function deleteOwnedCubeTextureResources() {
 
 function requestCubeTextureRebuild() {
   rebuildCubeTextureInstances().catch((error) => {
-    console.error("Per-cube BPAL texture creation failed.", error);
+    console.error("Per-cube texture resource creation failed.", error);
     setBpalStatus(error && error.message ? error.message : String(error), true);
   });
 }
@@ -732,13 +741,9 @@ async function rebuildCubeTextureInstances() {
     return;
   }
 
-  const examples = getOrderedBpalExamples();
-  const textureData = await Promise.all(Array.from({ length: count - 1 }, (_, offset) => {
-    const cubeIndex = offset + 1;
-    const example = examples.length > 0 ? examples[cubeIndex % examples.length] : null;
-
-    return example ? loadCubeTextureData(example) : primaryTextureData;
-  }));
+  const textureData = loadedTextureKind === "dct"
+    ? Array.from({ length: count - 1 }, () => primaryTextureData)
+    : await loadPerCubeCatalogTextureData(count);
 
   if (buildId !== cubeTextureBuildId) {
     return;
@@ -764,6 +769,17 @@ async function rebuildCubeTextureInstances() {
   ownedCubeTextureResources = createdResources;
   setCubeTextureInstances([primaryTextureResource, ...createdResources]);
   updateLoadedBpalStatus();
+}
+
+function loadPerCubeCatalogTextureData(count) {
+  const examples = getOrderedBpalExamples();
+
+  return Promise.all(Array.from({ length: count - 1 }, (_, offset) => {
+    const cubeIndex = offset + 1;
+    const example = examples.length > 0 ? examples[cubeIndex % examples.length] : null;
+
+    return example ? loadCubeTextureData(example) : primaryTextureData;
+  }));
 }
 
 async function loadCubeTextureData(example) {
@@ -801,6 +817,10 @@ async function loadCubeTextureData(example) {
 }
 
 function createCubeTextureResource(textureData) {
+  if (textureData.kind === "dct") {
+    return cubeRenderer.createDctTextureResource(textureData.shaderTextureData);
+  }
+
   return textureData.kind === "bpdh"
     ? cubeRenderer.createBpdhTextureResource(textureData.bpdhShaderTextureData)
     : cubeRenderer.createBpalTextureResource(textureData.shaderTextureData);
