@@ -1,11 +1,36 @@
 # Block Palette Compression
 
-An experimental browser codec for BPAL block-palette images. A BPAL image uses
-one or more shared color palettes and a small table of palette-local color
-indices in every block. Pixels normally store indices into their block's table;
-the indices are omitted when table entries map one-to-one to pixel positions.
+An experimental image-codec laboratory centered on deterministic random access.
+The repository develops palette, transform, hybrid, mipmapped, adaptive-block,
+and pattern-dictionary formats whose decoders can obtain a pixel by coordinate
+without reconstructing the complete image first.
 
 [Open the live demo on GitHub Pages.](https://witali.github.io/block-palette-compression/)
+
+## Image formats under development
+
+The common design requirement is deterministic coordinate sampling: the color
+returned for `(x, y)` must not depend on decode order, neighboring decoder
+state, thread scheduling, or a previously reconstructed RGBA image. The GPU
+paths upload packed palettes, records, or file bytes and run the corresponding
+coordinate decoder in the shader.
+
+| Format | Current version | Purpose and storage model | Coordinate access and support |
+| --- | ---: | --- | --- |
+| **BPAL** (`.bpal`) | 5 | The baseline block-palette format. Fixed-size blocks select one of up to 128 shared RGB565 or RGB888 palettes, store a small table of palette-local colors, and normally store one local slot per pixel. | Direct block and pixel indexing. Supported by the compressor, Image Viewer, WebGL1/WebGL2 demos, and native CPU/CUDA tools. |
+| **BPLM** (`.bplm`) | 1 | A complete BPAL base image followed by a precomputed mip chain. Every level reuses the palettes stored by the base image and can use regular local indices or direct palette indices. | Select a mip level, then use the same bounded palette lookup. Supported by the compressor, Image Viewer, and WebGL mip/cube samplers. |
+| **DCTBS2** (`.dctbs2`) | 2 | A transform-coded alternative with independent `16x16` YCbCr 4:2:2 MCUs and fixed record sizes from 0.75 to 6 bpp. Higher-rate modes split luma into four `8x8` transforms; optional directly addressed prototype libraries reduce coefficient residuals. | One fixed MCU record, its quantization metadata, and an optional prototype entry are sufficient for a pixel. Supported by the DCT page, the WebGL2 Cube shader, and the native CUDA tool. |
+| **BPDH** (`.bpdh`) | 1 | The content-adaptive hybrid. Every `16x16` coding unit independently selects a sparse shared-palette BPAL record or a YCbCr 4:2:0 DCT record under a common payload budget. | The mode map selects one local record; fixed-point reconstruction makes CPU and shader sampling byte-deterministic. Supported by its encoder page, Image Viewer, and the WebGL1/WebGL2 Cube. |
+| **BPAV** (`BPAV` magic) | 1 | An adaptive-block BPAL side format. Every `64x64` supertile selects a `4x4`, `8x8`, `16x16`, or `32x32` block layout, with one shared-palette table per used block-size mode. | A supertile directory gives the mode and block-stream offset directly; the WebGL2 `R32UI` sampler needs at most eight word reads per pixel. This is a benchmarked research format, not yet a Viewer/PWA file type. |
+| **BPDI** (`BPDI` magic) | 3 | A lossless post-compression of BPAL pixel-index patterns. Blocks can use raw indices, runs, exact or transformed dictionary references, and bitmap-coded deltas while preserving the decoded BPAL RGB values. | Checkpoint offsets bound the default payload search to 15 preceding block tags. JavaScript and WebGL2 decoders are tested; hybrid encoding keeps ordinary BPAL whenever BPDI is not smaller. |
+
+The formats form two related lines. `BPAL` is the palette baseline and `BPLM`
+adds stored mip levels without changing its color model. `DCTBS2` is the
+independent transform baseline, while `BPDH` chooses between palette and DCT
+coding according to local content. `BPAV` explores spatially adaptive BPAL
+block sizes, and `BPDI` explores lossless reuse of the already quantized BPAL
+index patterns. BPAV and BPDI remain research containers until their measured
+gain justifies adding them to the public applications.
 
 ## How BPAL works
 
@@ -119,7 +144,12 @@ Detailed documentation:
   ([Russian](./BLOCK_PALETTE_README_ru.md));
 - [BPAL v5 file format](./BLOCK_PALETTE_FORMAT.md)
   ([Russian](./BLOCK_PALETTE_FORMAT_ru.md));
+- [BPLM v1 stored-mipmap format](./BPLM_FORMAT.md);
+- [DCTBS2 v2 fixed-MCU format](./DCT_FORMAT.md)
+  ([Russian algorithm overview](./docs/DCTBS2_ALGORITHM_ru.md));
 - [BPDH v1 hybrid BPAL/DCT format](./BPDH_FORMAT.md);
+- [BPAV v1 adaptive-block format](./BPAV_FORMAT.md);
+- [BPDI v3 pattern-dictionary experiment](./benchmark/results/bpdi-pattern-dictionary-clic.md);
 - [hybrid BPAL/DCT research and benchmark plan](./docs/HYBRID_BPAL_DCT_PLAN.md);
 - [standalone BPAL v5 CPU/SIMD and CUDA tools](./native/bpal5_simd/README.md);
 - [standalone CUDA DCTBS2 encoder, decoder, and pixel sampler](./native/dct_cuda/README.md);
