@@ -143,10 +143,11 @@ npm start
 
 Open <http://127.0.0.1:8000/>.
 
-`npm start` regenerates `assets/bpal/manifest.json` from the bundled `.bpal`
-and `.bplm` files before starting the server. The GitHub Pages workflow runs
-the same generator before uploading the site artifact, so the viewer catalog
-does not need to be maintained by hand.
+`npm start` regenerates `assets/bpal/manifest.json` and
+`assets/bpdh/manifest.json` from the bundled `.bpal`, `.bplm`, and `.bpdh`
+files before starting the server. The GitHub Pages workflow runs the same
+generator before uploading the site artifact, so neither Image Viewer catalog
+needs to be maintained by hand.
 
 ## Install as an app
 
@@ -161,14 +162,14 @@ immediately and are refreshed in the background.
 
 When installed by a Chromium-based desktop browser, the PWA registers as a
 handler for `.bpal`, `.bplm`, and `.bpdh` files. Opening any of these file types from the
-operating system launches BPAL Viewer and passes the selected file to it. On
+operating system launches Image Viewer and passes the selected file to it. On
 platforms without the File Handling API, the viewer's file picker and drag and
 drop support remain available.
 
 On Android, install the PWA in Chrome, select a `.bpal`, `.bplm`, or `.bpdh` file in the
 system file manager, and share it with BPAL. The service worker receives the
 Web Share Target POST request, stores the file temporarily, and opens it in
-BPAL Viewer. GitHub Pages does not need a server-side POST endpoint.
+Image Viewer. GitHub Pages does not need a server-side POST endpoint.
 
 ## Test
 

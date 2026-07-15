@@ -2,6 +2,7 @@
 
 const t = (key, parameters) => window.I18n.t(key, parameters);
 
+const exampleTypeSelect = document.querySelector("#example-type");
 const exampleSelect = document.querySelector("#example-image");
 const uploadButton = document.querySelector("#upload-button");
 const fileInput = document.querySelector("#file-input");
@@ -70,11 +71,14 @@ window.addEventListener("languagechange", () => {
 });
 
 uploadButton.addEventListener("click", () => fileInput.click());
+exampleTypeSelect.addEventListener("change", () => {
+  loadBundledExamplesForType(exampleTypeSelect.value);
+});
 exampleSelect.addEventListener("change", () => {
   const option = exampleSelect.selectedOptions[0];
 
   if (option) {
-    loadBundledBlockPalette(exampleSelect.value, option.textContent.trim());
+    loadBundledImage(exampleSelect.value, option.textContent.trim());
   }
 });
 fileInput.addEventListener("change", () => {
@@ -318,33 +322,41 @@ async function initializeBundledExamples() {
     return;
   }
 
-  const initializationId = ++state.loadId;
+  await loadBundledExamplesForType(exampleTypeSelect.value);
+}
+
+async function loadBundledExamplesForType(type) {
+  const catalogLoadId = ++state.loadId;
 
   setLoading(true);
 
   try {
-    const manifest = await window.BpalExampleCatalog.loadManifest();
+    const manifest = await window.BpalExampleCatalog.loadManifestForType(type);
 
-    if (externalFileReceived || initializationId !== state.loadId) {
+    if (catalogLoadId !== state.loadId) {
       return;
     }
 
-    const example = window.BpalExampleCatalog.populateSelect(exampleSelect, manifest);
+    const example = window.BpalExampleCatalog.populateSelectForType(
+      exampleSelect,
+      manifest,
+      type,
+    );
 
-    await loadBundledBlockPalette(example.url, example.name);
+    await loadBundledImage(example.url, example.name);
   } catch (error) {
-    if (initializationId === state.loadId) {
-      console.error("Could not load the bundled BPAL manifest.", error);
+    if (catalogLoadId === state.loadId) {
+      console.error("Could not load the bundled image manifest.", error);
       setStatus(error && error.message ? error.message : String(error), true);
     }
   } finally {
-    if (initializationId === state.loadId) {
+    if (catalogLoadId === state.loadId) {
       setLoading(false);
     }
   }
 }
 
-async function loadBundledBlockPalette(url, fileName) {
+async function loadBundledImage(url, fileName) {
   const loadId = ++state.loadId;
 
   setStatus(t("viewer.opening", { name: fileName }));
@@ -830,6 +842,7 @@ function setControlsEnabled(enabled) {
 
 function setLoading(loading) {
   state.loading = loading;
+  exampleTypeSelect.disabled = loading;
   exampleSelect.disabled = loading;
   uploadButton.disabled = loading;
   updateMipControls();

@@ -11,43 +11,78 @@
 
   const DEFAULT_MANIFEST_URL = "./assets/bpal/manifest.json";
   const DEFAULT_ASSET_DIRECTORY = "./assets/bpal/";
+  const CATALOGS = Object.freeze({
+    bpal: Object.freeze({
+      manifestUrl: DEFAULT_MANIFEST_URL,
+      assetDirectory: DEFAULT_ASSET_DIRECTORY,
+      filePattern: /\.(?:bpal|bplm)$/i,
+      label: "BPAL",
+    }),
+    bpdh: Object.freeze({
+      manifestUrl: "./assets/bpdh/manifest.json",
+      assetDirectory: "./assets/bpdh/",
+      filePattern: /\.bpdh$/i,
+      label: "BPDH",
+    }),
+  });
 
   async function loadManifest(
     manifestUrl = DEFAULT_MANIFEST_URL,
     fetchImplementation = root.fetch,
   ) {
+    return loadCatalogManifest(CATALOGS.bpal, manifestUrl, fetchImplementation);
+  }
+
+  async function loadManifestForType(
+    type,
+    fetchImplementation = root.fetch,
+  ) {
+    const catalog = getCatalog(type);
+
+    return loadCatalogManifest(catalog, catalog.manifestUrl, fetchImplementation);
+  }
+
+  async function loadCatalogManifest(catalog, manifestUrl, fetchImplementation) {
     if (typeof fetchImplementation !== "function") {
-      throw new TypeError("Fetch is unavailable for the BPAL example catalog");
+      throw new TypeError(`Fetch is unavailable for the ${catalog.label} example catalog`);
     }
 
     const response = await fetchImplementation(manifestUrl);
 
     if (!response.ok) {
       throw new Error(
-        `Could not load the BPAL example catalog: ${response.status} ${response.statusText}`,
+        `Could not load the ${catalog.label} example catalog: ${response.status} ${response.statusText}`,
       );
     }
 
-    return validateManifest(await response.json());
+    return validateCatalogManifest(await response.json(), catalog);
   }
 
   function validateManifest(manifest) {
+    return validateCatalogManifest(manifest, CATALOGS.bpal);
+  }
+
+  function validateManifestForType(manifest, type) {
+    return validateCatalogManifest(manifest, getCatalog(type));
+  }
+
+  function validateCatalogManifest(manifest, catalog) {
     if (!manifest || manifest.version !== 1 || !Array.isArray(manifest.files)) {
-      throw new TypeError("Invalid bundled BPAL manifest");
+      throw new TypeError(`Invalid bundled ${catalog.label} manifest`);
     }
 
-    const files = manifest.files.filter(isValidFileName);
+    const files = manifest.files.filter((fileName) => isValidFileName(fileName, catalog));
 
     if (
       files.length === 0 ||
       files.length !== manifest.files.length ||
       new Set(files).size !== files.length
     ) {
-      throw new TypeError("Invalid bundled BPAL manifest entries");
+      throw new TypeError(`Invalid bundled ${catalog.label} manifest entries`);
     }
 
     if (typeof manifest.default !== "string" || !files.includes(manifest.default)) {
-      throw new TypeError("Invalid default bundled BPAL image");
+      throw new TypeError(`Invalid default bundled ${catalog.label} image`);
     }
 
     return {
@@ -62,7 +97,17 @@
     manifest,
     assetDirectory = DEFAULT_ASSET_DIRECTORY,
   ) {
-    const validated = validateManifest(manifest);
+    return populateCatalogSelect(select, manifest, CATALOGS.bpal, assetDirectory);
+  }
+
+  function populateSelectForType(select, manifest, type) {
+    const catalog = getCatalog(type);
+
+    return populateCatalogSelect(select, manifest, catalog, catalog.assetDirectory);
+  }
+
+  function populateCatalogSelect(select, manifest, catalog, assetDirectory) {
+    const validated = validateCatalogManifest(manifest, catalog);
     const options = validated.files.map((fileName) => {
       const option = select.ownerDocument.createElement("option");
 
@@ -89,18 +134,33 @@
       : null;
   }
 
-  function isValidFileName(fileName) {
+  function isValidFileName(fileName, catalog) {
     return typeof fileName === "string" &&
       !fileName.includes("/") &&
       !fileName.includes("\\") &&
-      /\.(?:bpal|bplm)$/i.test(fileName);
+      catalog.filePattern.test(fileName);
+  }
+
+  function getCatalog(type) {
+    const catalog = CATALOGS[type];
+
+    if (!catalog) {
+      throw new TypeError(`Unknown image catalog type: ${type}`);
+    }
+
+    return catalog;
   }
 
   return {
     DEFAULT_MANIFEST_URL,
+    DEFAULT_ASSET_DIRECTORY,
+    CATALOGS,
     loadManifest,
+    loadManifestForType,
     validateManifest,
+    validateManifestForType,
     populateSelect,
+    populateSelectForType,
     getSelectedExample,
   };
 });
