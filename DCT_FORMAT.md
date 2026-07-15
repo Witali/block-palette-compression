@@ -1,5 +1,7 @@
 # DCTBS2 fixed-MCU image format
 
+[Russian algorithm overview with layout diagrams](./docs/DCTBS2_ALGORITHM_ru.md)
+
 DCTBS2 is an experimental, deterministic image format intended for direct
 sampling on CPUs and GPUs. It stores independent 16×16 minimum coded units
 (MCUs) at a fixed byte rate. A decoder can locate and reconstruct one pixel
