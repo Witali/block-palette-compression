@@ -71,6 +71,16 @@ top-left image orientation when drawing a full-screen image. A rate-specific
 shader outputs magenta when the main header does not match its expected DCTBS2
 mode or fixed MCU layout.
 
+## Demo Cube integration
+
+`cube.html` can switch its WebGL2 material source from BPAL/BPLM to the bundled
+`assets/dct/stone-texture-wic-1.5bpp.dctbs2` file. The cube shader reads that
+baseline 1.5 bpp stream from an `RGBA8UI` atlas and evaluates the requested
+16x16 Y and 8x16 Cb/Cr inverse-DCT samples per fragment. It does not upload an
+intermediate RGBA texture. The compact cube path intentionally accepts only
+the grouped-5-front, unsplit, non-library 1.5 bpp profile; the seven standalone
+shaders remain the complete format decoders.
+
 ## Regeneration
 
 The coefficient scans and the seven complete fragment shaders are generated
