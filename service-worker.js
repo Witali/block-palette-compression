@@ -1,6 +1,6 @@
 "use strict";
 
-const CACHE_VERSION = "v13";
+const CACHE_VERSION = "v14";
 const SHELL_CACHE = `bpal-shell-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `bpal-runtime-${CACHE_VERSION}`;
 const SHARED_FILE_CACHE = "bpal-shared-files-v1";
@@ -8,13 +8,14 @@ const CURRENT_CACHES = new Set([SHELL_CACHE, RUNTIME_CACHE, SHARED_FILE_CACHE]);
 const SHARE_TARGET_URL = new URL("./share-target", self.registration.scope);
 const SHARED_FILE_DIRECTORY_URL = new URL("./shared-files/", self.registration.scope);
 
-// Keep the install small and deterministic. Large images and BPAL/BPLM samples
+// Keep the install small and deterministic. Large images and BPAL/BPLM/BPDH samples
 // are cached by the fetch handler only after the user requests them.
 const APP_SHELL = [
   "./",
   "./index.html",
   "./block-palette.html",
   "./dct-compression.html",
+  "./bpdh.html",
   "./bpal-viewer.html",
   "./cube.html",
   "./cube-bpal-sampler.html",
@@ -22,6 +23,7 @@ const APP_SHELL = [
   "./home.css",
   "./block-palette.css",
   "./dct-compression.css",
+  "./bpdh.css",
   "./bpal-viewer.css",
   "./style.css",
   "./bpal-sampler.css",
@@ -34,13 +36,19 @@ const APP_SHELL = [
   "./src/core/textured-cube-webgl2.js",
   "./src/decoders/bpal-texture.js",
   "./src/decoders/dctbs2-texture.js",
+  "./src/decoders/bpdh-texture.js",
   "./src/decoders/gpu-jpeg.js",
   "./src/dct/dct-format.js",
   "./src/dct/dct-worker.js",
   "./src/i18n/en.js",
   "./src/i18n/i18n.js",
   "./src/i18n/ru.js",
+  "./src/hybrid/dct420.js",
+  "./src/hybrid/bpdh-format.js",
+  "./src/hybrid/bpdh-codec.js",
+  "./src/hybrid/bpdh-worker.js",
   "./src/pages/block-palette-page.js",
+  "./src/pages/bpdh-page.js",
   "./src/pages/bpal-example-catalog.js",
   "./src/pages/bpal-viewer-page.js",
   "./src/pages/cube-bpal-sampler-page.js",

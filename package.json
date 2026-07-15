@@ -4,10 +4,11 @@
   "private": true,
   "description": "Experimental BPAL block-palette image codec and WebGL texture demos",
   "scripts": {
-    "prestart": "npm run generate:bpal-manifest",
+    "prestart": "npm run generate:image-manifests",
     "start": "node tools/serve.js",
     "test": "node tests/run-tests.js",
-    "generate:bpal-manifest": "node tools/generate-bpal-manifest.js",
+    "generate:image-manifests": "node tools/generate-bpal-manifest.js",
+    "generate:bpal-manifest": "node tools/generate-bpal-manifest.js assets/bpal assets/bpal/manifest.json",
     "generate:dct-shaders": "node tools/generate-dctbs2-shaders.js",
     "benchmark:textures": "python tools/texture_codec_benchmark.py",
     "benchmark:patterns": "node tools/pattern-dictionary-benchmark.js",

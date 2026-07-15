@@ -4,11 +4,11 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#101318">
-    <title data-i18n="viewer.title">BPAL Viewer</title>
+    <title data-i18n="viewer.title">Image Viewer</title>
     <link rel="manifest" href="./app.webmanifest">
     <link rel="icon" href="./assets/icons/app-icon.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="./assets/icons/app-icon-192.png">
-    <link rel="stylesheet" href="./bpal-viewer.css?v=smoothing-control-1">
+    <link rel="stylesheet" href="./bpal-viewer.css?v=bpdh-1">
     <link rel="stylesheet" href="./i18n.css">
   </head>
   <body>
@@ -16,18 +16,26 @@
       <header class="page-header">
         <div>
           <a class="back-link" href="./index.html" data-i18n="common.home">← Home</a>
-          <h1 data-i18n="viewer.title">BPAL Viewer</h1>
-          <p data-i18n="viewer.description">View BPAL files and regular images with zooming and free panning.</p>
+          <h1 data-i18n="viewer.title">Image Viewer</h1>
+          <p data-i18n="viewer.description">View BPAL, BPLM, BPDH, and regular images with zooming and free panning.</p>
         </div>
 
         <div class="source-controls">
+          <label class="example-picker">
+            <span data-i18n="viewer.builtInType">Image type</span>
+            <select id="example-type">
+              <option value="bpal" data-i18n="viewer.typeBpal">BPAL / BPLM</option>
+              <option value="bpdh" data-i18n="viewer.typeBpdh">BPDH</option>
+            </select>
+          </label>
+
           <label class="example-picker">
             <span data-i18n="viewer.builtInImage">Built-in image</span>
             <select id="example-image" disabled></select>
           </label>
 
           <button id="upload-button" class="primary-button" type="button" data-i18n="viewer.upload">Upload image</button>
-          <input id="file-input" type="file" accept=".bpal,.bplm,image/*" hidden>
+          <input id="file-input" type="file" accept=".bpal,.bplm,.bpdh,image/*" hidden>
         </div>
       </header>
 
@@ -35,7 +43,7 @@
         <div class="viewer-toolbar">
           <div class="file-info">
             <h2 id="viewer-title" data-i18n="viewer.image">Image</h2>
-            <span id="status" role="status" aria-live="polite" data-i18n="viewer.choose">Choose a BPAL file or a regular image</span>
+            <span id="status" role="status" aria-live="polite" data-i18n="viewer.choose">Choose a BPAL, BPLM, BPDH, or regular image</span>
           </div>
 
           <div class="toolbar-controls" aria-label="Image controls" data-i18n-aria-label="viewer.controls">
@@ -73,7 +81,7 @@
         >
           <div id="empty-state" class="empty-state">
             <strong data-i18n="viewer.drop">Drop a file here</strong>
-            <span data-i18n="viewer.formats">Supports BPAL, BPLM, and image formats available in your browser</span>
+            <span data-i18n="viewer.formats">Supports BPAL, BPLM, BPDH, and image formats available in your browser</span>
           </div>
           <div id="image-stage" class="image-stage" hidden>
             <canvas id="image-canvas"></canvas>
@@ -84,14 +92,16 @@
       </section>
     </main>
 
-    <script src="./src/i18n/en.js?v=smoothing-control-1"></script>
-    <script src="./src/i18n/ru.js?v=smoothing-control-1"></script>
+    <script src="./src/i18n/en.js?v=image-viewer-1"></script>
+    <script src="./src/i18n/ru.js?v=image-viewer-1"></script>
     <script src="./src/i18n/i18n.js"></script>
     <script src="./src/palette/block-palette-format.js?v=direct-block-colors-1"></script>
     <script src="./src/decoders/bpal-texture.js?v=multi-palette-1"></script>
     <script src="./src/palette/bplm-format.js?v=multi-palette-1"></script>
-    <script src="./src/pages/bpal-example-catalog.js?v=1"></script>
-    <script src="./src/pages/bpal-viewer-page.js?v=smoothing-control-1"></script>
+    <script src="./src/hybrid/dct420.js?v=hybrid-1"></script>
+    <script src="./src/hybrid/bpdh-format.js?v=hybrid-1"></script>
+    <script src="./src/pages/bpal-example-catalog.js?v=image-viewer-1"></script>
+    <script src="./src/pages/bpal-viewer-page.js?v=image-viewer-1"></script>
     <script src="./src/pwa/register-service-worker.js?v=1"></script>
   </body>
 </html>

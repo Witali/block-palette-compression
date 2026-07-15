@@ -16,11 +16,12 @@ const compactFragmentShader = read("src/shaders/cube-webgl2.frag.glsl");
 const compactRendererSource = read("src/core/textured-cube-webgl2.js");
 
 test("accepts BPLM uploads on both WebGL pages", () => {
+  assert.match(cubeHtml, /accept="\.bpal,\.bplm,\.bpdh,application\/octet-stream"/);
+  assert.match(samplerHtml, /accept="\.bpal,\.bplm,application\/octet-stream"/);
+
   for (const html of [cubeHtml, samplerHtml]) {
-    assert.match(html, /accept="\.bpal,\.bplm,application\/octet-stream"/);
     assert.match(html, /id="bpal-example" disabled/);
     assert.match(html, /src="\.\/src\/palette\/bplm-format\.js\?v=multi-palette-1"/);
-    assert.match(html, /src="\.\/src\/pages\/bpal-example-catalog\.js\?v=1"/);
   }
 
   for (const source of [cubeSource, samplerSource]) {
@@ -57,7 +58,7 @@ test("binds each cube's own BPAL texture resource before drawing it", () => {
 test("keeps Demo Cube BPAL resources shader-only without decoded RGBA textures", () => {
   assert.match(rendererSource, /discardColorTexture\(\)/);
   assert.match(rendererSource, /this\.texture = this\.fallbackTexture/);
-  assert.match(cubeSource, /createBpalTextureResource\(data\.shaderTextureData\)/);
+  assert.match(cubeSource, /createBpalTextureResource\(textureData\.shaderTextureData\)/);
   assert.doesNotMatch(cubeSource, /loadTexturePixels\(decoded\.pixels/);
 });
 

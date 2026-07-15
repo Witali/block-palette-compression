@@ -49,25 +49,26 @@
         <select id="texture-format">
           <option value="bpal" selected data-i18n="cube.textureFormatBpal">BPAL / BPLM</option>
           <option value="dct" data-i18n="cube.textureFormatDct">DCTBS2 · 1.5 bpp</option>
+          <option value="bpdh" data-i18n="cube.textureFormatBpdh">BPDH</option>
         </select>
       </label>
       <label class="bpal-example-control">
-        <span data-i18n="common.builtInBpal">Built-in BPAL/BPLM</span>
+        <span data-i18n="cube.builtInTexture">Built-in texture</span>
         <select id="bpal-example" disabled></select>
       </label>
       <label class="bpal-upload">
-        <input id="bpal-file" type="file" accept=".bpal,.bplm,application/octet-stream">
-        <span data-i18n="common.uploadBpal">Upload BPAL/BPLM</span>
+        <input id="bpal-file" type="file" accept=".bpal,.bplm,.bpdh,application/octet-stream">
+        <span data-i18n="cube.uploadTexture">Upload texture</span>
       </label>
       <label class="material-option" title="Assign a texture instance to every cube" data-i18n-title="cube.perCubeTexturesTitle">
         <input id="per-cube-textures" type="checkbox" checked disabled>
         <span data-i18n="cube.perCubeTextures">Texture per cube</span>
       </label>
-      <output id="bpal-status" class="bpal-status" role="status" aria-live="polite" data-i18n="cube.loadingDefaultBpal">Loading default BPAL texture…</output>
+      <output id="bpal-status" class="bpal-status" role="status" aria-live="polite" data-i18n="cube.loadingDefaultTexture">Loading default texture…</output>
     </form>
     <canvas id="gl-canvas" aria-label="Rotating WebGL cube" data-i18n-aria-label="cube.canvasAria"></canvas>
-    <script src="./src/i18n/en.js?v=compact-bpal-1"></script>
-    <script src="./src/i18n/ru.js?v=compact-bpal-1"></script>
+    <script src="./src/i18n/en.js?v=bpdh-cube-1"></script>
+    <script src="./src/i18n/ru.js?v=bpdh-cube-1"></script>
     <script src="./src/i18n/i18n.js"></script>
     <script src="./src/decoders/gpu-jpeg.js"></script>
     <script src="./src/dct/dct-format.js?v=dct-cube-2"></script>
@@ -75,12 +76,15 @@
     <script src="./src/palette/block-palette-format.js?v=direct-block-colors-1"></script>
     <script src="./src/decoders/bpal-texture.js?v=multi-palette-1"></script>
     <script src="./src/palette/bplm-format.js?v=multi-palette-1"></script>
-    <script src="./src/core/textured-cube.js?v=dct-cube-2"></script>
-    <script src="./src/core/textured-cube-webgl2.js?v=dct-cube-2"></script>
+    <script src="./src/hybrid/dct420.js?v=hybrid-1"></script>
+    <script src="./src/hybrid/bpdh-format.js?v=hybrid-1"></script>
+    <script src="./src/decoders/bpdh-texture.js?v=bpdh-cube-1"></script>
+    <script src="./src/core/textured-cube.js?v=hybrid-cube-1"></script>
+    <script src="./src/core/textured-cube-webgl2.js?v=hybrid-cube-1"></script>
     <script src="./src/pages/cube-wheel-zoom.js?v=2"></script>
     <script src="./src/pages/cube-grid-layout.js?v=multi-cube-1"></script>
-    <script src="./src/pages/bpal-example-catalog.js?v=1"></script>
-    <script src="./src/pages/cube-page.js?v=dct-cube-2"></script>
+    <script src="./src/pages/bpal-example-catalog.js?v=image-viewer-1"></script>
+    <script src="./src/pages/cube-page.js?v=hybrid-cube-1"></script>
     <script src="./src/pwa/register-service-worker.js?v=1"></script>
   </body>
 </html>

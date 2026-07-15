@@ -35,7 +35,8 @@
       "accept": {
         "application/octet-stream": [
           ".bpal",
-          ".bplm"
+          ".bplm",
+          ".bpdh"
         ]
       }
     }
@@ -51,7 +52,8 @@
           "accept": [
             "application/octet-stream",
             ".bpal",
-            ".bplm"
+            ".bplm",
+            ".bpdh"
           ]
         }
       ]

@@ -8,7 +8,7 @@
     <link rel="manifest" href="./app.webmanifest">
     <link rel="icon" href="./assets/icons/app-icon.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="./assets/icons/app-icon-192.png">
-    <link rel="stylesheet" href="./home.css?v=home-3">
+    <link rel="stylesheet" href="./home.css?v=hybrid-1">
     <link rel="stylesheet" href="./i18n.css">
   </head>
   <body data-language-switcher>
@@ -30,9 +30,13 @@
           <span data-i18n="home.dct.title">DCT compression</span>
           <small data-i18n="home.dct.description">Compress into fixed 16×16 DCT records and read any reconstructed pixel directly by coordinate.</small>
         </a>
+        <a href="./bpdh.html">
+          <span data-i18n="home.hybrid.title">Hybrid BPAL/DCT compression</span>
+          <small data-i18n="home.hybrid.description">Select BPAL or DCT independently for every 16×16 unit under one payload target.</small>
+        </a>
         <a href="./bpal-viewer.html">
-          <span data-i18n="home.viewer.title">BPAL Viewer</span>
-          <small data-i18n="home.viewer.description">Open BPAL files or regular images and inspect them with zoom and pan controls.</small>
+          <span data-i18n="home.viewer.title">Image Viewer</span>
+          <small data-i18n="home.viewer.description">Open BPAL, BPLM, BPDH, or regular images and inspect them with zoom and pan controls.</small>
         </a>
         <a href="./cube.html">
           <span data-i18n="home.cube.title">Cube</span>
@@ -45,8 +49,8 @@
       </nav>
     </main>
 
-    <script src="./src/i18n/en.js?v=home-4"></script>
-    <script src="./src/i18n/ru.js?v=home-4"></script>
+    <script src="./src/i18n/en.js?v=home-5"></script>
+    <script src="./src/i18n/ru.js?v=home-5"></script>
     <script src="./src/i18n/i18n.js"></script>
     <script src="./src/pwa/register-service-worker.js?v=1"></script>
   </body>

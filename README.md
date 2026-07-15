@@ -58,13 +58,57 @@ after convergence. This changes encoding time and reconstructed quality but
 does not add fields or bits to BPAL/BPLM files and does not affect decoding.
 The compressor UI lets users select zero to four passes and defaults to one.
 
+## Hybrid BPAL/DCT mode
+
+The experimental BPDH v1 codec selects BPAL or 4:2:0 DCT independently for
+each `16x16` coding unit. Its encoder evaluates real serialized rate and exact
+decoded RGB squared error, then searches the supported rate-distortion mode
+assignments at the requested payload bpp. Pure BPAL and pure DCT candidates
+remain available when mixed-mode signaling is not worthwhile.
+
+BPDH stores only the BPAL and DCT records selected by the mode map. DCT units
+use absolute DC coefficients, fixed quantization tables, and deterministic
+fixed-point reconstruction. `sampleBpdhPixel(decoded, x, y)` obtains a pixel
+from its coding unit without depending on neighboring units or decode order.
+The Demo Cube does not upload a reconstructed BPDH RGBA image. It keeps
+palette records and cached block-local YCbCr samples contiguous in a GPU atlas,
+then obtains the final RGB color with a coordinate-based fragment-shader
+function. Neighboring fragments reuse the same atlas regions through the GPU
+texture cache.
+
+![Hybrid BPAL/DCT compression page at a 1 bpp payload target](./docs/images/bpdh-hybrid-compression-page.png)
+
+The Node.js API separates compression from serialization:
+
+```js
+const { compressHybridImage } = require("./src/hybrid/bpdh-codec.js");
+const {
+  encodeBpdhFile,
+  decodeBpdhFile,
+  sampleBpdhPixel,
+} = require("./src/hybrid/bpdh-format.js");
+
+const image = compressHybridImage(rgba, width, height, {
+  mode: "auto",
+  targetBitsPerPixel: 4,
+});
+const file = encodeBpdhFile(image);
+const decoded = decodeBpdhFile(file);
+const color = sampleBpdhPixel(decoded, x, y);
+```
+
+`tools/benchmark_bpdh_adapter.js` exposes matching raw-RGBA encode and decode
+commands for benchmark automation.
+
 The project contains:
 
 - [`block-palette.html`](https://witali.github.io/block-palette-compression/block-palette.html) — CPU/WebGL2 encoder, preview,
   settings search, PNG export, and BPAL download;
-- [`bpal-viewer.html`](https://witali.github.io/block-palette-compression/bpal-viewer.html) — BPAL and regular image viewer;
-- [`cube.html`](https://witali.github.io/block-palette-compression/cube.html) — WebGL cube with switchable BPAL double indexing
-  or direct DCTBS2 inverse transforms in the fragment shader;
+- [`bpdh.html`](https://witali.github.io/block-palette-compression/bpdh.html) — hybrid BPAL/DCT encoder, mode-map preview,
+  coordinate decoder, PNG export, and BPDH download;
+- [`bpal-viewer.html`](https://witali.github.io/block-palette-compression/bpal-viewer.html) — BPAL, BPLM, BPDH, and regular image viewer;
+- [`cube.html`](https://witali.github.io/block-palette-compression/cube.html) — WebGL cube with BPAL/BPLM double indexing,
+  direct DCTBS2 transforms, or coordinate-based BPDH decoding in the fragment shader;
 - [`cube-bpal-sampler.html`](https://witali.github.io/block-palette-compression/cube-bpal-sampler.html) — programmable BPAL
   mipmapping with nearest, bilinear, trilinear, and anisotropic filtering.
 
@@ -75,6 +119,8 @@ Detailed documentation:
   ([Russian](./BLOCK_PALETTE_README_ru.md));
 - [BPAL v5 file format](./BLOCK_PALETTE_FORMAT.md)
   ([Russian](./BLOCK_PALETTE_FORMAT_ru.md));
+- [BPDH v1 hybrid BPAL/DCT format](./BPDH_FORMAT.md);
+- [hybrid BPAL/DCT research and benchmark plan](./docs/HYBRID_BPAL_DCT_PLAN.md);
 - [standalone BPAL v5 CPU/SIMD and CUDA tools](./native/bpal5_simd/README.md);
 - [standalone CUDA DCTBS2 encoder, decoder, and pixel sampler](./native/dct_cuda/README.md);
 - [reproducible BPAL/BC/ASTC texture codec benchmark](./benchmark/README.md).
@@ -103,32 +149,33 @@ npm start
 
 Open <http://127.0.0.1:8000/>.
 
-`npm start` regenerates `assets/bpal/manifest.json` from the bundled `.bpal`
-and `.bplm` files before starting the server. The GitHub Pages workflow runs
-the same generator before uploading the site artifact, so the viewer catalog
-does not need to be maintained by hand.
+`npm start` regenerates `assets/bpal/manifest.json` and
+`assets/bpdh/manifest.json` from the bundled `.bpal`, `.bplm`, and `.bpdh`
+files before starting the server. The GitHub Pages workflow runs the same
+generator before uploading the site artifact, so neither Image Viewer catalog
+needs to be maintained by hand.
 
 ## Install as an app
 
 The GitHub Pages site is an installable Progressive Web App. Supporting
 browsers can install it from their address bar or application menu. The app
 shell is available offline after the service worker finishes installing;
-large images and BPAL/BPLM examples are cached only after they are opened.
+large images and BPAL/BPLM/BPDH examples are cached only after they are opened.
 
 HTML navigations use the network first so deployments remain fresh, with a
 cached page as the offline fallback. Static resources return from the cache
 immediately and are refreshed in the background.
 
 When installed by a Chromium-based desktop browser, the PWA registers as a
-handler for `.bpal` and `.bplm` files. Opening either file type from the
-operating system launches BPAL Viewer and passes the selected file to it. On
+handler for `.bpal`, `.bplm`, and `.bpdh` files. Opening any of these file types from the
+operating system launches Image Viewer and passes the selected file to it. On
 platforms without the File Handling API, the viewer's file picker and drag and
 drop support remain available.
 
-On Android, install the PWA in Chrome, select a `.bpal` or `.bplm` file in the
+On Android, install the PWA in Chrome, select a `.bpal`, `.bplm`, or `.bpdh` file in the
 system file manager, and share it with BPAL. The service worker receives the
 Web Share Target POST request, stores the file temporarily, and opens it in
-BPAL Viewer. GitHub Pages does not need a server-side POST endpoint.
+Image Viewer. GitHub Pages does not need a server-side POST endpoint.
 
 ## Test
 

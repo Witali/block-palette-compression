@@ -15,6 +15,7 @@ const htmlPages = [
   "index.html",
   "block-palette.html",
   "dct-compression.html",
+  "bpdh.html",
   "bpal-viewer.html",
   "cube.html",
   "cube-bpal-sampler.html",
@@ -59,22 +60,22 @@ test("registers the root service worker without breaking project-page paths", ()
   assert.match(registration, /updateViaCache: "none"/);
 });
 
-test("associates installed desktop PWAs with BPAL and BPLM files", () => {
+test("associates installed desktop PWAs with BPAL, BPLM, and BPDH files", () => {
   assert.deepEqual(manifest.file_handlers, [
     {
       action: "./bpal-viewer.html",
       accept: {
-        "application/octet-stream": [".bpal", ".bplm"],
+        "application/octet-stream": [".bpal", ".bplm", ".bpdh"],
       },
     },
   ]);
   assert.match(viewerSource, /window\.launchQueue\.setConsumer/);
   assert.match(viewerSource, /const file = await fileHandle\.getFile\(\)/);
   assert.match(viewerSource, /await loadFile\(file\)/);
-  assert.match(viewerSource, /externalFileReceived \|\| initializationId !== state\.loadId/);
+  assert.match(viewerSource, /catalogLoadId !== state\.loadId/);
 });
 
-test("registers an Android Web Share Target for BPAL and BPLM files", () => {
+test("registers an Android Web Share Target for BPAL, BPLM, and BPDH files", () => {
   assert.deepEqual(manifest.share_target, {
     action: "./share-target",
     method: "POST",
@@ -83,7 +84,7 @@ test("registers an Android Web Share Target for BPAL and BPLM files", () => {
       files: [
         {
           name: "bpal_file",
-          accept: ["application/octet-stream", ".bpal", ".bplm"],
+          accept: ["application/octet-stream", ".bpal", ".bplm", ".bpdh"],
         },
       ],
     },
@@ -96,7 +97,7 @@ test("registers an Android Web Share Target for BPAL and BPLM files", () => {
   assert.match(viewerSource, /await loadFile\(new File\(\[blob\], fileName/);
 });
 
-test("stores an Android shared file and redirects it to BPAL Viewer", async () => {
+test("stores an Android shared file and redirects it to Image Viewer", async () => {
   const harness = createServiceWorkerHarness();
   const formData = new FormData();
   const sourceBytes = Buffer.from([0x42, 0x50, 0x41, 0x4c, 0x05, 0x00]);
