@@ -237,6 +237,48 @@ test("stores deterministic clustered DCT prototypes without losing coordinate ac
   assert.equal(inspectDctFile(tailReference).library.referenceCoding, "tail");
 });
 
+test("keeps 16- and 32-entry sidecar libraries separate and directly addressable", () => {
+  const width = 64;
+  const height = 64;
+  const source = makePixels(width, height);
+  const options = {
+    preset: "3",
+    quality: 100,
+    dctLibrary: true,
+    librarySize: 32,
+    libraryComponents: ["y"],
+    libraryReferenceCoding: "sidecar",
+    libraryFrequencySplit: 0.25,
+    libraryClusterSamples: 64,
+    libraryCandidateCount: 4,
+  };
+  const first = encodeDctFile(source, width, height, options);
+  const second = encodeDctFile(source, width, height, options);
+  const info = inspectDctFile(first);
+  const decoded = decodeDctFile(first);
+
+  assert.deepEqual(first, second);
+  assert.equal(info.library.referenceCoding, "sidecar");
+  assert.equal(info.library.frequencySplit, 0.25);
+  assert.equal(info.library.y.count, 32);
+  assert.equal(info.library.y.reference.bits, 6);
+  assert.equal(info.library.cb.count, 0);
+  assert.equal(info.library.cr.count, 0);
+
+  for (const [x, y] of [[0, 0], [17, 29], [47, 33], [63, 63]]) {
+    const sampled = sampleDctFilePixel(first, x, y);
+    const offset = (y * width + x) * 4;
+    assert.deepEqual(
+      [sampled.r, sampled.g, sampled.b, sampled.a],
+      Array.from(decoded.pixels.slice(offset, offset + 4)),
+      `sidecar-library pixel ${x},${y}`
+    );
+  }
+
+  const sixteen = encodeDctFile(source, width, height, { ...options, librarySize: 16 });
+  assert.equal(inspectDctFile(sixteen).library.y.reference.bits, 5);
+});
+
 test("rejects invalid DCT prototype libraries and out-of-range references", () => {
   const source = makePixels(16, 16);
   const encoded = encodeDctFile(source, 16, 16, {

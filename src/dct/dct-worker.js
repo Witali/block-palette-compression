@@ -1,6 +1,6 @@
 "use strict";
 
-importScripts("../decoders/gpu-jpeg.js", "./dct-format.js?v=dct-page-9");
+importScripts("../decoders/gpu-jpeg.js", "./dct-format.js?v=dct-page-10");
 
 self.addEventListener("message", ({ data }) => {
   if (!data || data.type !== "encode") {
@@ -15,6 +15,10 @@ self.addEventListener("message", ({ data }) => {
       dctLibrary: Boolean(data.dctLibrary),
       librarySize: data.librarySize,
       libraryComponents: data.libraryComponents,
+      libraryReferenceCoding: data.libraryReferenceCoding,
+      libraryFrequencySplit: data.libraryFrequencySplit,
+      libraryClusterSamples: data.libraryClusterSamples,
+      libraryCandidateCount: data.libraryCandidateCount,
     };
     let encoded;
     let decoded;
@@ -48,6 +52,10 @@ self.addEventListener("message", ({ data }) => {
           dctLibrary: Boolean(data.dctLibrary),
           librarySize: data.librarySize,
           libraryComponents: data.libraryComponents,
+          libraryReferenceCoding: data.libraryReferenceCoding,
+          libraryFrequencySplit: data.libraryFrequencySplit,
+          libraryClusterSamples: data.libraryClusterSamples,
+          libraryCandidateCount: data.libraryCandidateCount,
           onProgress(progress) {
             self.postMessage({ type: "progress", requestId: data.requestId, ...progress });
           },

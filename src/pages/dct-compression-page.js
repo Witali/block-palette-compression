@@ -9,7 +9,7 @@ const qualityInput = document.getElementById("quality");
 const qualityValue = document.getElementById("quality-value");
 const autoQualityInput = document.getElementById("auto-quality");
 const jpegImportInput = document.getElementById("jpeg-dct-import");
-const prototypeLibraryInput = document.getElementById("dct-prototype-library");
+const prototypeLibrarySelect = document.getElementById("dct-prototype-library");
 const uploadButton = document.getElementById("upload-button");
 const fileInput = document.getElementById("image-file");
 const processButton = document.getElementById("process-button");
@@ -100,13 +100,13 @@ autoQualityInput.addEventListener("change", () => {
 jpegImportInput.addEventListener("change", () => {
   if (jpegImportInput.checked) {
     autoQualityInput.checked = false;
-    prototypeLibraryInput.checked = false;
+    prototypeLibrarySelect.value = "none";
   }
   updateQualityLabel();
   processImage();
 });
-prototypeLibraryInput.addEventListener("change", () => {
-  if (prototypeLibraryInput.checked) {
+prototypeLibrarySelect.addEventListener("change", () => {
+  if (prototypeLibrarySelect.value !== "none") {
     jpegImportInput.checked = false;
   }
   setBusy(false);
@@ -198,7 +198,7 @@ async function loadImage(url, name, suppliedBytes = null) {
   jpegImportInput.checked = Boolean(state.sourceJpegBytes);
   if (jpegImportInput.checked) {
     autoQualityInput.checked = false;
-    prototypeLibraryInput.checked = false;
+    prototypeLibrarySelect.value = "none";
   }
   updateQualityLabel();
   drawImageData(sourceCanvas, state.sourceImageData);
@@ -264,6 +264,31 @@ async function handleUpload() {
   await loadImage(state.uploadedUrl, file.name, await file.arrayBuffer());
 }
 
+function getPrototypeLibraryOptions() {
+  const mode = prototypeLibrarySelect.value;
+  if (mode === "none") {
+    return null;
+  }
+  if (mode === "header3") {
+    return { librarySize: 3 };
+  }
+  const sidecarModes = {
+    sidecar16: { librarySize: 16 },
+    sidecar32: { librarySize: 32 },
+    "sidecar32-spectral": { librarySize: 32, libraryFrequencySplit: 0.25 },
+  };
+  const selected = sidecarModes[mode];
+  if (!selected) {
+    throw new RangeError(`Unsupported DCT prototype library mode: ${mode}`);
+  }
+  return {
+    ...selected,
+    libraryReferenceCoding: "sidecar",
+    libraryClusterSamples: 4096,
+    libraryCandidateCount: 4,
+  };
+}
+
 function processImage() {
   if (!state.sourceImageData) {
     return Promise.resolve();
@@ -274,7 +299,7 @@ function processImage() {
   const source = state.sourceImageData;
   const jpegImport = jpegImportInput.checked && Boolean(state.sourceJpegBytes);
   const autoQuality = !jpegImport && autoQualityInput.checked;
-  const worker = new Worker("./src/dct/dct-worker.js?v=dct-page-9");
+  const worker = new Worker("./src/dct/dct-worker.js?v=dct-page-10");
   const pixels = source.data.slice();
   const jpegBytes = jpegImport ? state.sourceJpegBytes.slice() : null;
 
@@ -341,6 +366,7 @@ function processImage() {
       reject(error);
     });
 
+    const libraryOptions = getPrototypeLibraryOptions();
     const message = {
       type: "encode",
       requestId,
@@ -351,9 +377,13 @@ function processImage() {
       quality: Number(qualityInput.value),
       autoQuality,
       jpegImport,
-      dctLibrary: !jpegImport && prototypeLibraryInput.checked && Number(presetSelect.value) >= 3,
-      librarySize: 3,
-      libraryComponents: ["y"],
+      dctLibrary: !jpegImport && libraryOptions !== null,
+      librarySize: libraryOptions?.librarySize,
+      libraryComponents: libraryOptions ? ["y"] : undefined,
+      libraryReferenceCoding: libraryOptions?.libraryReferenceCoding,
+      libraryFrequencySplit: libraryOptions?.libraryFrequencySplit,
+      libraryClusterSamples: libraryOptions?.libraryClusterSamples,
+      libraryCandidateCount: libraryOptions?.libraryCandidateCount,
       jpegBytes: jpegBytes ? jpegBytes.buffer : null,
       sampleMcuCount: 24,
     };
@@ -705,7 +735,7 @@ function setBusy(busy) {
   qualityInput.disabled = busy || autoQualityInput.checked;
   autoQualityInput.disabled = busy || jpegImportInput.checked;
   jpegImportInput.disabled = busy || !state.sourceJpegBytes;
-  prototypeLibraryInput.disabled = busy || jpegImportInput.checked || Number(presetSelect.value) < 3;
+  prototypeLibrarySelect.disabled = busy || jpegImportInput.checked;
   uploadButton.disabled = busy;
   imageSelect.disabled = busy;
   downloadDctButton.disabled = busy || !state.encoded;

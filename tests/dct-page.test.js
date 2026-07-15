@@ -54,20 +54,25 @@ test("zooms both previews around the pointer with Ctrl and the mouse wheel", () 
 
 test("runs DCT encoding and automatic quality search in a worker", () => {
   assert.match(pageScript, /new Worker\("\.\/src\/dct\/dct-worker\.js/);
-  assert.match(worker, /dct-format\.js\?v=dct-page-9/);
+  assert.match(worker, /dct-format\.js\?v=dct-page-10/);
   assert.match(worker, /findBestDctQuality/);
   assert.match(worker, /encodeDctFile/);
   assert.match(worker, /decodedPixels: decoded\.pixels\.buffer/);
   assert.match(worker, /\[encoded\.buffer, decoded\.pixels\.buffer\]/);
 });
 
-test("offers the clustered DCT prototype library as an independent opt-in mode", () => {
+test("offers separately versioned 3-, 16-, and 32-entry DCT prototype libraries", () => {
   assert.match(page, /id="dct-prototype-library"/);
   assert.match(page, /data-i18n="dct\.prototypeLibrary"/);
-  assert.match(pageScript, /dctLibrary: !jpegImport && prototypeLibraryInput\.checked && Number\(presetSelect\.value\) >= 3/);
-  assert.match(pageScript, /librarySize: 3/);
-  assert.match(pageScript, /libraryComponents: \["y"\]/);
+  assert.match(page, /value="sidecar16"/);
+  assert.match(page, /value="sidecar32"/);
+  assert.match(page, /value="sidecar32-spectral"/);
+  assert.match(pageScript, /libraryReferenceCoding: "sidecar"/);
+  assert.match(pageScript, /libraryFrequencySplit: 0\.25/);
+  assert.match(pageScript, /libraryCandidateCount: 4/);
+  assert.match(pageScript, /dctLibrary: !jpegImport && libraryOptions !== null/);
   assert.match(worker, /dctLibrary: Boolean\(data\.dctLibrary\)/);
+  assert.match(worker, /libraryReferenceCoding: data\.libraryReferenceCoding/);
 });
 
 test("offers CPU Huffman JPEG DCT import without an RGB encoding pass", () => {

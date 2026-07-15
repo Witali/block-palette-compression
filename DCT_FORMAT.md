@@ -92,22 +92,50 @@ the complete baseline coefficient budget. Experimental libraries with four or
 more entries use the final AC mantissa as a wider unsigned reference and
 therefore store one fewer residual coefficient.
 
+Separately versioned sidecar libraries preserve every baseline MCU bit while
+supporting up to 63 prototypes. They store one fixed-width, directly addressed
+index per participating component outside the MCU payload. Index zero selects
+the raw component and indices 1 through N select a prototype, so 16 prototypes
+need 5 bits and 32 prototypes need 6 bits. Sidecar indices do not change the
+baseline component-record interpretation.
+
+Spectral-split library versions give the prototype and local residual different
+roles without changing the four existing significance scans. For an AC budget
+of N positions and split fraction F, the local record keeps the first
+`N - high_count` positions of its selected scan and uses its remaining slots
+for positions beginning at N, where
+`high_count = min(round(N * F), scan_length - N)`. DC remains a local residual.
+The prototype record retains the ordinary low-significance-rank prefix. The
+current selected experimental profile uses `F = 0.25`.
+
 The library is appended after all fixed-size MCU records. Its 32-byte header is:
 
 | Offset | Bytes | Field |
 | ---: | ---: | --- |
 | 0 | 8 | `DCTLIB1\0` magic |
-| 8 | 4 | version (`2` for header references, `1` for tail references) |
+| 8 | 4 | version; see below |
 | 12 | 4 | Y prototype count |
 | 16 | 4 | Cb prototype count |
 | 20 | 4 | Cr prototype count |
 | 24 | 4 | bytes per Y prototype record |
 | 28 | 4 | complete library bytes including this header |
 
-Y prototype records are followed by Cb and Cr prototype records. Every
+Versions 1 and 2 are the original tail- and header-reference layouts. Versions
+3, 4, and 5 use header references with spectral split fractions 0.25, 0.5, and
+1. Versions 6, 7, 8, and 9 use sidecar references with split fractions 0,
+0.25, 0.5, and 1 respectively.
+
+For versions 6 through 9, byte-aligned Y, Cb, and Cr sidecar streams immediately
+follow the 32-byte header. Indices are packed least-significant bit first. The
+stream length is `ceil(reference_count * ceil(log2(prototype_count + 1)) / 8)`.
+The prototype records follow all three streams in Y, Cb, Cr order. For other
+versions the prototype records begin immediately after the header.
+
+Every
 prototype uses the ordinary component-record representation, the image quality,
 and the file's coefficient coding. The counts are bounded by 3 in compact mode
-and by the unsigned mantissa range in tail-reference mode.
+by the unsigned mantissa range in tail-reference mode, and by 63 in sidecar
+mode.
 
 ## Random access
 
@@ -127,9 +155,11 @@ single 16×16 Y record.
 Cb/Cr are sampled at `((x mod 16) / 2, y mod 16)`, after which the three
 samples are converted to RGB. All loops are bounded by 16×16, 8×8, and 8×16
 transform dimensions. A library file additionally reads at most one bounded
-prototype record per component. There are no references to other MCUs, and the
-prototype address is computed directly from the stored index and fixed record
-size. This remains suitable for a read-only GPU buffer or texture.
+index and one bounded prototype record per component. The sidecar bit address
+is computed from the component block ordinal and fixed index width. There are
+no references to other MCUs, and the prototype address is computed directly
+from the index and fixed record size. This remains suitable for a read-only GPU
+buffer or texture.
 
 High-rate DCTBS2 v2 files written before the split-luma flag was introduced
 remain valid: an unset bit 1 always means one 16×16 Y record, including for a

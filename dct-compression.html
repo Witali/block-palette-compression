@@ -60,9 +60,15 @@
             <span data-i18n="dct.jpegImport">Fast JPEG DCT import</span>
           </label>
 
-          <label class="dct-check-option" title="At 3 bpp and above, cluster luma DCT blocks into three prototypes and store an independent local residual plus a prototype reference" data-i18n-title="dct.prototypeLibraryTitle">
-            <input id="dct-prototype-library" name="dctPrototypeLibrary" type="checkbox">
-            <span data-i18n="dct.prototypeLibrary">Y DCT prototype library (3 entries)</span>
+          <label title="Choose a separate luma prototype-library format; baseline DCT profiles remain unchanged" data-i18n-title="dct.prototypeLibraryTitle">
+            <span data-i18n="dct.prototypeLibrary">DCT prototype library</span>
+            <select id="dct-prototype-library" name="dctPrototypeLibrary">
+              <option value="none" data-i18n="dct.prototypeLibraryNone">None</option>
+              <option value="header3" data-i18n="dct.prototypeLibraryHeader3">Header references · 3 prototypes</option>
+              <option value="sidecar16" data-i18n="dct.prototypeLibrarySidecar16">Sidecar references · 16 prototypes</option>
+              <option value="sidecar32" data-i18n="dct.prototypeLibrarySidecar32">Sidecar references · 32 prototypes</option>
+              <option value="sidecar32-spectral" data-i18n="dct.prototypeLibrarySidecar32Spectral">Spectral split · 32 prototypes</option>
+            </select>
           </label>
 
           <button id="upload-button" type="button" data-i18n="common.uploadImage">Upload image</button>
@@ -158,11 +164,11 @@
       <button id="progress-cancel" type="button" data-i18n="common.cancel">Cancel</button>
     </dialog>
 
-    <script src="./src/dct/dct-format.js?v=dct-page-9"></script>
-    <script src="./src/i18n/en.js?v=dct-page-8"></script>
-    <script src="./src/i18n/ru.js?v=dct-page-8"></script>
+    <script src="./src/dct/dct-format.js?v=dct-page-10"></script>
+    <script src="./src/i18n/en.js?v=dct-page-10"></script>
+    <script src="./src/i18n/ru.js?v=dct-page-10"></script>
     <script src="./src/i18n/i18n.js"></script>
-    <script src="./src/pages/dct-compression-page.js?v=dct-page-9"></script>
+    <script src="./src/pages/dct-compression-page.js?v=dct-page-10"></script>
     <script src="./src/pwa/register-service-worker.js?v=1"></script>
   </body>
 </html>

@@ -34,6 +34,13 @@
   const LIBRARY_MAGIC = Object.freeze([0x44, 0x43, 0x54, 0x4c, 0x49, 0x42, 0x31, 0x00]);
   const LIBRARY_VERSION_TAIL_REFERENCE = 1;
   const LIBRARY_VERSION_HEADER_REFERENCE = 2;
+  const LIBRARY_VERSION_SPECTRAL_QUARTER = 3;
+  const LIBRARY_VERSION_SPECTRAL_HALF = 4;
+  const LIBRARY_VERSION_SPECTRAL_FULL = 5;
+  const LIBRARY_VERSION_SIDECAR_REFERENCE = 6;
+  const LIBRARY_VERSION_SIDECAR_SPECTRAL_QUARTER = 7;
+  const LIBRARY_VERSION_SIDECAR_SPECTRAL_HALF = 8;
+  const LIBRARY_VERSION_SIDECAR_SPECTRAL_FULL = 9;
   const LIBRARY_HEADER_BYTES = 32;
   const DEFAULT_LIBRARY_SIZE = 8;
   const LIBRARY_CLUSTER_ITERATIONS = 6;
@@ -206,6 +213,12 @@
       options.librarySize === undefined ? DEFAULT_LIBRARY_SIZE : options.librarySize,
       coefficientCoding
     );
+    const libraryFrequencySplit = normalizeLibraryFrequencySplit(options.libraryFrequencySplit);
+    const requestedReferenceCoding = normalizeLibraryReferenceCoding(options.libraryReferenceCoding);
+    const libraryClusterSamples = requestedReferenceCoding === "sidecar"
+      ? normalizeLibraryClusterSamples(options.libraryClusterSamples) : 0;
+    const libraryCandidateCount = requestedReferenceCoding === "sidecar"
+      ? normalizeLibraryCandidateCount(options.libraryCandidateCount) : 0;
     const libraryComponents = normalizeLibraryComponents(options.libraryComponents);
     const source = collectDctLibrarySource(pixels, width, height, layout, splitLuma8x8);
     const yRecordBytes = splitLuma8x8 ? layout.yBytes / 4 : layout.yBytes;
@@ -217,7 +230,8 @@
         yRecordBytes,
         quality,
         false,
-        coefficientCoding
+        coefficientCoding,
+        libraryClusterSamples
       );
     const cbLibrary = buildDctPrototypeLibrary(
         source.cbVectors,
@@ -227,7 +241,8 @@
         layout.cbBytes,
         quality,
         true,
-        coefficientCoding
+        coefficientCoding,
+        libraryClusterSamples
       );
     const crLibrary = buildDctPrototypeLibrary(
         source.crVectors,
@@ -237,15 +252,26 @@
         layout.crBytes,
         quality,
         true,
-        coefficientCoding
+        coefficientCoding,
+        libraryClusterSamples
       );
     const library = {
-      referenceCoding: Math.max(yLibrary.count, cbLibrary.count, crLibrary.count) <= 3
-        ? "header" : "tail",
+      referenceCoding: requestedReferenceCoding === "sidecar" ? "sidecar" :
+        Math.max(yLibrary.count, cbLibrary.count, crLibrary.count) <= 3 ? "header" : "tail",
+      frequencySplit: libraryFrequencySplit,
       y: yLibrary,
       cb: cbLibrary,
       cr: crLibrary,
     };
+    library.y.candidateCount = libraryCandidateCount;
+    library.cb.candidateCount = libraryCandidateCount;
+    library.cr.candidateCount = libraryCandidateCount;
+    if (library.frequencySplit > 0 && library.referenceCoding === "tail") {
+      throw new RangeError("Spectral-split DCT libraries require header or sidecar references");
+    }
+    if (library.referenceCoding === "tail" && requestedLibrarySize > 2 ** coefficientCoding.mantissaBits - 1) {
+      throw new RangeError("Tail-reference DCT library is too large for the coefficient coding");
+    }
     const trailer = serializeDctLibrary(layout, splitLuma8x8, library);
     const output = createDctOutput(
       layout,
@@ -256,15 +282,13 @@
       trailer.length
     );
 
-    output.set(trailer, HEADER_BYTES + layout.payloadBytes);
-
     for (let mcuIndex = 0; mcuIndex < layout.mcuCount; mcuIndex += 1) {
       const record = source.mcus[mcuIndex];
       const byteOffset = HEADER_BYTES + mcuIndex * layout.bytesPerMcu;
 
       if (splitLuma8x8) {
         for (let blockIndex = 0; blockIndex < 4; blockIndex += 1) {
-          encodeLibraryComponentCoefficients(
+          const libraryIndex = encodeLibraryComponentCoefficients(
             output,
             byteOffset + blockIndex * yRecordBytes,
             yRecordBytes,
@@ -274,12 +298,19 @@
             quality,
             false,
             coefficientCoding,
-            library.y.coefficients,
-            library.referenceCoding
+            library.y,
+            library.referenceCoding,
+            library.frequencySplit
+          );
+          writeDctLibraryReference(
+            trailer,
+            library.y,
+            mcuIndex * 4 + blockIndex,
+            libraryIndex
           );
         }
       } else {
-        encodeLibraryComponentCoefficients(
+        const libraryIndex = encodeLibraryComponentCoefficients(
           output,
           byteOffset,
           layout.yBytes,
@@ -289,12 +320,14 @@
           quality,
           false,
           coefficientCoding,
-          library.y.coefficients,
-          library.referenceCoding
+          library.y,
+          library.referenceCoding,
+          library.frequencySplit
         );
+        writeDctLibraryReference(trailer, library.y, mcuIndex, libraryIndex);
       }
 
-      encodeLibraryComponentCoefficients(
+      const cbLibraryIndex = encodeLibraryComponentCoefficients(
         output,
         byteOffset + layout.yBytes,
         layout.cbBytes,
@@ -304,10 +337,12 @@
         quality,
         true,
         coefficientCoding,
-        library.cb.coefficients,
-        library.referenceCoding
+        library.cb,
+        library.referenceCoding,
+        library.frequencySplit
       );
-      encodeLibraryComponentCoefficients(
+      writeDctLibraryReference(trailer, library.cb, mcuIndex, cbLibraryIndex);
+      const crLibraryIndex = encodeLibraryComponentCoefficients(
         output,
         byteOffset + layout.yBytes + layout.cbBytes,
         layout.crBytes,
@@ -317,11 +352,14 @@
         quality,
         true,
         coefficientCoding,
-        library.cr.coefficients,
-        library.referenceCoding
+        library.cr,
+        library.referenceCoding,
+        library.frequencySplit
       );
+      writeDctLibraryReference(trailer, library.cr, mcuIndex, crLibraryIndex);
     }
 
+    output.set(trailer, HEADER_BYTES + layout.payloadBytes);
     return output;
   }
 
@@ -460,11 +498,13 @@
     recordBytes,
     quality,
     chroma,
-    coding
+    coding,
+    clusterSamples = 0
   ) {
+    const clusterVectors = selectDctLibraryClusterVectors(vectors, clusterSamples);
     const centroids = clusterDctVectors(
-      vectors,
-      Math.min(maximumEntries, vectors.length),
+      clusterVectors,
+      Math.min(maximumEntries, clusterVectors.length),
       width,
       height,
       quality,
@@ -492,6 +532,16 @@
     });
 
     return { records, coefficients, recordBytes, count: centroids.length };
+  }
+
+  function selectDctLibraryClusterVectors(vectors, maximumSamples) {
+    if (!maximumSamples || vectors.length <= maximumSamples) {
+      return vectors;
+    }
+    return Array.from(
+      { length: maximumSamples },
+      (_, index) => vectors[Math.floor(index * vectors.length / maximumSamples)]
+    );
   }
 
   function clusterDctVectors(vectors, clusterCount, width, height, quality, chroma) {
@@ -598,26 +648,24 @@
 
   function serializeDctLibrary(layout, splitLuma8x8, library) {
     const yRecordBytes = splitLuma8x8 ? layout.yBytes / 4 : layout.yBytes;
-    const totalBytes = LIBRARY_HEADER_BYTES + library.y.records.length +
+    const referenceLayout = getDctLibraryReferenceLayout(layout, splitLuma8x8, library);
+    const totalBytes = LIBRARY_HEADER_BYTES + referenceLayout.totalBytes + library.y.records.length +
       library.cb.records.length + library.cr.records.length;
     const output = new Uint8Array(totalBytes);
     const view = new DataView(output.buffer);
 
     output.set(LIBRARY_MAGIC, 0);
-    writeUint32(
-      view,
-      8,
-      library.referenceCoding === "header"
-        ? LIBRARY_VERSION_HEADER_REFERENCE
-        : LIBRARY_VERSION_TAIL_REFERENCE
-    );
+    writeUint32(view, 8, getDctLibraryVersion(library));
     writeUint32(view, 12, library.y.count);
     writeUint32(view, 16, library.cb.count);
     writeUint32(view, 20, library.cr.count);
     writeUint32(view, 24, yRecordBytes);
     writeUint32(view, 28, totalBytes);
 
-    let offset = LIBRARY_HEADER_BYTES;
+    let offset = LIBRARY_HEADER_BYTES + referenceLayout.totalBytes;
+    library.y.reference = referenceLayout.y;
+    library.cb.reference = referenceLayout.cb;
+    library.cr.reference = referenceLayout.cr;
     output.set(library.y.records, offset);
     offset += library.y.records.length;
     output.set(library.cb.records, offset);
@@ -626,15 +674,109 @@
     return output;
   }
 
+  function getDctLibraryReferenceLayout(layout, splitLuma8x8, library) {
+    let byteOffset = 0;
+    const createComponent = (entryCount, referenceCount) => {
+      const bits = library.referenceCoding === "sidecar" && entryCount > 0
+        ? Math.ceil(Math.log2(entryCount + 1)) : 0;
+      const bytes = Math.ceil(referenceCount * bits / 8);
+      const result = { bits, bytes, count: referenceCount, offset: byteOffset };
+      byteOffset += bytes;
+      return result;
+    };
+    const yBlocksPerMcu = splitLuma8x8 ? 4 : 1;
+    const y = createComponent(library.y.count, layout.mcuCount * yBlocksPerMcu);
+    const cb = createComponent(library.cb.count, layout.mcuCount);
+    const cr = createComponent(library.cr.count, layout.mcuCount);
+    return { y, cb, cr, totalBytes: byteOffset };
+  }
+
+  function writeDctLibraryReference(bytes, component, referenceIndex, libraryIndex) {
+    if (!component.reference || component.reference.bits === 0) {
+      return;
+    }
+    if (libraryIndex < 0 || libraryIndex > component.count ||
+        referenceIndex < 0 || referenceIndex >= component.reference.count) {
+      throw new RangeError("DCT library sidecar reference is out of range");
+    }
+    const bitOffset = (LIBRARY_HEADER_BYTES + component.reference.offset) * 8 +
+      referenceIndex * component.reference.bits;
+    for (let bit = 0; bit < component.reference.bits; bit += 1) {
+      if ((libraryIndex & (1 << bit)) !== 0) {
+        const position = bitOffset + bit;
+        bytes[position >> 3] |= 1 << (position & 7);
+      }
+    }
+  }
+
   function validateLibrarySize(value, coding) {
     const size = Math.round(Number(value));
-    const maximum = 2 ** coding.mantissaBits - 1;
+    const maximum = 63;
 
     if (!Number.isFinite(size) || size < 1 || size > maximum) {
       throw new RangeError(`DCT library size must be from 1 through ${maximum}`);
     }
 
     return size;
+  }
+
+  function normalizeLibraryReferenceCoding(value) {
+    const coding = String(value || "auto").toLowerCase();
+    if (!["auto", "sidecar"].includes(coding)) {
+      throw new RangeError("DCT library reference coding must be auto or sidecar");
+    }
+    return coding;
+  }
+
+  function normalizeLibraryClusterSamples(value) {
+    const samples = value === undefined ? 2048 : Math.round(Number(value));
+    if (!Number.isFinite(samples) || samples < 64 || samples > 65536) {
+      throw new RangeError("DCT library cluster sample count must be from 64 through 65536");
+    }
+    return samples;
+  }
+
+  function normalizeLibraryCandidateCount(value) {
+    const count = value === undefined ? 2 : Math.round(Number(value));
+    if (!Number.isFinite(count) || count < 1 || count > 16) {
+      throw new RangeError("DCT library candidate count must be from 1 through 16");
+    }
+    return count;
+  }
+
+  function normalizeLibraryFrequencySplit(value) {
+    const ratio = Number(value || 0);
+    if (![0, 0.25, 0.5, 1].includes(ratio)) {
+      throw new RangeError("DCT library frequency split must be 0, 0.25, 0.5, or 1");
+    }
+    return ratio;
+  }
+
+  function getDctLibraryVersion(library) {
+    if (library.referenceCoding === "sidecar") {
+      if (library.frequencySplit === 0.25) {
+        return LIBRARY_VERSION_SIDECAR_SPECTRAL_QUARTER;
+      }
+      if (library.frequencySplit === 0.5) {
+        return LIBRARY_VERSION_SIDECAR_SPECTRAL_HALF;
+      }
+      if (library.frequencySplit === 1) {
+        return LIBRARY_VERSION_SIDECAR_SPECTRAL_FULL;
+      }
+      return LIBRARY_VERSION_SIDECAR_REFERENCE;
+    }
+    if (library.frequencySplit === 0.25) {
+      return LIBRARY_VERSION_SPECTRAL_QUARTER;
+    }
+    if (library.frequencySplit === 0.5) {
+      return LIBRARY_VERSION_SPECTRAL_HALF;
+    }
+    if (library.frequencySplit === 1) {
+      return LIBRARY_VERSION_SPECTRAL_FULL;
+    }
+    return library.referenceCoding === "header"
+      ? LIBRARY_VERSION_HEADER_REFERENCE
+      : LIBRARY_VERSION_TAIL_REFERENCE;
   }
 
   function normalizeLibraryComponents(value) {
@@ -712,7 +854,9 @@
       info.quality,
       info.splitLuma8x8,
       info.coefficientCoding,
-      createDctLibraryContext(bytes, info, "y"),
+      info.splitLuma8x8
+        ? (blockIndex) => createDctLibraryContext(bytes, info, "y", mcuIndex * 4 + blockIndex)
+        : createDctLibraryContext(bytes, info, "y", mcuIndex),
       localX,
       localY
     ) + 128;
@@ -725,7 +869,7 @@
       info.quality,
       true,
       info.coefficientCoding,
-      createDctLibraryContext(bytes, info, "cb")
+      createDctLibraryContext(bytes, info, "cb", mcuIndex)
     );
     const crComponent = decodeComponent(
       bytes,
@@ -736,7 +880,7 @@
       info.quality,
       true,
       info.coefficientCoding,
-      createDctLibraryContext(bytes, info, "cr")
+      createDctLibraryContext(bytes, info, "cr", mcuIndex)
     );
     const chromaX = Math.floor(localX / 2);
     const cb = sampleInverseDct(cbComponent.coefficients, 8, 16, chromaX, localY) + 128;
@@ -825,10 +969,26 @@
     const cbCount = readUint32(view, 16);
     const crCount = readUint32(view, 20);
     const libraryVersion = readUint32(view, 8);
-    const referenceCoding = libraryVersion === LIBRARY_VERSION_HEADER_REFERENCE ? "header" :
-      libraryVersion === LIBRARY_VERSION_TAIL_REFERENCE ? "tail" : null;
-    const maximumEntries = referenceCoding === "header" ? 3 : 2 ** coding.mantissaBits - 1;
-    const expectedBytes = LIBRARY_HEADER_BYTES + yCount * yRecordBytes +
+    const frequencySplit = [LIBRARY_VERSION_SPECTRAL_QUARTER,
+      LIBRARY_VERSION_SIDECAR_SPECTRAL_QUARTER].includes(libraryVersion) ? 0.25 :
+      [LIBRARY_VERSION_SPECTRAL_HALF,
+        LIBRARY_VERSION_SIDECAR_SPECTRAL_HALF].includes(libraryVersion) ? 0.5 :
+      [LIBRARY_VERSION_SPECTRAL_FULL,
+        LIBRARY_VERSION_SIDECAR_SPECTRAL_FULL].includes(libraryVersion) ? 1 : 0;
+    const referenceCoding = libraryVersion === LIBRARY_VERSION_TAIL_REFERENCE ? "tail" :
+      libraryVersion >= LIBRARY_VERSION_HEADER_REFERENCE &&
+      libraryVersion <= LIBRARY_VERSION_SPECTRAL_FULL ? "header" :
+      libraryVersion >= LIBRARY_VERSION_SIDECAR_REFERENCE &&
+      libraryVersion <= LIBRARY_VERSION_SIDECAR_SPECTRAL_FULL ? "sidecar" : null;
+    const maximumEntries = referenceCoding === "header" ? 3 :
+      referenceCoding === "sidecar" ? 63 : 2 ** coding.mantissaBits - 1;
+    const referenceLayout = getDctLibraryReferenceLayout(layout, splitLuma8x8, {
+      referenceCoding,
+      y: { count: yCount },
+      cb: { count: cbCount },
+      cr: { count: crCount },
+    });
+    const expectedBytes = LIBRARY_HEADER_BYTES + referenceLayout.totalBytes + yCount * yRecordBytes +
       cbCount * layout.cbBytes + crCount * layout.crBytes;
 
     if (
@@ -844,17 +1004,34 @@
       throw new RangeError("Invalid DCT prototype library layout");
     }
 
-    const yOffset = offset + LIBRARY_HEADER_BYTES;
+    const yReferenceOffset = offset + LIBRARY_HEADER_BYTES;
+    const yOffset = yReferenceOffset + referenceLayout.totalBytes;
     const cbOffset = yOffset + yCount * yRecordBytes;
     const crOffset = cbOffset + cbCount * layout.cbBytes;
 
     return {
       offset,
       bytes: libraryBytes,
-      y: { count: yCount, offset: yOffset, recordBytes: yRecordBytes },
-      cb: { count: cbCount, offset: cbOffset, recordBytes: layout.cbBytes },
-      cr: { count: crCount, offset: crOffset, recordBytes: layout.crBytes },
+      y: {
+        count: yCount,
+        offset: yOffset,
+        recordBytes: yRecordBytes,
+        reference: { ...referenceLayout.y, offset: yReferenceOffset + referenceLayout.y.offset },
+      },
+      cb: {
+        count: cbCount,
+        offset: cbOffset,
+        recordBytes: layout.cbBytes,
+        reference: { ...referenceLayout.cb, offset: yReferenceOffset + referenceLayout.cb.offset },
+      },
+      cr: {
+        count: crCount,
+        offset: crOffset,
+        recordBytes: layout.crBytes,
+        reference: { ...referenceLayout.cr, offset: yReferenceOffset + referenceLayout.cr.offset },
+      },
       referenceCoding,
+      frequencySplit,
       cache: new Map(),
     };
   }
@@ -955,6 +1132,10 @@
         dctLibrary: Boolean(options.dctLibrary),
         librarySize: options.librarySize,
         libraryComponents: options.libraryComponents,
+        libraryReferenceCoding: options.libraryReferenceCoding,
+        libraryFrequencySplit: options.libraryFrequencySplit,
+        libraryClusterSamples: options.libraryClusterSamples,
+        libraryCandidateCount: options.libraryCandidateCount,
         coefficientCoding: coefficientCoding.key,
         searchCandidateCount: sampleResults.length + finalists.length,
       });
@@ -1023,13 +1204,24 @@
     quality,
     chroma,
     coding,
-    prototypes,
-    referenceCoding
+    libraryComponent,
+    referenceCoding,
+    frequencySplit = 0
   ) {
     let best = null;
     const reservedAcCount = referenceCoding === "tail" ? 1 : 0;
+    const prototypes = libraryComponent.coefficients;
+    const libraryIndices = selectDctLibraryCandidateIndices(
+      coefficients,
+      prototypes,
+      width,
+      height,
+      quality,
+      chroma,
+      libraryComponent.candidateCount
+    );
 
-    for (let libraryIndex = 0; libraryIndex <= prototypes.length; libraryIndex += 1) {
+    for (const libraryIndex of libraryIndices) {
       const residual = libraryIndex === 0
         ? coefficients
         : subtractDctVectors(coefficients, prototypes[libraryIndex - 1]);
@@ -1041,7 +1233,8 @@
         quality,
         chroma,
         coding,
-        reservedAcCount
+        reservedAcCount,
+        libraryIndex === 0 ? 0 : frequencySplit
       );
       candidate.libraryIndex = libraryIndex;
 
@@ -1060,6 +1253,37 @@
       best.libraryIndex,
       referenceCoding
     );
+    return best.libraryIndex;
+  }
+
+  function selectDctLibraryCandidateIndices(
+    coefficients,
+    prototypes,
+    width,
+    height,
+    quality,
+    chroma,
+    maximumCandidates
+  ) {
+    if (!maximumCandidates || maximumCandidates >= prototypes.length) {
+      return Array.from({ length: prototypes.length + 1 }, (_, index) => index);
+    }
+    const positions = [
+      0,
+      ...getScan(0, width, height).slice(0, Math.min(LIBRARY_CLUSTER_FEATURES - 1, width * height - 1)),
+    ];
+    const weights = positions.map((position) => {
+      const u = position % width;
+      const v = Math.floor(position / width);
+      const step = quantizationStep(u, v, width, height, quality, chroma);
+      return 1 / (step * step);
+    });
+    const ranked = prototypes.map((prototype, index) => ({
+      index: index + 1,
+      distance: weightedDctDistance(coefficients, prototype, positions, weights),
+    }));
+    ranked.sort((left, right) => left.distance - right.distance || left.index - right.index);
+    return [0, ...ranked.slice(0, maximumCandidates).map((item) => item.index)];
   }
 
   function subtractDctVectors(left, right) {
@@ -1068,6 +1292,20 @@
       output[position] = left[position] - right[position];
     }
     return output;
+  }
+
+  function getLibraryCoefficientScan(profile, width, height, acCount, frequencySplit) {
+    const scan = getScan(profile, width, height);
+    if (frequencySplit <= 0) {
+      return scan.slice(0, acCount);
+    }
+    const maximumHighCount = Math.max(0, scan.length - acCount);
+    const highCount = Math.min(maximumHighCount, Math.round(acCount * frequencySplit));
+    const lowCount = acCount - highCount;
+    return [
+      ...scan.slice(0, lowCount),
+      ...scan.slice(acCount, acCount + highCount),
+    ];
   }
 
   function writeComponentCandidate(
@@ -1143,7 +1381,8 @@
     quality,
     chroma,
     coding,
-    reservedAcCount = 0
+    reservedAcCount = 0,
+    libraryFrequencySplit = 0
   ) {
     if (coding.groupCount > 0) {
       return chooseGroupedComponentEncoding(
@@ -1154,7 +1393,8 @@
         quality,
         chroma,
         coding,
-        reservedAcCount
+        reservedAcCount,
+        libraryFrequencySplit
       );
     }
 
@@ -1162,7 +1402,7 @@
     let best = null;
 
     for (let profile = 0; profile < PROFILE_NAMES.length; profile += 1) {
-      const scan = getScan(profile, width, height).slice(0, acCount);
+      const scan = getLibraryCoefficientScan(profile, width, height, acCount, libraryFrequencySplit);
 
       for (let scaleIndex = 0; scaleIndex < SCALE_MULTIPLIERS.length; scaleIndex += 1) {
         const scale = SCALE_MULTIPLIERS[scaleIndex];
@@ -1204,13 +1444,20 @@
     quality,
     chroma,
     coding,
-    reservedAcCount = 0
+    reservedAcCount = 0,
+    libraryFrequencySplit = 0
   ) {
     const layout = getGroupedAcLayout(byteCount, coding, reservedAcCount);
     let best = null;
 
     for (let profile = 0; profile < PROFILE_NAMES.length; profile += 1) {
-      const scan = getScan(profile, width, height).slice(0, layout.acCount);
+      const scan = getLibraryCoefficientScan(
+        profile,
+        width,
+        height,
+        layout.acCount,
+        libraryFrequencySplit
+      );
       const dcChoice = chooseQuantizedGroup(
         coefficients,
         [0],
@@ -1327,6 +1574,9 @@
     const headerReference = libraryContext && libraryContext.library.referenceCoding === "header";
     const tailReference = libraryContext && libraryContext.library.referenceCoding === "tail";
     const profile = headerReference ? packedProfile & 3 : packedProfile;
+    let libraryIndex = headerReference ? packedProfile >> 2 :
+      libraryContext && libraryContext.library.referenceCoding === "sidecar"
+        ? libraryContext.libraryIndex : 0;
     const scaleIndex = header & 15;
 
     if (profile >= PROFILE_NAMES.length || scaleIndex >= SCALE_MULTIPLIERS.length) {
@@ -1342,7 +1592,9 @@
     const acCount = groupedLayout
       ? groupedLayout.acCount
       : Math.max(0, Math.floor((byteCount * 8 - 18) / 6) - reservedAcCount);
-    const scan = getScan(profile, width, height).slice(0, acCount);
+    const frequencySplit = libraryIndex > 0 && libraryContext
+      ? libraryContext.library.frequencySplit : 0;
+    const scan = getLibraryCoefficientScan(profile, width, height, acCount, frequencySplit);
 
     coefficients[0] = dc * quantizationStep(0, 0, width, height, quality, chroma) *
       SCALE_MULTIPLIERS[scaleIndex];
@@ -1364,9 +1616,9 @@
       groupStart = groupEnds[groupIndex];
     }
 
-    const libraryIndex = headerReference
-      ? packedProfile >> 2
-      : tailReference ? reader.read(coding.mantissaBits) : 0;
+    if (tailReference) {
+      libraryIndex = reader.read(coding.mantissaBits);
+    }
 
     if (libraryIndex > 0) {
       const prototype = decodeDctLibraryPrototype(
@@ -1427,8 +1679,33 @@
     return context.library.cache.get(cacheKey);
   }
 
-  function createDctLibraryContext(bytes, info, kind) {
-    return info.libraryEnabled ? { bytes, library: info.library, kind } : null;
+  function readDctLibraryReference(bytes, component, referenceIndex) {
+    if (!component.reference || component.reference.bits === 0) {
+      return 0;
+    }
+    if (referenceIndex < 0 || referenceIndex >= component.reference.count) {
+      throw new RangeError("DCT library sidecar reference is out of range");
+    }
+    const bitOffset = component.reference.offset * 8 + referenceIndex * component.reference.bits;
+    let libraryIndex = 0;
+    for (let bit = 0; bit < component.reference.bits; bit += 1) {
+      const position = bitOffset + bit;
+      libraryIndex |= ((bytes[position >> 3] >> (position & 7)) & 1) << bit;
+    }
+    if (libraryIndex > component.count) {
+      throw new RangeError("Invalid DCT library sidecar reference");
+    }
+    return libraryIndex;
+  }
+
+  function createDctLibraryContext(bytes, info, kind, referenceIndex = 0) {
+    if (!info.libraryEnabled) {
+      return null;
+    }
+    const component = info.library[kind];
+    const libraryIndex = info.library.referenceCoding === "sidecar"
+      ? readDctLibraryReference(bytes, component, referenceIndex) : 0;
+    return { bytes, library: info.library, kind, libraryIndex };
   }
 
   function decodeMcuComponents(bytes, info, mcuIndex) {
@@ -1442,7 +1719,9 @@
         info.quality,
         info.splitLuma8x8,
         info.coefficientCoding,
-        createDctLibraryContext(bytes, info, "y")
+        info.splitLuma8x8
+          ? (blockIndex) => createDctLibraryContext(bytes, info, "y", mcuIndex * 4 + blockIndex)
+          : createDctLibraryContext(bytes, info, "y", mcuIndex)
       ),
       cb: decodeComponent(
         bytes,
@@ -1453,7 +1732,7 @@
         info.quality,
         true,
         info.coefficientCoding,
-        createDctLibraryContext(bytes, info, "cb")
+        createDctLibraryContext(bytes, info, "cb", mcuIndex)
       ),
       cr: decodeComponent(
         bytes,
@@ -1464,14 +1743,24 @@
         info.quality,
         true,
         info.coefficientCoding,
-        createDctLibraryContext(bytes, info, "cr")
+        createDctLibraryContext(bytes, info, "cr", mcuIndex)
       ),
     };
   }
 
   function decodeLuma(bytes, offset, byteCount, quality, split, coding, libraryContext = null) {
     if (!split) {
-      return decodeComponent(bytes, offset, byteCount, 16, 16, quality, false, coding, libraryContext);
+      return decodeComponent(
+        bytes,
+        offset,
+        byteCount,
+        16,
+        16,
+        quality,
+        false,
+        coding,
+        resolveDctLibraryContext(libraryContext, 0)
+      );
     }
 
     const blockBytes = byteCount / 4;
@@ -1485,9 +1774,13 @@
         quality,
         false,
         coding,
-        libraryContext
+        resolveDctLibraryContext(libraryContext, blockIndex)
       )),
     };
+  }
+
+  function resolveDctLibraryContext(libraryContext, blockIndex) {
+    return typeof libraryContext === "function" ? libraryContext(blockIndex) : libraryContext;
   }
 
   function reconstructLumaPlane(component) {
@@ -1531,7 +1824,7 @@
         quality,
         false,
         coding,
-        libraryContext
+        resolveDctLibraryContext(libraryContext, 0)
       );
       return sampleInverseDct(component.coefficients, 16, 16, x, y);
     }
@@ -1547,7 +1840,7 @@
       quality,
       false,
       coding,
-      libraryContext
+      resolveDctLibraryContext(libraryContext, blockIndex)
     );
     return sampleInverseDct(component.coefficients, 8, 8, x % 8, y % 8);
   }
