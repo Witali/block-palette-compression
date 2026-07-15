@@ -103,24 +103,7 @@
     validatePixels(pixels, width, height);
     const quality = validateQuality(options.quality === undefined ? 72 : options.quality);
     const layout = getDctFileLayout(width, height, options.preset);
-    const output = new Uint8Array(layout.totalBytes);
-    const view = new DataView(output.buffer);
-
-    output.set(MAGIC, 0);
-    writeUint32(view, 8, VERSION);
-    writeUint32(view, 12, layout.modeCode);
-    writeUint32(view, 16, width);
-    writeUint32(view, 20, height);
-    writeUint32(view, 24, layout.mcuColumns);
-    writeUint32(view, 28, layout.mcuRows);
-    writeUint32(view, 32, layout.bytesPerMcu);
-    writeUint32(view, 36, layout.yBytes);
-    writeUint32(view, 40, layout.cbBytes);
-    writeUint32(view, 44, layout.crBytes);
-    writeUint32(view, 48, quality);
-    writeUint32(view, 52, options.autoQuality ? 1 : 0);
-    writeUint32(view, 56, layout.payloadBytes);
-    writeUint32(view, 60, options.searchCandidateCount || 0);
+    const output = createDctOutput(layout, quality, options);
 
     for (let mcuIndex = 0; mcuIndex < layout.mcuCount; mcuIndex += 1) {
       const mcuX = mcuIndex % layout.mcuColumns;
@@ -150,6 +133,67 @@
         true
       );
     }
+
+    return output;
+  }
+
+  function importJpegDctFile(jpeg, options = {}) {
+    const source = prepareJpegDctSource(jpeg);
+    const quality = validateQuality(options.quality === undefined ? 72 : options.quality);
+    const layout = getDctFileLayout(source.width, source.height, options.preset);
+    const output = createDctOutput(layout, quality, options);
+
+    for (let mcuIndex = 0; mcuIndex < layout.mcuCount; mcuIndex += 1) {
+      const mcuX = mcuIndex % layout.mcuColumns;
+      const mcuY = Math.floor(mcuIndex / layout.mcuColumns);
+      const planes = extractJpegMcuPlanes(source, mcuX, mcuY);
+      const byteOffset = HEADER_BYTES + mcuIndex * layout.bytesPerMcu;
+
+      encodeComponent(output, byteOffset, layout.yBytes, planes.y, 16, 16, quality, false);
+      encodeComponent(
+        output,
+        byteOffset + layout.yBytes,
+        layout.cbBytes,
+        planes.cb,
+        8,
+        16,
+        quality,
+        true
+      );
+      encodeComponent(
+        output,
+        byteOffset + layout.yBytes + layout.cbBytes,
+        layout.crBytes,
+        planes.cr,
+        8,
+        16,
+        quality,
+        true
+      );
+    }
+
+    return output;
+  }
+
+  function createDctOutput(layout, quality, options) {
+    const output = new Uint8Array(layout.totalBytes);
+    const view = new DataView(output.buffer);
+
+    output.set(MAGIC, 0);
+    writeUint32(view, 8, VERSION);
+    writeUint32(view, 12, layout.modeCode);
+    writeUint32(view, 16, layout.width);
+    writeUint32(view, 20, layout.height);
+    writeUint32(view, 24, layout.mcuColumns);
+    writeUint32(view, 28, layout.mcuRows);
+    writeUint32(view, 32, layout.bytesPerMcu);
+    writeUint32(view, 36, layout.yBytes);
+    writeUint32(view, 40, layout.cbBytes);
+    writeUint32(view, 44, layout.crBytes);
+    writeUint32(view, 48, quality);
+    writeUint32(view, 52, options.autoQuality ? 1 : 0);
+    writeUint32(view, 56, layout.payloadBytes);
+    writeUint32(view, 60, options.searchCandidateCount || 0);
 
     return output;
   }
@@ -487,6 +531,188 @@
     }
 
     return { y: yPlane, cb: cbPlane, cr: crPlane };
+  }
+
+  function prepareJpegDctSource(jpeg) {
+    if (!jpeg || typeof jpeg !== "object") {
+      throw new TypeError("JPEG DCT import requires parsed JPEG coefficient data");
+    }
+
+    validateDimensions(jpeg.width, jpeg.height);
+
+    if (!Array.isArray(jpeg.components) || (jpeg.components.length !== 1 && jpeg.components.length !== 3)) {
+      throw new RangeError("JPEG DCT import supports grayscale and three-component YCbCr images");
+    }
+
+    const maxHorizontalSampling = validateJpegSampling(jpeg.maxHorizontalSampling);
+    const maxVerticalSampling = validateJpegSampling(jpeg.maxVerticalSampling);
+    const components = jpeg.components.map((component) => prepareJpegComponent(
+      component,
+      jpeg.width,
+      jpeg.height,
+      maxHorizontalSampling,
+      maxVerticalSampling
+    ));
+
+    for (const component of components) {
+      if (component.horizontalSampling > maxHorizontalSampling ||
+          component.verticalSampling > maxVerticalSampling) {
+        throw new RangeError("Invalid JPEG component sampling factors");
+      }
+    }
+
+    return {
+      width: jpeg.width,
+      height: jpeg.height,
+      maxHorizontalSampling,
+      maxVerticalSampling,
+      components,
+    };
+  }
+
+  function prepareJpegComponent(component, imageWidth, imageHeight, maxHorizontalSampling, maxVerticalSampling) {
+    if (!component || typeof component !== "object") {
+      throw new RangeError("Invalid JPEG component data");
+    }
+
+    const horizontalSampling = validateJpegSampling(component.horizontalSampling);
+    const verticalSampling = validateJpegSampling(component.verticalSampling);
+    const blockCountX = component.blockCountX;
+    const blockCountY = component.blockCountY;
+    const blocks = component.blocks;
+
+    if (!Number.isInteger(blockCountX) || !Number.isInteger(blockCountY) ||
+        blockCountX < 1 || blockCountY < 1 || !ArrayBuffer.isView(blocks) ||
+        blocks.length !== blockCountX * blockCountY * 64) {
+      throw new RangeError("Invalid JPEG DCT block layout");
+    }
+
+    const sampleWidth = blockCountX * 8;
+    const sampleHeight = blockCountY * 8;
+    const activeWidth = Math.ceil(imageWidth * horizontalSampling / maxHorizontalSampling);
+    const activeHeight = Math.ceil(imageHeight * verticalSampling / maxVerticalSampling);
+
+    if (activeWidth > sampleWidth || activeHeight > sampleHeight) {
+      throw new RangeError("JPEG DCT blocks do not cover the image dimensions");
+    }
+
+    const samples = new Uint8Array(sampleWidth * sampleHeight);
+    const basis = getBasis(8);
+    const vertical = new Float64Array(64);
+
+    for (let blockY = 0; blockY < blockCountY; blockY += 1) {
+      for (let blockX = 0; blockX < blockCountX; blockX += 1) {
+        const blockOffset = (blockY * blockCountX + blockX) * 64;
+
+        for (let y = 0; y < 8; y += 1) {
+          for (let u = 0; u < 8; u += 1) {
+            let sum = 0;
+
+            for (let v = 0; v < 8; v += 1) {
+              sum += basis[v * 8 + y] * blocks[blockOffset + v * 8 + u];
+            }
+
+            vertical[y * 8 + u] = sum;
+          }
+        }
+
+        for (let y = 0; y < 8; y += 1) {
+          for (let x = 0; x < 8; x += 1) {
+            let sum = 0;
+
+            for (let u = 0; u < 8; u += 1) {
+              sum += vertical[y * 8 + u] * basis[u * 8 + x];
+            }
+
+            samples[(blockY * 8 + y) * sampleWidth + blockX * 8 + x] = clampByte(sum + 128);
+          }
+        }
+      }
+    }
+
+    return {
+      horizontalSampling,
+      verticalSampling,
+      sampleWidth,
+      sampleHeight,
+      activeWidth,
+      activeHeight,
+      samples,
+    };
+  }
+
+  function extractJpegMcuPlanes(source, mcuX, mcuY) {
+    const yPlane = new Float64Array(16 * 16);
+    const cbPlane = new Float64Array(8 * 16);
+    const crPlane = new Float64Array(8 * 16);
+
+    for (let localY = 0; localY < 16; localY += 1) {
+      const y = Math.min(source.height - 1, mcuY * 16 + localY);
+
+      for (let chromaX = 0; chromaX < 8; chromaX += 1) {
+        for (let pairX = 0; pairX < 2; pairX += 1) {
+          const localX = chromaX * 2 + pairX;
+          const x = Math.min(source.width - 1, mcuX * 16 + localX);
+
+          yPlane[localY * 16 + localX] = sampleJpegComponent(source, 0, x, y) - 128;
+        }
+
+        if (source.components.length === 3) {
+          const firstX = Math.min(source.width - 1, mcuX * 16 + chromaX * 2);
+          const secondX = Math.min(source.width - 1, firstX + 1);
+          cbPlane[localY * 8 + chromaX] = (
+            sampleJpegComponent(source, 1, firstX, y) +
+            sampleJpegComponent(source, 1, secondX, y)
+          ) / 2 - 128;
+          crPlane[localY * 8 + chromaX] = (
+            sampleJpegComponent(source, 2, firstX, y) +
+            sampleJpegComponent(source, 2, secondX, y)
+          ) / 2 - 128;
+        }
+      }
+    }
+
+    return { y: yPlane, cb: cbPlane, cr: crPlane };
+  }
+
+  function sampleJpegComponent(source, componentIndex, imageX, imageY) {
+    const component = source.components[componentIndex];
+    const scaleX = component.horizontalSampling / source.maxHorizontalSampling;
+    const scaleY = component.verticalSampling / source.maxVerticalSampling;
+    const componentX = (imageX + 0.5) * scaleX - 0.5;
+    const componentY = (imageY + 0.5) * scaleY - 0.5;
+    const floorX = Math.floor(componentX);
+    const floorY = Math.floor(componentY);
+    const x0 = clamp(floorX, 0, component.activeWidth - 1);
+    const x1 = clamp(floorX + 1, 0, component.activeWidth - 1);
+    const y0 = clamp(floorY, 0, component.activeHeight - 1);
+    const y1 = clamp(floorY + 1, 0, component.activeHeight - 1);
+    const mixX = x0 === x1 ? 0 : componentX - floorX;
+    const mixY = y0 === y1 ? 0 : componentY - floorY;
+    const top = mix(
+      component.samples[y0 * component.sampleWidth + x0],
+      component.samples[y0 * component.sampleWidth + x1],
+      mixX
+    );
+    const bottom = mix(
+      component.samples[y1 * component.sampleWidth + x0],
+      component.samples[y1 * component.sampleWidth + x1],
+      mixX
+    );
+
+    return mix(top, bottom, mixY);
+  }
+
+  function validateJpegSampling(value) {
+    if (!Number.isInteger(value) || value < 1 || value > 4) {
+      throw new RangeError("Invalid JPEG sampling factor");
+    }
+
+    return value;
+  }
+
+  function mix(left, right, amount) {
+    return left + (right - left) * amount;
   }
 
   function forwardDct(samples, width, height) {
@@ -904,6 +1130,7 @@
     getDctPreset,
     getDctFileLayout,
     encodeDctFile,
+    importJpegDctFile,
     decodeDctFile,
     sampleDctFilePixel,
     inspectDctFile,

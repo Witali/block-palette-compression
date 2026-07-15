@@ -84,3 +84,16 @@ The decoder reads this one MCU, reconstructs Y at `(x mod 16, y mod 16)` and
 Cb/Cr at `((x mod 16) / 2, y mod 16)`, then converts the three samples to RGB.
 All loops are bounded by the fixed 16×16 and 8×16 transform dimensions. There
 are no data-dependent references to other MCUs.
+
+## JPEG DCT import
+
+The browser page can transcode grayscale and three-component YCbCr JPEG files
+without using decoded RGB pixels as encoder input. The CPU parser decodes the
+baseline or progressive Huffman scans and dequantizes the source 8×8 DCT
+blocks. Because DCTBS2 uses 16×16 luma and 8×16 chroma transforms, the importer
+deterministically reconstructs component samples, adapts JPEG subsampling to
+4:2:2, and transforms those Y/Cb/Cr planes into the selected fixed MCU record.
+There is no RGB conversion in this path. The resulting file uses the same
+layout and one-MCU coordinate lookup as a regular DCTBS2 encode. The page uses
+the selected quantization quality directly and disables the RGB-based automatic
+quality search while this one-pass import mode is active.

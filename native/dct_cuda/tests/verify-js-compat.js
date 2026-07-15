@@ -7,10 +7,12 @@ const os = require("node:os");
 const path = require("node:path");
 
 const root = path.resolve(__dirname, "..", "..", "..");
+const { GpuJpegDecoder } = require(path.join(root, "src", "decoders", "gpu-jpeg.js"));
 const {
   PRESETS,
   decodeDctFile,
   encodeDctFile,
+  importJpegDctFile,
   inspectDctFile,
   sampleDctFilePixel,
 } = require(path.join(root, "src", "dct", "dct-format.js"));
@@ -35,9 +37,36 @@ try {
   for (const preset of representativePresets) {
     verifyPreset(preset);
   }
+  verifyJpegDctImport();
   console.log("ok - CUDA and JavaScript DCTBS2 codecs are bidirectionally compatible");
 } finally {
   fs.rmSync(temporary, { recursive: true, force: true });
+}
+
+function verifyJpegDctImport() {
+  const jpegBytes = fs.readFileSync(path.join(root, "assets", "stone-texture-small.jpg"));
+  const jpeg = GpuJpegDecoder.parse(jpegBytes);
+  const encoded = importJpegDctFile(jpeg, { preset: "1.5", quality: 72 });
+  const dctFile = path.join(temporary, "jpeg-import.dctbs2");
+  const decodedPpm = path.join(temporary, "jpeg-import.ppm");
+
+  fs.writeFileSync(dctFile, encoded);
+  run(["decode", dctFile, decodedPpm]);
+  assertRgbMatchesRgba(
+    readPpm(decodedPpm, jpeg.width, jpeg.height),
+    decodeDctFile(encoded).pixels,
+    "JPEG DCT import"
+  );
+
+  for (const [x, y] of [[0, 0], [jpeg.width - 1, jpeg.height - 1]]) {
+    const sampled = sampleDctFilePixel(encoded, x, y);
+    const output = run(["pixel", dctFile, String(x), String(y)]);
+    const match = /RGBA\(\d+,\d+\) = (\d+) (\d+) (\d+) (\d+)/.exec(output);
+    assert.ok(match, `JPEG import pixel output: ${output}`);
+    assert.deepEqual(match.slice(1).map(Number), [sampled.r, sampled.g, sampled.b, sampled.a]);
+  }
+
+  console.log("ok - JPEG Huffman/DCT import decodes identically in CUDA and JavaScript");
 }
 
 function verifyPresetListing() {
@@ -124,7 +153,7 @@ function writePpm(file, pixels, imageWidth, imageHeight) {
   fs.writeFileSync(file, Buffer.concat([header, rgb]));
 }
 
-function readPpm(file) {
+function readPpm(file, expectedWidth = width, expectedHeight = height) {
   const bytes = fs.readFileSync(file);
   let offset = 0;
   const token = () => {
@@ -139,10 +168,10 @@ function readPpm(file) {
   assert.equal(token(), "255");
   assert.ok(bytes[offset] <= 32, "PPM header terminator");
   offset += 1;
-  assert.equal(imageWidth, width);
-  assert.equal(imageHeight, height);
+  assert.equal(imageWidth, expectedWidth);
+  assert.equal(imageHeight, expectedHeight);
   const rgb = bytes.subarray(offset);
-  assert.equal(rgb.length, width * height * 3);
+  assert.equal(rgb.length, expectedWidth * expectedHeight * 3);
   return rgb;
 }
 

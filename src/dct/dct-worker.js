@@ -1,6 +1,6 @@
 "use strict";
 
-importScripts("./dct-format.js");
+importScripts("../decoders/gpu-jpeg.js", "./dct-format.js");
 
 self.addEventListener("message", ({ data }) => {
   if (!data || data.type !== "encode") {
@@ -15,7 +15,23 @@ self.addEventListener("message", ({ data }) => {
     let quality = data.quality;
     let candidateCount = 0;
 
-    if (data.autoQuality) {
+    if (data.jpegImport) {
+      if (!data.jpegBytes) {
+        throw new Error("JPEG DCT import requires the original JPEG file");
+      }
+      if (data.autoQuality) {
+        throw new Error("Automatic quality search is unavailable during JPEG DCT import");
+      }
+
+      const jpeg = self.GpuJpegDecoder.parse(data.jpegBytes);
+
+      if (jpeg.width !== data.width || jpeg.height !== data.height) {
+        throw new Error("JPEG dimensions do not match the source preview");
+      }
+
+      encoded = self.DctImageFormat.importJpegDctFile(jpeg, options);
+      decoded = self.DctImageFormat.decodeDctFile(encoded);
+    } else if (data.autoQuality) {
       const result = self.DctImageFormat.findBestDctQuality(
         pixels,
         data.width,
@@ -53,6 +69,7 @@ self.addEventListener("message", ({ data }) => {
       quality,
       candidateCount,
       squaredError,
+      importMode: data.jpegImport ? "jpeg-dct" : "rgba",
     }, [encoded.buffer, decoded.pixels.buffer]);
   } catch (error) {
     self.postMessage({

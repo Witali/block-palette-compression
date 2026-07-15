@@ -1,16 +1,22 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+const { GpuJpegDecoder } = require("../src/decoders/gpu-jpeg.js");
 const {
   HEADER_BYTES,
   PRESETS,
   encodeDctFile,
+  importJpegDctFile,
   decodeDctFile,
   sampleDctFilePixel,
   inspectDctFile,
   inspectDctMcu,
   findBestDctQuality,
 } = require("../src/dct/dct-format.js");
+
+const root = path.resolve(__dirname, "..");
 
 test("stores every DCT preset as fixed independently addressed MCU records", () => {
   const width = 19;
@@ -51,6 +57,35 @@ test("covers every rate from the preserved reference converter", () => {
     cbBytes: 32,
     crBytes: 32,
   });
+});
+
+test("imports JPEG Huffman coefficients without an RGB encoder input", () => {
+  const jpegBytes = fs.readFileSync(path.join(root, "assets/benchmark-jpegs/clipart-apple.jpg"));
+  const jpeg = GpuJpegDecoder.parse(jpegBytes);
+  const first = importJpegDctFile(jpeg, { preset: "1.5", quality: 72 });
+  const second = importJpegDctFile(jpeg, { preset: "1.5", quality: 72 });
+  const info = inspectDctFile(first);
+  const decoded = decodeDctFile(first);
+
+  assert.deepEqual(first, second);
+  assert.equal(info.width, jpeg.width);
+  assert.equal(info.height, jpeg.height);
+  assert.equal(info.bytesPerMcu, PRESETS["1.5"].bytesPerMcu);
+
+  for (const [x, y] of [
+    [0, 0],
+    [Math.floor(info.width / 2), Math.floor(info.height / 2)],
+    [info.width - 1, info.height - 1],
+  ]) {
+    const sampled = sampleDctFilePixel(first, x, y);
+    const offset = (y * info.width + x) * 4;
+
+    assert.deepEqual(
+      [sampled.r, sampled.g, sampled.b, sampled.a],
+      Array.from(decoded.pixels.slice(offset, offset + 4)),
+      `imported JPEG pixel ${x},${y}`
+    );
+  }
 });
 
 test("samples every reconstructed pixel without decoding the complete image", () => {

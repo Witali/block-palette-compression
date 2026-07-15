@@ -8,6 +8,7 @@ const presetSelect = document.getElementById("preset");
 const qualityInput = document.getElementById("quality");
 const qualityValue = document.getElementById("quality-value");
 const autoQualityInput = document.getElementById("auto-quality");
+const jpegImportInput = document.getElementById("jpeg-dct-import");
 const uploadButton = document.getElementById("upload-button");
 const fileInput = document.getElementById("image-file");
 const processButton = document.getElementById("process-button");
@@ -48,6 +49,7 @@ const progressCancelButton = document.getElementById("progress-cancel");
 
 const state = {
   sourceImageData: null,
+  sourceJpegBytes: null,
   sourceName: "image",
   uploadedUrl: null,
   encoded: null,
@@ -56,6 +58,7 @@ const state = {
   requestId: 0,
   startedAt: 0,
   elapsedSeconds: "0.00",
+  importMode: "rgba",
   zoom: 1,
   viewMode: "fit",
   synchronizingScroll: false,
@@ -90,8 +93,15 @@ autoQualityInput.addEventListener("change", () => {
   updateQualityLabel();
   processImage();
 });
+jpegImportInput.addEventListener("change", () => {
+  if (jpegImportInput.checked) {
+    autoQualityInput.checked = false;
+  }
+  updateQualityLabel();
+  processImage();
+});
 uploadButton.addEventListener("click", () => fileInput.click());
-fileInput.addEventListener("change", handleUpload);
+fileInput.addEventListener("change", () => handleUpload().catch(showError));
 downloadDctButton.addEventListener("click", downloadDctFile);
 downloadPngButton.addEventListener("click", downloadPng);
 pixelForm.addEventListener("submit", readPixel);
@@ -152,12 +162,15 @@ function populatePresetOptions() {
   }
 }
 
-async function loadImage(url, name) {
+async function loadImage(url, name, suppliedBytes = null) {
   stopWorker();
   setBusy(true);
   setStatus(t("dynamic.loadingImage"), "busy");
 
-  const image = await loadHtmlImage(url);
+  const [image, sourceBytes] = await Promise.all([
+    loadHtmlImage(url),
+    suppliedBytes ? Promise.resolve(asSourceBytes(suppliedBytes)) : loadSourceBytes(url),
+  ]);
   const canvas = document.createElement("canvas");
   canvas.width = image.naturalWidth;
   canvas.height = image.naturalHeight;
@@ -165,9 +178,16 @@ async function loadImage(url, name) {
   context.drawImage(image, 0, 0);
 
   state.sourceImageData = context.getImageData(0, 0, canvas.width, canvas.height);
+  state.sourceJpegBytes = isJpegBytes(sourceBytes) ? sourceBytes : null;
   state.sourceName = name || "image";
   state.encoded = null;
   state.decodedImageData = null;
+  state.importMode = "rgba";
+  jpegImportInput.checked = Boolean(state.sourceJpegBytes);
+  if (jpegImportInput.checked) {
+    autoQualityInput.checked = false;
+  }
+  updateQualityLabel();
   drawImageData(sourceCanvas, state.sourceImageData);
   clearCanvas(resultCanvas);
   resetMetrics();
@@ -176,6 +196,34 @@ async function loadImage(url, name) {
   fitImage();
   setBusy(false);
   await processImage();
+}
+
+async function loadSourceBytes(url) {
+  try {
+    const response = await fetch(url);
+
+    if (!response.ok) {
+      return null;
+    }
+
+    return new Uint8Array(await response.arrayBuffer());
+  } catch (_error) {
+    return null;
+  }
+}
+
+function asSourceBytes(input) {
+  if (input instanceof Uint8Array) {
+    return input;
+  }
+  if (input instanceof ArrayBuffer) {
+    return new Uint8Array(input);
+  }
+  return null;
+}
+
+function isJpegBytes(bytes) {
+  return bytes instanceof Uint8Array && bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xd8;
 }
 
 function loadHtmlImage(url) {
@@ -188,7 +236,7 @@ function loadHtmlImage(url) {
   });
 }
 
-function handleUpload() {
+async function handleUpload() {
   const file = fileInput.files && fileInput.files[0];
 
   if (!file) {
@@ -200,7 +248,7 @@ function handleUpload() {
   const option = new Option(t("dynamic.uploaded", { name: file.name }), state.uploadedUrl, true, true);
   option.dataset.uploaded = "true";
   imageSelect.append(option);
-  loadImage(state.uploadedUrl, file.name).catch(showError);
+  await loadImage(state.uploadedUrl, file.name, await file.arrayBuffer());
 }
 
 function processImage() {
@@ -211,16 +259,20 @@ function processImage() {
   stopWorker();
   const requestId = ++state.requestId;
   const source = state.sourceImageData;
-  const autoQuality = autoQualityInput.checked;
-  const worker = new Worker("./src/dct/dct-worker.js?v=dct-page-2");
+  const jpegImport = jpegImportInput.checked && Boolean(state.sourceJpegBytes);
+  const autoQuality = !jpegImport && autoQualityInput.checked;
+  const worker = new Worker("./src/dct/dct-worker.js?v=dct-page-3");
   const pixels = source.data.slice();
+  const jpegBytes = jpegImport ? state.sourceJpegBytes.slice() : null;
 
   state.worker = worker;
   state.startedAt = performance.now();
   state.encoded = null;
   state.decodedImageData = null;
   setBusy(true);
-  setStatus(autoQuality ? t("dct.statusSearching") : t("dct.statusEncoding"), "busy");
+  setStatus(jpegImport
+    ? t("dct.statusImportingJpeg")
+    : t(autoQuality ? "dct.statusSearching" : "dct.statusEncoding"), "busy");
   showProgress(autoQuality);
 
   return new Promise((resolve, reject) => {
@@ -249,6 +301,7 @@ function processImage() {
       }
 
       state.encoded = new Uint8Array(data.encoded);
+      state.importMode = data.importMode || "rgba";
       state.decodedImageData = new ImageData(
         new Uint8ClampedArray(data.decodedPixels),
         source.width,
@@ -275,7 +328,7 @@ function processImage() {
       reject(error);
     });
 
-    worker.postMessage({
+    const message = {
       type: "encode",
       requestId,
       pixels: pixels.buffer,
@@ -284,8 +337,12 @@ function processImage() {
       preset: presetSelect.value,
       quality: Number(qualityInput.value),
       autoQuality,
+      jpegImport,
+      jpegBytes: jpegBytes ? jpegBytes.buffer : null,
       sampleMcuCount: 24,
-    }, [pixels.buffer]);
+    };
+    const transfers = jpegBytes ? [pixels.buffer, jpegBytes.buffer] : [pixels.buffer];
+    worker.postMessage(message, transfers);
   });
 }
 
@@ -317,7 +374,9 @@ function renderReadyStatus(candidateCount = null) {
     state.elapsedSeconds = ((performance.now() - state.startedAt) / 1000).toFixed(2);
   }
   const candidates = candidateCount === null ? info.searchCandidateCount : candidateCount;
-  const key = candidates > 0 ? "dct.statusReadyAuto" : "dct.statusReady";
+  const key = state.importMode === "jpeg-dct"
+    ? "dct.statusReadyJpeg"
+    : candidates > 0 ? "dct.statusReadyAuto" : "dct.statusReady";
   setStatus(t(key, {
     name: state.sourceName,
     quality: info.quality,
@@ -590,7 +649,8 @@ function setBusy(busy) {
   processButton.disabled = busy;
   presetSelect.disabled = busy;
   qualityInput.disabled = busy || autoQualityInput.checked;
-  autoQualityInput.disabled = busy;
+  autoQualityInput.disabled = busy || jpegImportInput.checked;
+  jpegImportInput.disabled = busy || !state.sourceJpegBytes;
   uploadButton.disabled = busy;
   imageSelect.disabled = busy;
   downloadDctButton.disabled = busy || !state.encoded;

@@ -49,11 +49,22 @@ test("runs DCT encoding and automatic quality search in a worker", () => {
   assert.match(worker, /\[encoded\.buffer, decoded\.pixels\.buffer\]/);
 });
 
+test("offers CPU Huffman JPEG DCT import without an RGB encoding pass", () => {
+  assert.match(page, /id="jpeg-dct-import"/);
+  assert.match(page, /data-i18n="dct\.jpegImport"/);
+  assert.match(pageScript, /state\.sourceJpegBytes/);
+  assert.match(pageScript, /jpegImportInput\.checked/);
+  assert.match(worker, /GpuJpegDecoder\.parse\(data\.jpegBytes\)/);
+  assert.match(worker, /importJpegDctFile\(jpeg, options\)/);
+  assert.match(worker, /importMode: data\.jpegImport \? "jpeg-dct" : "rgba"/);
+});
+
 test("caches the DCT page and codec in the offline application shell", () => {
   assert.match(serviceWorker, /"\.\/dct-compression\.html"/);
   assert.match(serviceWorker, /"\.\/dct-compression\.css"/);
   assert.match(serviceWorker, /"\.\/src\/dct\/dct-format\.js"/);
   assert.match(serviceWorker, /"\.\/src\/dct\/dct-worker\.js"/);
+  assert.match(serviceWorker, /"\.\/src\/decoders\/gpu-jpeg\.js"/);
   assert.match(serviceWorker, /"\.\/src\/pages\/dct-compression-page\.js"/);
 });
 

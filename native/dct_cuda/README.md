@@ -81,4 +81,5 @@ node native\dct_cuda\tests\verify-js-compat.js `
 The test compares the complete seven-layout list and exercises every preset
 in both directions. It encodes on CUDA and decodes in JavaScript, encodes in
 JavaScript and decodes on CUDA, and compares CUDA single-pixel results with
-`sampleDctFilePixel`.
+`sampleDctFilePixel`. It also imports a real JPEG from its Huffman/DCT data and
+checks that CUDA full-image and single-pixel decoding match JavaScript.
