@@ -40,10 +40,11 @@ test("ships a directly addressable DCTBS2 stone texture", () => {
   assert.ok([center.r, center.g, center.b].every((channel) => channel >= 0 && channel <= 255));
 });
 
-test("packs the complete DCTBS2 file into an RGBA8UI atlas", () => {
+test("keeps the packed DCTBS2 stream for low-memory shader decoding", () => {
   const shaderData = Dctbs2TextureDecoder.createShaderTextureData(bytes, 4096);
 
   assert.equal(shaderData.format, "dctbs2-rgba8ui");
+  assert.equal(shaderData.decodeMode, "low-memory");
   assert.equal(shaderData.width, 1100);
   assert.equal(shaderData.height, 734);
   assert.equal(shaderData.sourceBytes, bytes.length);
@@ -57,19 +58,86 @@ test("packs the complete DCTBS2 file into an RGBA8UI atlas", () => {
   assert.ok(shaderData.dataAtlas.data.subarray(bytes.length).every((value) => value === 0));
 });
 
-test("switches Demo Cube to fragment-shader DCTBS2 sampling", () => {
+test("builds the minimal cached 4:2:2 component layout for fast sampling", () => {
+  const info = DctImageFormat.inspectDctFile(bytes);
+  const shaderData = Dctbs2TextureDecoder.createShaderTextureData(bytes, 4096, {
+    decodeMode: "fast",
+  });
+  const logicalCacheBytes = info.mcuCount * 512;
+
+  assert.equal(shaderData.format, "dctbs2-component-cache-rgba8ui");
+  assert.equal(shaderData.decodeMode, "fast");
+  assert.equal(shaderData.componentBytesPerMcu, 512);
+  assert.equal(shaderData.componentYOffset, 0);
+  assert.equal(shaderData.componentCbOffset, 256);
+  assert.equal(shaderData.componentCrOffset, 384);
+  assert.equal(shaderData.sourceBytes, bytes.length);
+  assert.equal(shaderData.dataAtlas.width, 640);
+  assert.equal(shaderData.dataAtlas.height, 635);
+  assert.equal(shaderData.dataAtlas.mcusPerRow, 5);
+  assert.equal(shaderData.dataAtlas.recordTexels, 128);
+  assert.equal(shaderData.gpuBytes, 640 * 635 * 4);
+  assert.equal(logicalCacheBytes, 3174 * 512);
+  assert.ok(shaderData.dataAtlas.data.subarray(logicalCacheBytes).every((value) => value === 0));
+
+  const directPixels = DctImageFormat.decodeDctFile(bytes).pixels;
+  let maximumDelta = 0;
+  let squaredError = 0;
+
+  for (let y = 0; y < info.height; y += 1) {
+    for (let x = 0; x < info.width; x += 1) {
+      const cached = Dctbs2TextureDecoder.sampleShaderTexturePixel(shaderData, x, y);
+      const offset = (y * info.width + x) * 4;
+
+      [["r", 0], ["g", 1], ["b", 2]].forEach(([channel, channelOffset]) => {
+        const delta = cached[channel] - directPixels[offset + channelOffset];
+        maximumDelta = Math.max(maximumDelta, Math.abs(delta));
+        squaredError += delta * delta;
+      });
+    }
+  }
+
+  const meanSquaredError = squaredError / (info.width * info.height * 3);
+  const cachePsnr = 10 * Math.log10(255 * 255 / meanSquaredError);
+
+  assert.ok(cachePsnr > 50, `component rounding PSNR must exceed 50 dB, got ${cachePsnr}`);
+  assert.ok(maximumDelta <= 16, `component rounding delta must be bounded, got ${maximumDelta}`);
+
+  for (let yStep = 0; yStep <= 4; yStep += 1) {
+    for (let xStep = 0; xStep <= 4; xStep += 1) {
+      const x = Math.floor((info.width - 1) * xStep / 4);
+      const y = Math.floor((info.height - 1) * yStep / 4);
+      const cached = Dctbs2TextureDecoder.sampleShaderTexturePixel(shaderData, x, y);
+
+      assert.deepEqual(
+        Dctbs2TextureDecoder.sampleShaderTexturePixel(shaderData, x, y),
+        cached,
+        `cached pixel ${x},${y} must be deterministic`
+      );
+      assert.ok([cached.r, cached.g, cached.b].every((channel) => channel >= 0 && channel <= 255));
+    }
+  }
+});
+
+test("switches Demo Cube between fast and low-memory DCTBS2 sampling", () => {
   assert.match(cubeHtml, /<select id="texture-format">/);
   assert.match(cubeHtml, /<option value="dct"[^>]*>DCTBS2 · 1\.5 bpp<\/option>/);
-  assert.match(cubeHtml, /src="\.\/src\/decoders\/dctbs2-texture\.js\?v=dct-cube-2"/);
+  assert.match(cubeHtml, /<select id="dct-decode-mode" disabled>/);
+  assert.match(cubeHtml, /<option value="fast" selected/);
+  assert.match(cubeHtml, /<option value="low-memory"/);
+  assert.match(cubeHtml, /src="\.\/src\/decoders\/dctbs2-texture\.js\?v=dct-cache-1"/);
   assert.match(cubeSource, /loadBundledDctTexture\(\)/);
-  assert.match(cubeSource, /createShaderTextureData\(/);
+  assert.match(cubeSource, /createShaderTextureData\([\s\S]*\{ decodeMode \}/);
   assert.match(cubeSource, /loadDctShaderTexture\(shaderTextureData\)/);
   assert.match(cubeSource, /setDctShaderTextureEnabled\(true\)/);
   assert.match(rendererSource, /gl\.RGBA8UI/);
   assert.match(rendererSource, /gl\.RGBA_INTEGER/);
   assert.match(rendererSource, /gl\.activeTexture\(gl\.TEXTURE7\)/);
   assert.match(shaderSource, /uniform highp usampler2D uDctData/);
+  assert.match(shaderSource, /uniform highp int uDctDecodeMode/);
   assert.match(shaderSource, /sampleDctRecord\(/);
+  assert.match(shaderSource, /fetchCachedDctColor\(/);
+  assert.match(shaderSource, /DCT_CACHE_MCU_BYTES = 512/);
   assert.match(shaderSource, /fetchDctColor\(/);
   assert.match(shaderSource, /uUseDctTexture > 0\.5/);
 });

@@ -133,7 +133,8 @@ The project contains:
   coordinate decoder, PNG export, and BPDH download;
 - [`bpal-viewer.html`](https://witali.github.io/block-palette-compression/bpal-viewer.html) — BPAL, BPLM, BPDH, and regular image viewer;
 - [`cube.html`](https://witali.github.io/block-palette-compression/cube.html) — WebGL cube with BPAL/BPLM double indexing,
-  direct DCTBS2 transforms, or coordinate-based BPDH decoding in the fragment shader;
+  fast cached-YCbCr or low-memory direct DCTBS2 rendering, and coordinate-based
+  BPDH decoding in the fragment shader;
 - [`cube-bpal-sampler.html`](https://witali.github.io/block-palette-compression/cube-bpal-sampler.html) — programmable BPAL
   mipmapping with nearest, bilinear, trilinear, and anisotropic filtering.
 

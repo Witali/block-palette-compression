@@ -17,6 +17,7 @@ const heightStrengthValue = document.getElementById("height-strength-value");
 const webgl2CompactInput = document.getElementById("webgl2-compact");
 const cubeCountInput = document.getElementById("cube-count");
 const textureFormatSelect = document.getElementById("texture-format");
+const dctDecodeModeSelect = document.getElementById("dct-decode-mode");
 const bpalExampleSelect = document.getElementById("bpal-example");
 const bpalFileInput = document.getElementById("bpal-file");
 const perCubeTexturesInput = document.getElementById("per-cube-textures");
@@ -71,6 +72,7 @@ let primaryTextureData = null;
 let ownedCubeTextureResources = [];
 const cubeTextureDataCache = new Map();
 const cubeTextureDataPromises = new Map();
+let dctDemoBytesPromise = null;
 
 window.addEventListener("languagechange", () => {
   if (loadedBpalTexture) {
@@ -233,7 +235,8 @@ function initializeRendererModeControl() {
 }
 
 function initializeBpalTextureControls() {
-  if (!textureFormatSelect || !bpalExampleSelect || !bpalFileInput || !bpalStatus) {
+  if (!textureFormatSelect || !dctDecodeModeSelect || !bpalExampleSelect ||
+      !bpalFileInput || !bpalStatus) {
     return;
   }
 
@@ -250,6 +253,17 @@ function initializeBpalTextureControls() {
 
     load.catch((error) => {
       console.error("Cube texture format switch failed.", error);
+      setBpalStatus(error && error.message ? error.message : String(error), true);
+    });
+  });
+
+  dctDecodeModeSelect.addEventListener("change", () => {
+    if (textureFormatSelect.value !== "dct") {
+      return;
+    }
+
+    loadBundledDctTexture().catch((error) => {
+      console.error("DCTBS2 decode mode switch failed.", error);
       setBpalStatus(error && error.message ? error.message : String(error), true);
     });
   });
@@ -359,6 +373,9 @@ async function loadBundledDctTexture() {
   }
 
   const loadId = ++bpalLoadId;
+  const decodeMode = dctDecodeModeSelect.value === "low-memory"
+    ? window.Dctbs2TextureDecoder.DECODE_MODE_LOW_MEMORY
+    : window.Dctbs2TextureDecoder.DECODE_MODE_FAST;
 
   setBpalControlsDisabled(true);
   setBpalStatus(localized(
@@ -367,23 +384,19 @@ async function loadBundledDctTexture() {
   ), false);
 
   try {
-    const response = await fetch(DCT_DEMO_URL);
-
-    if (!response.ok) {
-      throw new Error(
-        `Could not load ${DCT_DEMO_NAME}: ${response.status} ${response.statusText}`
-      );
-    }
-
-    const bytes = await response.arrayBuffer();
+    const bytes = await loadDctDemoBytes();
 
     if (loadId !== bpalLoadId) {
       return;
     }
 
+    setBpalStatus(decodeMode === window.Dctbs2TextureDecoder.DECODE_MODE_FAST
+      ? localized("Building GPU-friendly YCbCr cache…", "Создание быстрого кэша YCbCr…")
+      : localized("Preparing direct DCT stream…", "Подготовка прямого потока DCT…"), false);
     const shaderTextureData = window.Dctbs2TextureDecoder.createShaderTextureData(
       bytes,
-      gl.getParameter(gl.MAX_TEXTURE_SIZE)
+      gl.getParameter(gl.MAX_TEXTURE_SIZE),
+      { decodeMode }
     );
 
     cubeRenderer.resetMaterialMaps();
@@ -410,6 +423,7 @@ async function loadBundledDctTexture() {
       formatVersion: shaderTextureData.version,
       bitsPerPixel: shaderTextureData.bitsPerPixel,
       quality: shaderTextureData.quality,
+      decodeMode: shaderTextureData.decodeMode,
       shaderTextureEnabled: true,
     };
     window.__cubeBpalTexture = null;
@@ -422,6 +436,25 @@ async function loadBundledDctTexture() {
       setBpalControlsDisabled(false);
     }
   }
+}
+
+function loadDctDemoBytes() {
+  if (!dctDemoBytesPromise) {
+    dctDemoBytesPromise = fetch(DCT_DEMO_URL).then((response) => {
+      if (!response.ok) {
+        throw new Error(
+          `Could not load ${DCT_DEMO_NAME}: ${response.status} ${response.statusText}`
+        );
+      }
+
+      return response.arrayBuffer();
+    }).catch((error) => {
+      dctDemoBytesPromise = null;
+      throw error;
+    });
+  }
+
+  return dctDemoBytesPromise;
 }
 
 async function loadBpalTextureSource(source, fileName, sourceUrl) {
@@ -507,8 +540,10 @@ async function loadBpalTextureSource(source, fileName, sourceUrl) {
 
 function setBpalControlsDisabled(disabled) {
   const catalogSelected = textureFormatSelect.value !== "dct";
+  const dctSelected = textureFormatSelect.value === "dct";
 
   textureFormatSelect.disabled = disabled;
+  dctDecodeModeSelect.disabled = disabled || !dctSelected;
   bpalFileInput.disabled = disabled || !catalogSelected;
   bpalExampleSelect.disabled = disabled || !catalogSelected || bpalExampleSelect.options.length === 0;
   if (perCubeTexturesInput) {
@@ -527,14 +562,22 @@ function updateLoadedBpalStatus() {
       `${loadedBpalTexture.bitsPerPixel.toFixed(3)} бит/пиксель · качество ${loadedBpalTexture.quality}`
     );
 
+    const decodeDescription = loadedBpalTexture.decodeMode === "fast"
+      ? localized(
+        "cached YCbCr components, direct IDCT disabled",
+        "кэш компонентов YCbCr, прямой IDCT отключён"
+      )
+      : localized(
+        "direct fragment-shader IDCT",
+        "прямой IDCT во fragment shader"
+      );
+
     setBpalStatus(
       `${loadedBpalTexture.name} · ${loadedBpalTexture.width}×${loadedBpalTexture.height} · ` +
         `DCTBS2 v${loadedBpalTexture.version} · ` +
         `${dctRate} · ` +
-        localized(
-          "fragment-shader IDCT, RGBA not uploaded",
-          "IDCT во fragment shader, RGBA не загружена"
-        ) + ` · GPU ${formatBytes(getAssignedGpuBytes())}`,
+        `${decodeDescription}, ` + localized("RGBA not uploaded", "RGBA не загружена") +
+        ` · GPU ${formatBytes(getAssignedGpuBytes())}`,
       false
     );
     return;

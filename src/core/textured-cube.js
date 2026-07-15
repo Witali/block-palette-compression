@@ -282,7 +282,7 @@
         bpalTextures: null,
         bpalTextureInfo: null,
         dctTexture: texture,
-        dctTextureInfo: shaderData,
+        dctTextureInfo: createDctRuntimeTextureInfo(shaderData),
         bpdhDataTexture: null,
         bpdhTextureInfo: null,
       };
@@ -417,7 +417,7 @@
         this.gl.deleteTexture(this.dctTexture);
       }
       this.dctTexture = texture;
-      this.dctTextureInfo = shaderData;
+      this.dctTextureInfo = createDctRuntimeTextureInfo(shaderData);
       this.applyDctTextureUniforms();
 
       return shaderData;
@@ -647,6 +647,11 @@
       gl.uniform1i(this.locations.dctMcuColumns, info.mcuColumns);
       gl.uniform1i(this.locations.dctQuality, info.quality);
       gl.uniform1i(this.locations.dctDataTexWidth, info.dataAtlas.width);
+      gl.uniform1i(this.locations.dctDecodeMode, info.decodeMode === "fast" ? 1 : 0);
+      gl.uniform1i(
+        this.locations.dctCacheMcusPerRow,
+        info.decodeMode === "fast" ? info.dataAtlas.mcusPerRow : 1
+      );
     }
 
     bindInstanceTextureResource(resource) {
@@ -983,6 +988,8 @@
       dctMcuColumns: gl.getUniformLocation(program, "uDctMcuColumns"),
       dctQuality: gl.getUniformLocation(program, "uDctQuality"),
       dctDataTexWidth: gl.getUniformLocation(program, "uDctDataTexWidth"),
+      dctDecodeMode: gl.getUniformLocation(program, "uDctDecodeMode"),
+      dctCacheMcusPerRow: gl.getUniformLocation(program, "uDctCacheMcusPerRow"),
       bpdhData: gl.getUniformLocation(program, "uBpdhData"),
       useBpdhTexture: gl.getUniformLocation(program, "uUseBpdhTexture"),
       bpdhImageSize: gl.getUniformLocation(program, "uBpdhImageSize"),
@@ -1362,9 +1369,26 @@
   }
 
   function validateDctShaderTextureData(data) {
+    const formatValid = data && (
+      data.format === "dctbs2-rgba8ui" ||
+      data.format === "dctbs2-component-cache-rgba8ui"
+    );
+    const decodeModeValid = data && (
+      data.decodeMode === "low-memory" ||
+      data.decodeMode === "fast"
+    );
+    const componentLayoutValid = !data || data.decodeMode !== "fast" || (
+      data.componentBytesPerMcu === 512 &&
+      data.componentYOffset === 0 &&
+      data.componentCbOffset === 256 &&
+      data.componentCrOffset === 384
+    );
+
     if (
       !data ||
-      data.format !== "dctbs2-rgba8ui" ||
+      !formatValid ||
+      !decodeModeValid ||
+      !componentLayoutValid ||
       !Number.isInteger(data.width) ||
       !Number.isInteger(data.height) ||
       !Number.isInteger(data.mcuColumns) ||
@@ -1372,10 +1396,28 @@
       !data.dataAtlas ||
       !Number.isInteger(data.dataAtlas.width) ||
       !Number.isInteger(data.dataAtlas.height) ||
-      !(data.dataAtlas.data instanceof Uint8Array)
+      !(data.dataAtlas.data instanceof Uint8Array) ||
+      data.decodeMode === "fast" && (
+        !Number.isInteger(data.dataAtlas.mcusPerRow) ||
+        data.dataAtlas.mcusPerRow < 1 ||
+        data.dataAtlas.recordTexels !== 128
+      )
     ) {
       throw new TypeError("DCTBS2 shader texture data is invalid");
     }
+  }
+
+  function createDctRuntimeTextureInfo(data) {
+    return {
+      ...data,
+      dataAtlas: {
+        width: data.dataAtlas.width,
+        height: data.dataAtlas.height,
+        channels: data.dataAtlas.channels,
+        mcusPerRow: data.dataAtlas.mcusPerRow,
+        recordTexels: data.dataAtlas.recordTexels,
+      },
+    };
   }
 
   function validateBpdhShaderTextureData(data) {

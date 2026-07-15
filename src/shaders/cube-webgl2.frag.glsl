@@ -40,6 +40,8 @@ uniform highp ivec2 uDctImageSize;
 uniform highp int uDctMcuColumns;
 uniform highp int uDctQuality;
 uniform highp int uDctDataTexWidth;
+uniform highp int uDctDecodeMode;
+uniform highp int uDctCacheMcusPerRow;
 uniform sampler2D uBpdhData;
 uniform float uUseBpdhTexture;
 uniform vec2 uBpdhImageSize;
@@ -70,6 +72,11 @@ const int DCT_Y_BYTES = 24;
 const int DCT_CB_BYTES = 12;
 const int DCT_Y_AC_COUNT = 33;
 const int DCT_C_AC_COUNT = 13;
+const int DCT_DECODE_MODE_FAST = 1;
+const int DCT_CACHE_MCU_BYTES = 512;
+const int DCT_CACHE_MCU_TEXELS = 128;
+const int DCT_CACHE_CB_OFFSET = 256;
+const int DCT_CACHE_CR_OFFSET = 384;
 
 const int DCT_QUANT_Y[64] = int[64](
   16, 11, 10, 16, 24, 40, 51, 61,
@@ -120,6 +127,16 @@ uint dctByteAt(int byteOffset) {
     texelIndex / uDctDataTexWidth
   );
   uvec4 texel = texelFetch(uDctData, coordinate, 0);
+  int lane = byteOffset & 3;
+  return lane == 0 ? texel.r : lane == 1 ? texel.g : lane == 2 ? texel.b : texel.a;
+}
+
+uint dctCachedByte(ivec2 mcuOrigin, int byteOffset) {
+  uvec4 texel = texelFetch(
+    uDctData,
+    mcuOrigin + ivec2(byteOffset >> 2, 0),
+    0
+  );
   int lane = byteOffset & 3;
   return lane == 0 ? texel.r : lane == 1 ? texel.g : lane == 2 ? texel.b : texel.a;
 }
@@ -237,7 +254,7 @@ vec3 dctYCbCrToRgb(float y, float cb, float cr) {
   ) / 255.0, 0.0, 1.0);
 }
 
-vec3 fetchDctColor(ivec2 pixelCoord) {
+vec3 fetchDirectDctColor(ivec2 pixelCoord) {
   ivec2 pixel = clamp(pixelCoord, ivec2(0), uDctImageSize - 1);
   int mcuIndex = (pixel.y >> 4) * uDctMcuColumns + (pixel.x >> 4);
   int mcuOffset = DCT_HEADER_BYTES + mcuIndex * DCT_MCU_BYTES;
@@ -256,6 +273,28 @@ vec3 fetchDctColor(ivec2 pixelCoord) {
     local.y
   );
   return dctYCbCrToRgb(y, cb, cr);
+}
+
+vec3 fetchCachedDctColor(ivec2 pixelCoord) {
+  ivec2 pixel = clamp(pixelCoord, ivec2(0), uDctImageSize - 1);
+  int mcuIndex = (pixel.y >> 4) * uDctMcuColumns + (pixel.x >> 4);
+  ivec2 mcuOrigin = ivec2(
+    (mcuIndex % uDctCacheMcusPerRow) * DCT_CACHE_MCU_TEXELS,
+    mcuIndex / uDctCacheMcusPerRow
+  );
+  ivec2 local = pixel & 15;
+  int chromaIndex = local.y * 8 + (local.x >> 1);
+  float y = float(dctCachedByte(mcuOrigin, local.y * 16 + local.x));
+  float cb = float(dctCachedByte(mcuOrigin, DCT_CACHE_CB_OFFSET + chromaIndex));
+  float cr = float(dctCachedByte(mcuOrigin, DCT_CACHE_CR_OFFSET + chromaIndex));
+
+  return dctYCbCrToRgb(y, cb, cr);
+}
+
+vec3 fetchDctColor(ivec2 pixelCoord) {
+  return uDctDecodeMode == DCT_DECODE_MODE_FAST
+    ? fetchCachedDctColor(pixelCoord)
+    : fetchDirectDctColor(pixelCoord);
 }
 
 vec3 sampleDctTexture(vec2 uv) {

@@ -29,6 +29,10 @@
   const MCU_WIDTH = 16;
   const MCU_HEIGHT = 16;
   const CHROMA_WIDTH = 8;
+  const COMPONENT_CACHE_Y_OFFSET = 0;
+  const COMPONENT_CACHE_CB_OFFSET = MCU_WIDTH * MCU_HEIGHT;
+  const COMPONENT_CACHE_CR_OFFSET = COMPONENT_CACHE_CB_OFFSET + CHROMA_WIDTH * MCU_HEIGHT;
+  const COMPONENT_CACHE_BYTES_PER_MCU = COMPONENT_CACHE_CR_OFFSET + CHROMA_WIDTH * MCU_HEIGHT;
   const SCALE_MULTIPLIERS = Object.freeze([1, 2, 4, 8, 16, 32, 64, 128]);
   const PROFILE_NAMES = Object.freeze(["low frequency", "horizontal", "vertical", "diagonal"]);
   const LIBRARY_MAGIC = Object.freeze([0x44, 0x43, 0x54, 0x4c, 0x49, 0x42, 0x31, 0x00]);
@@ -831,6 +835,50 @@
     }
 
     return { ...info, pixels };
+  }
+
+  function decodeDctComponentSamples(input) {
+    const bytes = asUint8Array(input);
+    const info = inspectDctFile(bytes);
+    const samples = new Uint8Array(info.mcuCount * COMPONENT_CACHE_BYTES_PER_MCU);
+
+    for (let mcuIndex = 0; mcuIndex < info.mcuCount; mcuIndex += 1) {
+      const components = decodeMcuComponents(bytes, info, mcuIndex);
+      const recordOffset = mcuIndex * COMPONENT_CACHE_BYTES_PER_MCU;
+
+      writeCenteredComponentSamples(
+        samples,
+        recordOffset + COMPONENT_CACHE_Y_OFFSET,
+        reconstructLumaPlane(components.y)
+      );
+      writeCenteredComponentSamples(
+        samples,
+        recordOffset + COMPONENT_CACHE_CB_OFFSET,
+        inverseDct(components.cb.coefficients, CHROMA_WIDTH, MCU_HEIGHT)
+      );
+      writeCenteredComponentSamples(
+        samples,
+        recordOffset + COMPONENT_CACHE_CR_OFFSET,
+        inverseDct(components.cr.coefficients, CHROMA_WIDTH, MCU_HEIGHT)
+      );
+    }
+
+    return {
+      ...info,
+      componentCache: Object.freeze({
+        bytesPerMcu: COMPONENT_CACHE_BYTES_PER_MCU,
+        yOffset: COMPONENT_CACHE_Y_OFFSET,
+        cbOffset: COMPONENT_CACHE_CB_OFFSET,
+        crOffset: COMPONENT_CACHE_CR_OFFSET,
+        samples,
+      }),
+    };
+  }
+
+  function writeCenteredComponentSamples(target, offset, samples) {
+    for (let index = 0; index < samples.length; index += 1) {
+      target[offset + index] = clampByte(samples[index] + 128);
+    }
   }
 
   function sampleDctFilePixel(input, x, y) {
@@ -2523,6 +2571,7 @@
     encodeDctFile,
     importJpegDctFile,
     decodeDctFile,
+    decodeDctComponentSamples,
     sampleDctFilePixel,
     inspectDctFile,
     inspectDctMcu,

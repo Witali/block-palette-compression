@@ -74,12 +74,21 @@ mode or fixed MCU layout.
 ## Demo Cube integration
 
 `cube.html` can switch its WebGL2 material source from BPAL/BPLM to the bundled
-`assets/dct/stone-texture-wic-1.5bpp.dctbs2` file. The cube shader reads that
-baseline 1.5 bpp stream from an `RGBA8UI` atlas and evaluates the requested
-16x16 Y and 8x16 Cb/Cr inverse-DCT samples per fragment. It does not upload an
-intermediate RGBA texture. The compact cube path intentionally accepts only
-the grouped-5-front, unsplit, non-library 1.5 bpp profile; the seven standalone
-shaders remain the complete format decoders.
+`assets/dct/stone-texture-wic-1.5bpp.dctbs2` file. Its default **Fast** mode
+decodes every MCU once during texture loading and uploads a component-only
+`RGBA8UI` atlas containing 256 Y, 128 Cb, and 128 Cr bytes per MCU. The atlas
+uses 512 bytes per MCU (2 bytes per source pixel), keeps complete MCU records
+on atlas rows, and replaces per-fragment IDCT with three integer texture reads
+plus YCbCr-to-RGB conversion. The compressed stream is not duplicated on the
+GPU and no RGBA image is uploaded. Component samples are deterministically
+rounded and clamped to eight bits while building the cache; this can differ
+slightly from the floating-point direct-IDCT path at extreme values.
+
+The optional **Low memory** mode uploads the baseline 1.5 bpp stream directly
+and evaluates the requested 16x16 Y and 8x16 Cb/Cr inverse-DCT samples per
+fragment. The compact cube path intentionally accepts only the grouped-5-front,
+unsplit, non-library 1.5 bpp profile; the seven standalone shaders remain the
+complete format decoders.
 
 ## Regeneration
 
