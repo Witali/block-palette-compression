@@ -1,0 +1,68 @@
+"use strict";
+
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+
+const root = path.resolve(__dirname, "..");
+const { PRESETS } = require(path.join(root, "src", "dct", "dct-format.js"));
+const {
+  buildScan,
+  generatedFiles,
+  presets,
+} = require(path.join(root, "tools", "generate-dctbs2-shaders.js"));
+
+test("ships one current-format WebGL2 DCTBS2 shader for every payload rate", () => {
+  assert.deepEqual(
+    presets.map((preset) => preset.key),
+    Object.keys(PRESETS).sort((left, right) => Number(left) - Number(right))
+  );
+  assert.equal(generatedFiles().size, 8);
+
+  for (const [file, expected] of generatedFiles()) {
+    const actual = fs.readFileSync(path.join(root, "src", "shaders", file), "utf8");
+    assert.equal(actual, expected, `${file} must be regenerated after format changes`);
+  }
+});
+
+test("matches DCTBS2 v2 MCU layouts instead of the attached legacy dctb layout", () => {
+  for (const preset of presets) {
+    const source = generatedFiles().get(preset.file);
+    const layout = PRESETS[preset.key];
+    assert.equal(preset.mode, layout.modeCode);
+    assert.deepEqual(
+      [preset.mcu, preset.y, preset.cb, preset.cr],
+      [layout.bytesPerMcu, layout.yBytes, layout.cbBytes, layout.crBytes]
+    );
+    assert.match(source, /const int HEADER_SIZE = 64;/);
+    assert.match(source, /u32le\(8\) == 2u/);
+    assert.match(source, /int mcuOffset = HEADER_SIZE \+ mcuIndex \* int\(EXPECTED_MCU_BYTES\)/);
+    assert.doesNotMatch(source, /HEADER_SIZE = 256/);
+  }
+});
+
+test("keeps shader coefficient scans, grouped exponents, and libraries bounded", () => {
+  assert.deepEqual(buildScan(0, 8, 8).slice(0, 8), [8, 1, 2, 9, 16, 24, 17, 10]);
+  assert.equal(new Set(buildScan(3, 16, 16)).size, 255);
+
+  const source = generatedFiles().get("dctbs2-3bpp.frag.glsl");
+  assert.match(source, /for \(int index = 0; index < 256; \+\+index\)/);
+  assert.match(source, /uint readComponentBits/);
+  assert.match(source, /value = value \* 2u \+ \(\(source >> uint\(7 - \(absoluteBit & 7\)\)\) & 1u\)/);
+  assert.match(source, /uint readSidecarBits/);
+  assert.match(source, /int groupedScaleIndex/);
+  assert.match(source, /bool sidecarReferenceVersion/);
+  assert.match(source, /int resolveLibraryIndex/);
+  assert.match(source, /int prototypeOffset = prototypeBase \+ \(libraryIndex - 1\) \* recordBytes/);
+  assert.match(source, /yReferenceOrdinal = mcuIndex \* 4 \+ block/);
+});
+
+function test(name, callback) {
+  try {
+    callback();
+    console.log(`ok - ${name}`);
+  } catch (error) {
+    console.error(`not ok - ${name}`);
+    throw error;
+  }
+}
