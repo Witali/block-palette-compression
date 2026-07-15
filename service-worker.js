@@ -1,6 +1,6 @@
 "use strict";
 
-const CACHE_VERSION = "v16";
+const CACHE_VERSION = "v17";
 const SHELL_CACHE = `bpal-shell-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `bpal-runtime-${CACHE_VERSION}`;
 const SHARED_FILE_CACHE = "bpal-shared-files-v1";
@@ -67,6 +67,8 @@ const APP_SHELL = [
   "./src/palette/palette-quantizer.js",
   "./src/pwa/register-service-worker.js",
   "./src/shaders/cube-bpal-sampler.frag.glsl",
+  "./src/shaders/cube-bpdh.frag.glsl",
+  "./src/shaders/cube-webgl2-bpdh.frag.glsl",
   "./src/shaders/cube-webgl2-dctbs2-1_5bpp.frag.glsl",
   "./src/shaders/cube-webgl2.vert.glsl",
   "./src/shaders/cube.frag.glsl",

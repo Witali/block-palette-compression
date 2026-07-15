@@ -13,13 +13,22 @@ const cubeHtml = fs.readFileSync(path.join(root, "cube.html"), "utf8");
 const samplerHtml = fs.readFileSync(path.join(root, "cube-bpal-sampler.html"), "utf8");
 const cubeSource = fs.readFileSync(path.join(root, "src", "pages", "cube-page.js"), "utf8");
 const samplerSource = fs.readFileSync(path.join(root, "src", "pages", "cube-bpal-sampler-page.js"), "utf8");
+const rendererSource = fs.readFileSync(path.join(root, "src", "core", "textured-cube.js"), "utf8");
 const cubeFragmentShader = fs.readFileSync(path.join(root, "src", "shaders", "cube.frag.glsl"), "utf8");
+const bpdhFragmentShader = fs.readFileSync(
+  path.join(root, "src", "shaders", "cube-bpdh.frag.glsl"),
+  "utf8"
+);
 const compactVertexShader = fs.readFileSync(
   path.join(root, "src", "shaders", "cube-webgl2.vert.glsl"),
   "utf8"
 );
 const compactFragmentShader = fs.readFileSync(
   path.join(root, "src", "shaders", "cube-webgl2-dctbs2-1_5bpp.frag.glsl"),
+  "utf8"
+);
+const compactBpdhFragmentShader = fs.readFileSync(
+  path.join(root, "src", "shaders", "cube-webgl2-bpdh.frag.glsl"),
   "utf8"
 );
 
@@ -59,13 +68,29 @@ test("uses coordinate-based BPDH shader sampling without an RGBA upload", () => 
   assert.match(cubeSource, /BpdhFormat\.parseBpdhFile\(bytes\)/);
   assert.match(cubeSource, /BpdhTextureDecoder\.createShaderTextureData\(/);
   assert.match(cubeSource, /loadBpdhShaderTexture\(textureData\.bpdhShaderTextureData\)/);
+  assert.match(cubeSource, /prepareTextureShaderMode\(shaderMode\)/);
+  assert.match(cubeSource, /setTextureShaderMode\(shaderMode\)/);
+  assert.match(rendererSource, /cube-bpdh\.frag\.glsl\?v=bpdh-split-1/);
+  assert.match(rendererSource, /async prepareTextureShaderMode\(mode\)/);
   assert.doesNotMatch(cubeSource, /loadTexturePixels\(/);
 
-  for (const shader of [cubeFragmentShader, compactFragmentShader]) {
-    assert.match(shader, /uniform float uUseBpdhTexture/);
+  for (const shader of [bpdhFragmentShader, compactBpdhFragmentShader]) {
+    assert.match(shader, /uniform sampler2D uBpdhData/);
     assert.match(shader, /vec3 fetchBpdhColor\(/);
     assert.match(shader, /vec3 sampleBpdhTexture\(/);
     assert.match(shader, /sampleBpdhChroma\(/);
+    assert.doesNotMatch(shader, /uUseBpalTexture|uUseDctTexture/);
+  }
+
+  for (const shader of [cubeFragmentShader, compactFragmentShader]) {
+    assert.doesNotMatch(shader, /uBpdh|fetchBpdh|sampleBpdh/);
+  }
+
+  for (const name of fs.readdirSync(path.join(root, "src", "shaders"))) {
+    if (/^cube-webgl2-dctbs2-.*\.frag\.glsl$/.test(name)) {
+      const shader = fs.readFileSync(path.join(root, "src", "shaders", name), "utf8");
+      assert.doesNotMatch(shader, /uBpdh|fetchBpdh|sampleBpdh/);
+    }
   }
 });
 
@@ -104,7 +129,7 @@ test("keeps cached BPDH shader samples deterministic for both block modes", () =
 
 test("switches Demo Cube between WebGL1 and compact WebGL2 rendering", () => {
   assert.match(cubeHtml, /<input id="webgl2-compact" type="checkbox" checked>/);
-  assert.match(cubeHtml, /src="\.\/src\/core\/textured-cube-webgl2\.js\?v=cube-flat-1"/);
+  assert.match(cubeHtml, /src="\.\/src\/core\/textured-cube-webgl2\.js\?v=bpdh-split-1"/);
   assert.match(cubeSource, /get\("renderer"\) !== "webgl1"/);
   assert.match(cubeSource, /url\.searchParams\.set\("renderer", "webgl1"\)/);
   assert.match(cubeSource, /CompactTexturedCubeRenderer\.create\(gl, rendererOptions\)/);

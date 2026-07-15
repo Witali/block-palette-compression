@@ -394,6 +394,11 @@ async function loadBundledDctTexture() {
       { decodeMode }
     );
 
+    await cubeRenderer.prepareTextureShaderMode("default");
+    if (loadId !== bpalLoadId) {
+      return;
+    }
+    cubeRenderer.setTextureShaderMode("default");
     cubeRenderer.resetMaterialMaps();
     cubeRenderer.discardColorTexture();
     cubeRenderer.loadDctShaderTexture(shaderTextureData);
@@ -472,6 +477,12 @@ async function loadBpalTextureSource(source, fileName, sourceUrl) {
     const textureData = createCubeTextureData(bytes);
     const { decoded, shaderTextureData } = textureData;
 
+    const shaderMode = textureData.kind === "bpdh" ? "bpdh" : "default";
+    await cubeRenderer.prepareTextureShaderMode(shaderMode);
+    if (loadId !== bpalLoadId) {
+      return;
+    }
+    cubeRenderer.setTextureShaderMode(shaderMode);
     cubeRenderer.resetMaterialMaps();
     if (textureData.kind === "bpdh") {
       cubeRenderer.setBpalShaderTextureEnabled(false);

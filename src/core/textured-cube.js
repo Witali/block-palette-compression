@@ -13,8 +13,11 @@
   const PROJECT_ROOT_URL = new URL("../../", SCRIPT_URL).href;
   const DEFAULT_SHADER_URLS = {
     vertex: resolveProjectUrl("src/shaders/cube.vert.glsl?v=material-maps"),
-    fragment: resolveProjectUrl("src/shaders/cube.frag.glsl?v=cube-flat-1"),
+    fragment: resolveProjectUrl("src/shaders/cube.frag.glsl?v=bpdh-split-1"),
   };
+  const DEFAULT_BPDH_FRAGMENT_SHADER_URL = resolveProjectUrl(
+    "src/shaders/cube-bpdh.frag.glsl?v=bpdh-split-1"
+  );
   const DEFAULT_TESSELLATION_SEGMENTS = 64;
   const DEFAULT_GEOMETRY_DISPLACEMENT_SCALE = 0.28;
   const MAX_BPAL_MIP_LEVELS = 16;
@@ -50,15 +53,27 @@
       const shaderUrls = rendererOptions.shaderUrls || DEFAULT_SHADER_URLS;
       const shaderSources = await loadShaderPair(shaderUrls);
 
-      return new TexturedCubeRenderer(gl, shaderSources, rendererOptions);
+      return new TexturedCubeRenderer(gl, shaderSources, {
+        ...rendererOptions,
+        bpdhFragmentShaderUrl: rendererOptions.bpdhFragmentShaderUrl ||
+          DEFAULT_BPDH_FRAGMENT_SHADER_URL,
+      });
     }
 
     constructor(gl, shaderSources, options) {
       this.gl = gl;
       this.options = options || {};
       this.reliefEnabled = this.options.relief !== false;
-      this.program = createProgram(gl, shaderSources.vertex, shaderSources.fragment);
-      this.locations = createLocations(gl, this.program);
+      this.vertexShaderSource = shaderSources.vertex;
+      this.bpdhFragmentShaderUrl = this.options.bpdhFragmentShaderUrl;
+      this.programStates = {
+        default: createProgramState(gl, shaderSources.vertex, shaderSources.fragment),
+        bpdh: null,
+      };
+      this.programStatePromises = { bpdh: null };
+      this.shaderMode = "default";
+      this.program = this.programStates.default.program;
+      this.locations = this.programStates.default.locations;
       this.tessellationSegments = clampInteger(
         this.options.tessellationSegments,
         1,
@@ -126,6 +141,61 @@
       };
       this.heightTexelSize = [1, 1];
 
+      this.initializeActiveProgram();
+      this.setMaterial(this.options.material || "matte");
+    }
+
+    async prepareTextureShaderMode(mode) {
+      if (mode !== "default" && mode !== "bpdh") {
+        throw new RangeError(`Unsupported cube texture shader mode: ${mode}`);
+      }
+
+      if (!this.programStates[mode]) {
+        if (!this.programStatePromises[mode]) {
+          this.programStatePromises[mode] = loadText(this.bpdhFragmentShaderUrl)
+            .then((fragmentSource) => createProgramState(
+              this.gl,
+              this.vertexShaderSource,
+              fragmentSource
+            ))
+            .then((programState) => {
+              this.programStates[mode] = programState;
+              return programState;
+            })
+            .finally(() => {
+              this.programStatePromises[mode] = null;
+            });
+        }
+
+        await this.programStatePromises[mode];
+      }
+    }
+
+    setTextureShaderMode(mode) {
+      if (mode !== "default" && mode !== "bpdh") {
+        throw new RangeError(`Unsupported cube texture shader mode: ${mode}`);
+      }
+
+      if (!this.programStates[mode]) {
+        throw new Error(`Cube texture shader mode is not prepared: ${mode}`);
+      }
+
+      if (this.shaderMode === mode) {
+        return;
+      }
+
+      this.shaderMode = mode;
+      this.program = this.programStates[mode].program;
+      this.locations = this.programStates[mode].locations;
+      this.initializeActiveProgram();
+      this.applyBpalTextureUniforms();
+      this.applyDctTextureUniforms();
+      this.applyBpdhTextureUniforms();
+    }
+
+    initializeActiveProgram() {
+      const gl = this.gl;
+
       gl.useProgram(this.program);
       gl.uniformMatrix4fv(this.locations.view, false, this.view);
       gl.uniform1i(this.locations.stoneTexture, 0);
@@ -139,13 +209,12 @@
       gl.uniform1i(this.locations.bpdhData, 0);
       gl.uniform1f(this.locations.useBpalTexture, 0);
       gl.uniform1f(this.locations.useDctTexture, 0);
-      gl.uniform1f(this.locations.useBpdhTexture, 0);
       gl.uniform3fv(this.locations.lightPosition, this.options.lightPosition || [3.0, 4.0, 5.0]);
       gl.uniform3fv(this.locations.lightColor, this.options.lightColor || [0.92, 0.9, 0.82]);
       gl.uniform3fv(this.locations.ambientColor, this.options.ambientColor || [0.22, 0.22, 0.22]);
       gl.uniform3fv(this.locations.viewPosition, this.viewPosition);
       gl.uniform2fv(this.locations.heightTexelSize, this.heightTexelSize);
-      this.setMaterial(this.options.material || "matte");
+      this.applyMaterialUniforms();
       this.applyBpalSamplerUniforms();
     }
 
@@ -505,9 +574,8 @@
         : Boolean(enabled);
 
       gl.useProgram(this.program);
-      gl.uniform1f(this.locations.useBpdhTexture, shaderTextureEnabled && info ? 1 : 0);
 
-      if (!info) {
+      if (!shaderTextureEnabled || !info) {
         return;
       }
 
@@ -1002,7 +1070,6 @@
       dctDecodeMode: gl.getUniformLocation(program, "uDctDecodeMode"),
       dctCacheMcusPerRow: gl.getUniformLocation(program, "uDctCacheMcusPerRow"),
       bpdhData: gl.getUniformLocation(program, "uBpdhData"),
-      useBpdhTexture: gl.getUniformLocation(program, "uUseBpdhTexture"),
       bpdhImageSize: gl.getUniformLocation(program, "uBpdhImageSize"),
       bpdhBlocksX: gl.getUniformLocation(program, "uBpdhBlocksX"),
       bpdhLocalColorCount: gl.getUniformLocation(program, "uBpdhLocalColorCount"),
@@ -1037,6 +1104,15 @@
       viewPosition: gl.getUniformLocation(program, "uViewPosition"),
       specularStrength: gl.getUniformLocation(program, "uSpecularStrength"),
       shininess: gl.getUniformLocation(program, "uShininess"),
+    };
+  }
+
+  function createProgramState(gl, vertexSource, fragmentSource) {
+    const program = createProgram(gl, vertexSource, fragmentSource);
+
+    return {
+      program,
+      locations: createLocations(gl, program),
     };
   }
 
