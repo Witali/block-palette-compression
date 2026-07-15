@@ -58,6 +58,41 @@ after convergence. This changes encoding time and reconstructed quality but
 does not add fields or bits to BPAL/BPLM files and does not affect decoding.
 The compressor UI lets users select zero to four passes and defaults to one.
 
+## Hybrid BPAL/DCT mode
+
+The experimental BPDH v1 codec selects BPAL or 4:2:0 DCT independently for
+each `16x16` coding unit. Its encoder evaluates real serialized rate and exact
+decoded RGB squared error, then searches the supported rate-distortion mode
+assignments at the requested payload bpp. Pure BPAL and pure DCT candidates
+remain available when mixed-mode signaling is not worthwhile.
+
+BPDH stores only the BPAL and DCT records selected by the mode map. DCT units
+use absolute DC coefficients, fixed quantization tables, and deterministic
+fixed-point reconstruction. `sampleBpdhPixel(decoded, x, y)` obtains a pixel
+from its coding unit without depending on neighboring units or decode order.
+
+The Node.js API separates compression from serialization:
+
+```js
+const { compressHybridImage } = require("./src/hybrid/bpdh-codec.js");
+const {
+  encodeBpdhFile,
+  decodeBpdhFile,
+  sampleBpdhPixel,
+} = require("./src/hybrid/bpdh-format.js");
+
+const image = compressHybridImage(rgba, width, height, {
+  mode: "auto",
+  targetBitsPerPixel: 4,
+});
+const file = encodeBpdhFile(image);
+const decoded = decodeBpdhFile(file);
+const color = sampleBpdhPixel(decoded, x, y);
+```
+
+`tools/benchmark_bpdh_adapter.js` exposes matching raw-RGBA encode and decode
+commands for benchmark automation.
+
 The project contains:
 
 - [`block-palette.html`](https://witali.github.io/block-palette-compression/block-palette.html) — CPU/WebGL2 encoder, preview,
@@ -75,6 +110,8 @@ Detailed documentation:
   ([Russian](./BLOCK_PALETTE_README_ru.md));
 - [BPAL v5 file format](./BLOCK_PALETTE_FORMAT.md)
   ([Russian](./BLOCK_PALETTE_FORMAT_ru.md));
+- [BPDH v1 hybrid BPAL/DCT format](./BPDH_FORMAT.md);
+- [hybrid BPAL/DCT research and benchmark plan](./docs/HYBRID_BPAL_DCT_PLAN.md);
 - [standalone BPAL v5 CPU/SIMD and CUDA tools](./native/bpal5_simd/README.md);
 - [reproducible BPAL/BC/ASTC texture codec benchmark](./benchmark/README.md).
 

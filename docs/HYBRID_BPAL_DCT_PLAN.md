@@ -58,8 +58,8 @@ profile:
 - `8x8` DCT and zig-zag coefficient order;
 - one image-level quantization scale, with a small enumerated set of candidate
   scales during encoding;
-- fixed Huffman tables initially, so a block's rate remains stable while mode
-  decisions change;
+- a fixed signed/unsigned Exp-Golomb coefficient code initially, so a block's
+  rate remains stable while mode decisions change;
 - absolute DC coefficients in the first implementation; prediction can be
   tested later with explicit restart points at row or tile boundaries.
 
@@ -114,7 +114,7 @@ Use alternating optimization:
 5. Regenerate affected BPAL candidates and select modes again.
 6. Stop when the mode map is stable or after a small fixed iteration count.
 
-Adaptive DCT Huffman tables can be added after the fixed-table version works.
+Adaptive DCT Huffman tables can be added after the fixed-code version works.
 When added, refit them between iterations and charge the serialized table size.
 
 For every target rate, also encode pure BPAL and pure DCT candidates and choose
