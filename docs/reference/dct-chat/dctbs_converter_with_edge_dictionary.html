@@ -1,0 +1,2007 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DCTBS2 — конвертер 32/24/16 байт и улучшенный MCU 4:2:2</title>
+<style>
+  :root { color-scheme: light dark; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: Canvas; color: CanvasText; }
+  main { max-width: 1120px; margin: 0 auto; padding: 24px; }
+  h1 { margin: 0 0 8px; font-size: clamp(1.5rem, 4vw, 2.3rem); }
+  h2 { margin: 0 0 12px; }
+  p { line-height: 1.5; }
+  .card { border: 1px solid color-mix(in srgb, CanvasText 22%, transparent); border-radius: 14px; padding: 18px; margin-top: 16px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(205px, 1fr)); gap: 14px; align-items: end; }
+  label { display: grid; gap: 7px; font-weight: 600; }
+  input[type="file"], input[type="range"], button, select { width: 100%; box-sizing: border-box; }
+  input[type="file"], select { padding: 10px; border: 1px solid color-mix(in srgb, CanvasText 22%, transparent); border-radius: 10px; background: Canvas; color: CanvasText; }
+  button { border: 0; border-radius: 10px; padding: 12px 16px; font: inherit; font-weight: 700; cursor: pointer; background: Highlight; color: HighlightText; }
+  button.secondary { background: color-mix(in srgb, CanvasText 12%, Canvas); color: CanvasText; }
+  button.optimize { background: color-mix(in srgb, Highlight 72%, #208c48); color: HighlightText; }
+  button:disabled, select:disabled { opacity: .45; cursor: not-allowed; }
+  progress { width: 100%; height: 18px; }
+  .status { min-height: 1.5em; margin-top: 10px; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; margin-top: 14px; }
+  .stat { padding: 10px; border-radius: 10px; background: color-mix(in srgb, CanvasText 7%, Canvas); }
+  .stat b { display: block; font-size: 1.15rem; margin-top: 3px; overflow-wrap: anywhere; }
+  small, .muted { opacity: .75; }
+  code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+  pre { overflow-x: auto; }
+  .warn { border-left: 4px solid #d88b00; padding-left: 12px; }
+  .preview-head { display: flex; gap: 12px; justify-content: space-between; align-items: center; flex-wrap: wrap; }
+  .preview-tools { display: grid; grid-template-columns: minmax(150px, 1fr) repeat(2, minmax(90px, auto)); gap: 8px; width: min(100%, 470px); }
+  .preview-tools button { padding: 9px 12px; }
+  .viewport {
+    position: relative;
+    margin-top: 12px;
+    width: 100%;
+    height: clamp(320px, 64vh, 700px);
+    overflow: hidden;
+    border-radius: 12px;
+    border: 1px solid color-mix(in srgb, CanvasText 25%, transparent);
+    background-color: #777;
+    background-image:
+      linear-gradient(45deg, rgba(255,255,255,.12) 25%, transparent 25%),
+      linear-gradient(-45deg, rgba(255,255,255,.12) 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, rgba(255,255,255,.12) 75%),
+      linear-gradient(-45deg, transparent 75%, rgba(255,255,255,.12) 75%);
+    background-size: 24px 24px;
+    background-position: 0 0, 0 12px, 12px -12px, -12px 0;
+    touch-action: none;
+    user-select: none;
+    overscroll-behavior: contain;
+  }
+  #previewCanvas { display: block; width: 100%; height: 100%; cursor: grab; }
+  #previewCanvas.dragging { cursor: grabbing; }
+  .zoom-label { position: absolute; right: 10px; bottom: 10px; padding: 5px 9px; border-radius: 8px; background: rgba(0,0,0,.65); color: white; font: 600 13px system-ui; pointer-events: none; }
+  .hint { margin-bottom: 0; }
+  .check-option { display: flex; flex-direction: row; align-items: center; gap: 9px; min-height: 44px; }
+  .check-option input { width: auto; margin: 0; }
+  @media (max-width: 620px) {
+    main { padding: 14px; }
+    .card { padding: 14px; }
+    .preview-tools { grid-template-columns: 1fr 1fr; width: 100%; }
+    .preview-tools select { grid-column: 1 / -1; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>DCTBS2 — блоки 32/24/16 байт и режимы MCU 4:2:2 до 2/1,5/1/0,75 бит на пиксель</h1>
+  <p>Страница работает полностью локально. Обычные режимы используют YCbCr 4:2:0 и DCT 8×8. Дополнительные режимы используют MCU 16×16 с Y 16×16 и цветностью 4:2:2: Cb/Cr по 8×16. Доступны варианты 2, 1,5, 1 и 0,75 бит/пиксель. Внутри каждой записи кодер выбирает между разреженной маской и плотным частотным профилем. Результат сразу декодируется обратно для проверки качества.</p>
+
+  <section class="card">
+    <div class="grid">
+      <label>Исходное изображение
+        <input id="file" type="file" accept="image/jpeg,image/*">
+      </label>
+      <label>Качество квантования: <span id="qualityValue">авто</span>
+        <input id="quality" type="range" min="1" max="100" value="75">
+      </label>
+      <label class="check-option"><input id="autoQuant" type="checkbox" checked> Автоматически подобрать квантование по максимальному PSNR</label>
+      <label>Размер DCT-блока
+        <select id="blockSize">
+          <option value="32">32 байта — DC 8 бит + 23 AC × 8 бит</option>
+          <option value="24">24 байта — DC 9 бит + 17 AC × 7 бит</option>
+          <option value="16">16 байт — DC 10 бит + 9 AC × 6 бит</option>
+          <option value="64">MCU 16×16, 64 байта — улучшенный гибридный 2 бит/пиксель</option>
+          <option value="48">MCU 16×16, 48 байт — гибридный 1,5 бит/пиксель</option>
+          <option value="m32">MCU 16×16, 32 байта — гибридный 1 бит/пиксель</option>
+          <option value="m32d">MCU 16×16, 32 байта — 1 бит/пиксель + адаптивный словарь границ</option>
+          <option value="24m">MCU 16×16, 24 байта — гибридный 0,75 бит/пиксель</option>
+          <option value="24d">MCU 16×16, 24 байта — 0,75 бит/пиксель + адаптивный словарь границ</option>
+        </select>
+      </label>
+      <button id="convert" disabled>Быстро преобразовать</button>
+      <button id="optimize" class="optimize" disabled>Оптимизировать коэффициенты</button>
+      <button id="download" class="secondary" disabled>Скачать .d24</button>
+    </div>
+    <div class="status" id="status">Выберите JPEG или другой поддерживаемый браузером файл изображения.</div>
+    <progress id="progress" max="1" value="0"></progress>
+    <div class="stats" id="stats" hidden></div>
+  </section>
+
+  <section class="card">
+    <div class="preview-head">
+      <h2>Предпросмотр</h2>
+      <div class="preview-tools">
+        <select id="previewMode" disabled aria-label="Что показывать">
+          <option value="original">Оригинал</option>
+          <option value="decoded" disabled>Распакованный DCTBS2</option>
+        </select>
+        <button id="fitView" class="secondary" disabled>Вписать</button>
+        <button id="actualView" class="secondary" disabled>100%</button>
+      </div>
+    </div>
+    <div class="viewport" id="viewport">
+      <canvas id="previewCanvas"></canvas>
+      <div class="zoom-label" id="zoomLabel">—</div>
+    </div>
+    <p class="muted hint"><b>ПК:</b> Ctrl + колесо изменяет масштаб, перетаскивание двигает изображение. <b>Телефон/планшет:</b> масштабирование двумя пальцами, перемещение одним пальцем.</p>
+  </section>
+
+  <section class="card">
+    <h2>Режим оптимизации</h2>
+    <p>Кнопка <b>«Оптимизировать коэффициенты»</b> выбирает режим с минимальной квадратичной ошибкой. Для MCU 4:2:2 она сравнивает разреженную запись с адаптивной маской и плотные частотные профили. Плотный режим хранит значительно больше компонентов: для Y до 49 коэффициентов, для Cb/Cr до 20. Масштабы этого режима: ×1, ×2, ×3 и ×6. Для режимов 1 и 0,75 бит/пиксель добавлены варианты с адаптивной библиотекой границ. Они используют тот же размер MCU: специальный плотный профиль содержит обычные DCT-коэффициенты и один 8-битный код остаточного шаблона. Кодер выбирает его только при уменьшении MSE.</p>
+    <p>При включённом <b>автоматическом квантовании</b> страница проверяет несколько уровней на репрезентативной мозаике исходного изображения, затем уточняет результат на полном изображении и выбирает вариант с наибольшим фактически измеренным RGB PSNR. Поэтому положение ползунка больше не требуется угадывать вручную.</p>
+  </section>
+
+  <section class="card">
+    <h2>Формат блока DCTBS2</h2>
+    <pre><code>байты 0…7 — маска и масштаб:
+  биты 0…61  — присутствие коэффициентов DCT 0…61
+  биты 62…63 — scale: ×1, ×2, ×4 или ×8
+
+остальные байты — битовый поток значений:
+  32 байта: DC signed 8 бит + до 23 AC signed 8 бит
+  24 байта: DC signed 9 бит + до 17 AC signed 7 бит
+  16 байт:  DC signed 10 бит + до 9 AC signed 6 бит
+
+Режим MCU 4:2:2, область 16×16 — гибридный:
+  Y 16×16  → 32 байта
+  Cb 8×16 → 16 байт
+  Cr 8×16 → 16 байт
+
+  Разреженный подрежим:
+    Y — маска + до 16 int8; Cb/Cr — маска + до 8 int8.
+
+  Плотный подрежим:
+    Y — DC 9 бит + 30–48 AC по 5–8 бит;
+    Cb/Cr — DC 8 бит + 16–19 AC по 6–7 бит;
+    номер частотного профиля и общий масштаб находятся в служебных битах.
+
+  Итого 64 байта на 16×16 = ровно 2 бит/пиксель.</code></pre>
+    <p class="warn"><b>Важно:</b> это повторное кодирование пикселей, а не прямое копирование DCT-коэффициентов исходного JPEG. Поэтому страница принимает progressive JPEG, PNG и другие форматы, которые умеет открыть браузер.</p>
+  </section>
+</main>
+
+<script>
+'use strict';
+
+const HEADER_SIZE = 256;
+const SCALES = Object.freeze([1, 2, 4, 8]);
+const FORMAT_CONFIGS = Object.freeze({
+  '32': Object.freeze({ key: '32', modeCode: 32, blockSize: 32, dcBits: 8, acBits: 8, maxAc: 23, totalCoeffs: 24, title: '32 байта: 24 коэффициента, 8 бит', fileTag: '32b' }),
+  '24': Object.freeze({ key: '24', modeCode: 24, blockSize: 24, dcBits: 9, acBits: 7, maxAc: 17, totalCoeffs: 18, title: '24 байта: DC 9 бит + 17 AC по 7 бит', fileTag: '24b' }),
+  '16': Object.freeze({ key: '16', modeCode: 16, blockSize: 16, dcBits: 10, acBits: 6, maxAc: 9, totalCoeffs: 10, title: '16 байт: DC 10 бит + 9 AC по 6 бит', fileTag: '16b' }),
+  '64': Object.freeze({ key: '64', modeCode: 64, blockSize: 64, special: 'mcu422', qScale: 0.65, title: 'MCU 16×16: гибрид Y32 + Cb16 + Cr16; 2 бит/пиксель', fileTag: 'mcu422_hybrid_64b_2bpp' }),
+  '48': Object.freeze({ key: '48', modeCode: 48, blockSize: 48, special: 'mcu422', qScale: 0.80, title: 'MCU 16×16: гибрид Y24 + Cb12 + Cr12; 1,5 бит/пиксель', fileTag: 'mcu422_hybrid_48b_1_5bpp' }),
+  'm32': Object.freeze({ key: 'm32', modeCode: 3201, blockSize: 32, special: 'mcu422', qScale: 0.95, title: 'MCU 16×16: гибрид Y16 + Cb8 + Cr8; 1 бит/пиксель', fileTag: 'mcu422_hybrid_32b_1bpp' }),
+  'm32d': Object.freeze({ key: 'm32d', modeCode: 3203, blockSize: 32, special: 'mcu422', qScale: 0.95, inlineDictionary: true, title: 'MCU 16×16: адаптивный DCT/словарь Y16 + Cb8 + Cr8; 1 бит/пиксель', fileTag: 'mcu422_inline_dictionary_32b_1bpp' }),
+  '24m': Object.freeze({ key: '24m', modeCode: 2401, blockSize: 24, special: 'mcu422', qScale: 1.10, title: 'MCU 16×16: гибрид Y12 + Cb6 + Cr6; 0,75 бит/пиксель', fileTag: 'mcu422_hybrid_24b_0_75bpp' }),
+  '24d': Object.freeze({ key: '24d', modeCode: 2403, blockSize: 24, special: 'mcu422', qScale: 1.10, inlineDictionary: true, title: 'MCU 16×16: адаптивный DCT/словарь Y12 + Cb6 + Cr6; 0,75 бит/пиксель', fileTag: 'mcu422_inline_dictionary_24b_0_75bpp' })
+});
+const MODE_CODE_TO_KEY = Object.freeze({ '16': '16', '24': '24', '32': '32', '48': '48', '64': '64', '3201': 'm32', '3203': 'm32d', '2401': '24m', '2403': '24d' });
+
+function getFormatConfig(blockSize) {
+  const config = FORMAT_CONFIGS[String(blockSize)];
+  if (!config) throw new Error(`Неподдерживаемый режим: ${blockSize}`);
+  return config;
+}
+
+function getFormatConfigFromHeader(modeCode, blockSizeField) {
+  const key = MODE_CODE_TO_KEY[String(modeCode)];
+  if (key && FORMAT_CONFIGS[key]) return FORMAT_CONFIGS[key];
+  return getFormatConfig(String(blockSizeField));
+}
+
+const QY_BASE = new Uint8Array([
+  16,11,10,16,24,40,51,61,
+  12,12,14,19,26,58,60,55,
+  14,13,16,24,40,57,69,56,
+  14,17,22,29,51,87,80,62,
+  18,22,37,56,68,109,103,77,
+  24,35,55,64,81,104,113,92,
+  49,64,78,87,103,121,120,101,
+  72,92,95,98,112,100,103,99
+]);
+
+const QC_BASE = new Uint8Array([
+  17,18,24,47,99,99,99,99,
+  18,21,26,66,99,99,99,99,
+  24,26,56,99,99,99,99,99,
+  47,66,99,99,99,99,99,99,
+  99,99,99,99,99,99,99,99,
+  99,99,99,99,99,99,99,99,
+  99,99,99,99,99,99,99,99,
+  99,99,99,99,99,99,99,99
+]);
+
+const BASIS = (() => {
+  const out = new Float64Array(64);
+  for (let k = 0; k < 8; k++) {
+    const alpha = k === 0 ? 1 / Math.sqrt(8) : 0.5;
+    for (let n = 0; n < 8; n++) {
+      out[k * 8 + n] = alpha * Math.cos(((2 * n + 1) * k * Math.PI) / 16);
+    }
+  }
+  return out;
+})();
+
+const fileInput = document.getElementById('file');
+const qualityInput = document.getElementById('quality');
+const qualityValue = document.getElementById('qualityValue');
+const autoQuantInput = document.getElementById('autoQuant');
+const blockSizeSelect = document.getElementById('blockSize');
+const convertButton = document.getElementById('convert');
+const optimizeButton = document.getElementById('optimize');
+const downloadButton = document.getElementById('download');
+const statusEl = document.getElementById('status');
+const progressEl = document.getElementById('progress');
+const statsEl = document.getElementById('stats');
+const previewMode = document.getElementById('previewMode');
+const fitViewButton = document.getElementById('fitView');
+const actualViewButton = document.getElementById('actualView');
+const viewport = document.getElementById('viewport');
+const previewCanvas = document.getElementById('previewCanvas');
+const zoomLabel = document.getElementById('zoomLabel');
+const previewCtx = previewCanvas.getContext('2d', { alpha: false });
+
+let currentBlob = null;
+let currentName = 'image.d24';
+let running = false;
+let loadedFile = null;
+let loadedImageData = null;
+let originalSource = null;
+let decodedSource = null;
+
+const view = {
+  scale: 1,
+  offsetX: 0,
+  offsetY: 0,
+  minScale: 0.01,
+  maxScale: 64,
+  pointers: new Map(),
+  lastSingle: null,
+  lastPinch: null
+};
+
+function refreshQualityControlLabel() {
+  qualityValue.textContent = autoQuantInput.checked ? `авто (старт ${qualityInput.value})` : qualityInput.value;
+}
+
+qualityInput.addEventListener('input', refreshQualityControlLabel);
+autoQuantInput.addEventListener('change', () => {
+  resetOutput();
+  refreshQualityControlLabel();
+  updateControls();
+});
+refreshQualityControlLabel();
+
+blockSizeSelect.addEventListener('change', () => {
+  resetOutput();
+  if (loadedFile) setStatus(`Выбран режим: ${getFormatConfig(blockSizeSelect.value).title}`);
+});
+
+fileInput.addEventListener('change', async () => {
+  const file = fileInput.files?.[0] || null;
+  resetOutput();
+  loadedFile = file;
+  loadedImageData = null;
+  originalSource = null;
+  decodedSource = null;
+  updateControls();
+  if (!file) {
+    setStatus('Выберите файл изображения.');
+    clearPreview();
+    return;
+  }
+
+  try {
+    setBusy(true);
+    setStatus(`Декодирование: ${file.name}…`);
+    const decoded = await decodeInputImage(file);
+    loadedImageData = decoded.imageData;
+    originalSource = decoded.canvas;
+    previewMode.disabled = false;
+    previewMode.value = 'original';
+    fitViewButton.disabled = false;
+    actualViewButton.disabled = false;
+    setStatus(`Выбран файл: ${file.name}, ${decoded.imageData.width} × ${decoded.imageData.height}`);
+    requestAnimationFrame(() => fitPreview());
+  } catch (error) {
+    console.error(error);
+    setStatus(`Ошибка загрузки: ${error instanceof Error ? error.message : String(error)}`);
+    loadedFile = null;
+    loadedImageData = null;
+    originalSource = null;
+    clearPreview();
+  } finally {
+    setBusy(false);
+    updateControls();
+  }
+});
+
+convertButton.addEventListener('click', () => runConversion(false));
+optimizeButton.addEventListener('click', () => runConversion(true));
+
+downloadButton.addEventListener('click', () => {
+  if (!currentBlob) return;
+  const url = URL.createObjectURL(currentBlob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = currentName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+});
+
+previewMode.addEventListener('change', () => fitPreview());
+fitViewButton.addEventListener('click', fitPreview);
+actualViewButton.addEventListener('click', actualSizePreview);
+window.addEventListener('resize', resizePreviewCanvas);
+
+async function runConversion(optimized) {
+  if (!loadedFile || !loadedImageData || running) return;
+  resetOutput();
+  setBusy(true);
+  progressEl.value = 0;
+  statsEl.hidden = true;
+
+  try {
+    const blockSize = blockSizeSelect.value;
+    let quality = Number(qualityInput.value);
+    let result;
+    let decoded;
+    let autoInfo = null;
+
+    if (autoQuantInput.checked) {
+      const tuned = await findBestQuantization(loadedImageData, optimized, blockSize);
+      quality = tuned.quality;
+      result = tuned.result;
+      decoded = tuned.decoded;
+      autoInfo = tuned;
+      qualityInput.value = String(quality);
+      refreshQualityControlLabel();
+    } else {
+      setStatus(optimized ? 'Оптимизированный подбор коэффициентов…' : 'Быстрое преобразование…');
+      result = await encodeImageData(loadedImageData, quality, updateProgress, { optimized, blockSize });
+      setStatus('Контрольное декодирование результата…');
+      decoded = await decodeD24(result.bytes, updateDecodeProgress);
+    }
+
+    currentBlob = new Blob([result.bytes], { type: 'application/octet-stream' });
+    currentName = makeOutputName(loadedFile.name, blockSize);
+    decodedSource = imageDataToCanvas(decoded.imageData);
+    result.stats.psnr = calculatePSNR(loadedImageData, decoded.imageData);
+    result.stats.mode = optimized ? 'оптимизированный' : 'быстрый';
+    result.stats.quality = quality;
+    result.stats.autoQuality = Boolean(autoInfo);
+    if (autoInfo) {
+      result.stats.quantSearchText = `${autoInfo.testedCount} вариантов · proxy ${autoInfo.proxyBestPsnr.toFixed(2)} дБ`;
+    }
+
+    downloadButton.disabled = false;
+    previewMode.querySelector('option[value="decoded"]').disabled = false;
+    previewMode.value = 'decoded';
+    showStats(result.stats, loadedFile.size, result.bytes.byteLength);
+    setStatus(`Готово: ${currentName}; квантование ${quality}${autoInfo ? ' выбрано автоматически' : ''}`);
+    progressEl.max = 1;
+    progressEl.value = 1;
+    fitPreview();
+  } catch (error) {
+    console.error(error);
+    setStatus(`Ошибка: ${error instanceof Error ? error.message : String(error)}`);
+  } finally {
+    setBusy(false);
+    updateControls();
+  }
+}
+
+function makeQualitySearchProxy(imageData) {
+  const patch = 96;
+  if (imageData.width <= patch * 3 && imageData.height <= patch * 3) return imageData;
+
+  const source = document.createElement('canvas');
+  source.width = imageData.width;
+  source.height = imageData.height;
+  const sourceCtx = source.getContext('2d', { alpha: false });
+  if (!sourceCtx) throw new Error('Не удалось создать Canvas для автоквантования.');
+  sourceCtx.putImageData(imageData, 0, 0);
+
+  const proxy = document.createElement('canvas');
+  proxy.width = patch * 3;
+  proxy.height = patch * 3;
+  const ctx = proxy.getContext('2d', { alpha: false, willReadFrequently: true });
+  if (!ctx) throw new Error('Не удалось создать Canvas-прокси.');
+  ctx.imageSmoothingEnabled = false;
+
+  const maxX = Math.max(0, imageData.width - patch);
+  const maxY = Math.max(0, imageData.height - patch);
+  const xs = [0, Math.round(maxX / 2), maxX];
+  const ys = [0, Math.round(maxY / 2), maxY];
+  for (let gy = 0; gy < 3; gy++) {
+    for (let gx = 0; gx < 3; gx++) {
+      const sw = Math.min(patch, imageData.width);
+      const sh = Math.min(patch, imageData.height);
+      ctx.drawImage(source, xs[gx], ys[gy], sw, sh, gx * patch, gy * patch, patch, patch);
+    }
+  }
+  return ctx.getImageData(0, 0, proxy.width, proxy.height);
+}
+
+async function evaluateQuantization(imageData, quality, optimized, blockSize, label) {
+  setStatus(`${label}: квантование ${quality}…`);
+  const result = await encodeImageData(imageData, quality, () => {}, { optimized, blockSize });
+  const decoded = await decodeD24(result.bytes, () => {});
+  const psnr = calculatePSNR(imageData, decoded.imageData);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  return { quality, psnr, result, decoded };
+}
+
+async function findBestQuantization(imageData, optimized, blockSize) {
+  const proxy = makeQualitySearchProxy(imageData);
+  const tested = new Map();
+  const evaluateProxy = async quality => {
+    const q = clamp(Math.round(quality), 1, 100);
+    if (tested.has(q)) return tested.get(q);
+    progressEl.max = 30;
+    progressEl.value = tested.size;
+    const value = await evaluateQuantization(proxy, q, optimized, blockSize, 'Автоподбор на образце');
+    tested.set(q, value);
+    progressEl.value = tested.size;
+    return value;
+  };
+
+  const coarse = [10, 20, 30, 40, 50, 60, 70, 75, 80, 85, 90, 95, 100, Number(qualityInput.value)];
+  for (const q of coarse) await evaluateProxy(q);
+  let proxyBest = [...tested.values()].reduce((a, b) => b.psnr > a.psnr ? b : a);
+
+  for (let q = proxyBest.quality - 10; q <= proxyBest.quality + 10; q += 2) await evaluateProxy(q);
+  proxyBest = [...tested.values()].reduce((a, b) => b.psnr > a.psnr ? b : a);
+  for (let q = proxyBest.quality - 2; q <= proxyBest.quality + 2; q++) await evaluateProxy(q);
+  proxyBest = [...tested.values()].reduce((a, b) => b.psnr > a.psnr ? b : a);
+
+  const fullCandidates = [...new Set([proxyBest.quality - 1, proxyBest.quality, proxyBest.quality + 1].map(q => clamp(q, 1, 100)))];
+  let fullBest = null;
+  for (let i = 0; i < fullCandidates.length; i++) {
+    progressEl.max = fullCandidates.length;
+    progressEl.value = i;
+    const candidate = await evaluateQuantization(imageData, fullCandidates[i], optimized, blockSize, `Финальная проверка ${i + 1}/${fullCandidates.length}`);
+    if (!fullBest || candidate.psnr > fullBest.psnr) fullBest = candidate;
+    progressEl.value = i + 1;
+  }
+
+  return {
+    ...fullBest,
+    testedCount: tested.size + fullCandidates.length,
+    proxyBestPsnr: proxyBest.psnr
+  };
+}
+
+function resetOutput() {
+  currentBlob = null;
+  downloadButton.disabled = true;
+  decodedSource = null;
+  const decodedOption = previewMode.querySelector('option[value="decoded"]');
+  if (decodedOption) decodedOption.disabled = true;
+  if (previewMode.value === 'decoded') previewMode.value = 'original';
+  statsEl.hidden = true;
+  progressEl.max = 1;
+  progressEl.value = 0;
+}
+
+function setBusy(value) {
+  running = value;
+  updateControls();
+}
+
+function updateControls() {
+  const ready = Boolean(loadedFile && loadedImageData) && !running;
+  fileInput.disabled = running;
+  qualityInput.disabled = running || autoQuantInput.checked;
+  autoQuantInput.disabled = running;
+  blockSizeSelect.disabled = running;
+  convertButton.disabled = !ready;
+  optimizeButton.disabled = !ready;
+  downloadButton.disabled = running || !currentBlob;
+  previewMode.disabled = !originalSource;
+  fitViewButton.disabled = !originalSource;
+  actualViewButton.disabled = !originalSource;
+}
+
+async function decodeInputImage(file) {
+  let bitmap;
+  if ('createImageBitmap' in window) {
+    bitmap = await createImageBitmap(file);
+  } else {
+    const url = URL.createObjectURL(file);
+    try {
+      bitmap = await new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error('Браузер не смог открыть изображение.'));
+        img.src = url;
+      });
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = bitmap.width;
+  canvas.height = bitmap.height;
+  const ctx = canvas.getContext('2d', { alpha: false, willReadFrequently: true });
+  if (!ctx) throw new Error('Не удалось создать Canvas 2D.');
+  ctx.drawImage(bitmap, 0, 0);
+  if (typeof bitmap.close === 'function') bitmap.close();
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  return { canvas, imageData };
+}
+
+function imageDataToCanvas(imageData) {
+  const canvas = document.createElement('canvas');
+  canvas.width = imageData.width;
+  canvas.height = imageData.height;
+  const ctx = canvas.getContext('2d', { alpha: false });
+  if (!ctx) throw new Error('Не удалось создать Canvas 2D.');
+  ctx.putImageData(imageData, 0, 0);
+  return canvas;
+}
+
+function setStatus(text) {
+  statusEl.textContent = text;
+}
+
+function updateProgress(done, total, phase) {
+  progressEl.max = total;
+  progressEl.value = done;
+  setStatus(`${phase}: ${done.toLocaleString('ru-RU')} / ${total.toLocaleString('ru-RU')} блоков`);
+}
+
+function updateDecodeProgress(done, total, phase) {
+  progressEl.max = total;
+  progressEl.value = done;
+  setStatus(`${phase}: ${done.toLocaleString('ru-RU')} / ${total.toLocaleString('ru-RU')} блоков`);
+}
+
+function makeOutputName(inputName, blockSize) {
+  const base = inputName.replace(/\.[^.]+$/, '') || 'image';
+  const config = getFormatConfig(blockSize);
+  return config.special ? `${base}_${config.fileTag}.dctb` : `${base}_${config.fileTag}.dctb`;
+}
+
+function scaledQuantTable(base, quality) {
+  const q = Math.max(1, Math.min(100, Math.trunc(quality)));
+  const scale = q < 50 ? 5000 / q : 200 - 2 * q;
+  const out = new Uint8Array(64);
+  for (let i = 0; i < 64; i++) {
+    out[i] = Math.max(1, Math.min(255, Math.floor((base[i] * scale + 50) / 100)));
+  }
+  return out;
+}
+
+function roundNearest(value) {
+  return value < 0 ? -Math.floor(-value + 0.5) : Math.floor(value + 0.5);
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function nearestEvenSigned8(value) {
+  const target = clamp(value, -128, 127);
+  if ((target & 1) === 0) return target;
+  const lower = target - 1;
+  const upper = target + 1;
+  if (lower < -128) return upper;
+  if (upper > 127) return lower;
+  return Math.abs(value - lower) <= Math.abs(value - upper) ? lower : upper;
+}
+
+function rgbaToYCbCr420(imageData) {
+  const { width, height, data } = imageData;
+  const chromaWidth = Math.ceil(width / 2);
+  const chromaHeight = Math.ceil(height / 2);
+  const yPlane = new Float32Array(width * height);
+  const cbPlane = new Float32Array(chromaWidth * chromaHeight);
+  const crPlane = new Float32Array(chromaWidth * chromaHeight);
+  const counts = new Uint8Array(chromaWidth * chromaHeight);
+
+  let pixel = 0;
+  for (let y = 0; y < height; y++) {
+    const cy = y >> 1;
+    for (let x = 0; x < width; x++, pixel++) {
+      const src = pixel * 4;
+      const r = data[src];
+      const g = data[src + 1];
+      const b = data[src + 2];
+      yPlane[pixel] = 0.299 * r + 0.587 * g + 0.114 * b;
+      const ci = cy * chromaWidth + (x >> 1);
+      cbPlane[ci] += -0.168736 * r - 0.331264 * g + 0.5 * b + 128;
+      crPlane[ci] +=  0.5 * r - 0.418688 * g - 0.081312 * b + 128;
+      counts[ci]++;
+    }
+  }
+
+  for (let i = 0; i < counts.length; i++) {
+    const count = counts[i] || 1;
+    cbPlane[i] /= count;
+    crPlane[i] /= count;
+  }
+  return { width, height, chromaWidth, chromaHeight, yPlane, cbPlane, crPlane };
+}
+
+function writeHeader(output, info, qY, qC, config) {
+  output.set([0x44,0x43,0x54,0x42,0x53,0x32,0x00,0x00], 0); // DCTBS2
+  const view = new DataView(output.buffer, output.byteOffset, output.byteLength);
+  const u32 = (offset, value) => view.setUint32(offset, value >>> 0, true);
+  u32(8, 2);
+  u32(12, config.modeCode ?? 3);
+  u32(16, info.width);
+  u32(20, info.height);
+  u32(24, info.yBlocksWide);
+  u32(28, info.yBlocksHigh);
+  u32(32, info.cBlocksWide);
+  u32(36, info.cBlocksHigh);
+  u32(40, info.cBlocksWide);
+  u32(44, info.cBlocksHigh);
+  u32(48, config.blockSize);
+  u32(52, info.yBlockCount);
+  u32(56, info.yBlockCount + info.cBlockCount);
+  u32(60, info.totalBlocks);
+  output.set(qY, 64);
+  output.set(qC, 128);
+  output.set(qC, 192);
+}
+
+function fdctQuantizeBlock(plane, width, height, blockX, blockY, qtable, scratch) {
+  const { samples, temp, coeff, qcoeff } = scratch;
+  const originX = blockX * 8;
+  const originY = blockY * 8;
+
+  for (let y = 0; y < 8; y++) {
+    const sy = Math.min(originY + y, height - 1);
+    const row = sy * width;
+    for (let x = 0; x < 8; x++) {
+      const sx = Math.min(originX + x, width - 1);
+      samples[y * 8 + x] = plane[row + sx] - 128;
+    }
+  }
+
+  for (let y = 0; y < 8; y++) {
+    for (let u = 0; u < 8; u++) {
+      let sum = 0;
+      const basisOffset = u * 8;
+      const sampleOffset = y * 8;
+      for (let x = 0; x < 8; x++) sum += samples[sampleOffset + x] * BASIS[basisOffset + x];
+      temp[y * 8 + u] = sum;
+    }
+  }
+
+  for (let v = 0; v < 8; v++) {
+    const basisOffset = v * 8;
+    for (let u = 0; u < 8; u++) {
+      let sum = 0;
+      for (let y = 0; y < 8; y++) sum += temp[y * 8 + u] * BASIS[basisOffset + y];
+      const p = v * 8 + u;
+      coeff[p] = sum;
+      qcoeff[p] = roundNearest(sum / qtable[p]);
+    }
+  }
+  return qcoeff;
+}
+
+function signedRange(bits) {
+  return { min: -(1 << (bits - 1)), max: (1 << (bits - 1)) - 1 };
+}
+
+function selectImportantACFast(qcoeff, qtable, maxAc) {
+  const all = [];
+  for (let p = 1; p < 62; p++) {
+    const value = qcoeff[p];
+    if (value !== 0) all.push({ p, value, score: Math.abs(value * qtable[p]) });
+  }
+  all.sort((a, b) => (b.score - a.score) || (a.p - b.p));
+  return all.slice(0, maxAc).sort((a, b) => a.p - b.p);
+}
+
+function chooseScaleToFit(qcoeff, entries, config) {
+  const dcRange = signedRange(config.dcBits);
+  const acRange = signedRange(config.acBits);
+  for (let scaleCode = 0; scaleCode < SCALES.length; scaleCode++) {
+    const divisor = SCALES[scaleCode];
+    const dc = roundNearest(qcoeff[0] / divisor);
+    if (dc < dcRange.min || dc > dcRange.max) continue;
+    if (entries.every(entry => {
+      const value = roundNearest(entry.value / divisor);
+      return value >= acRange.min && value <= acRange.max;
+    })) return scaleCode;
+  }
+  return SCALES.length - 1;
+}
+
+function prepareFastBlock(qcoeff, qtable, config) {
+  const entries = selectImportantACFast(qcoeff, qtable, config.maxAc);
+  const scale = chooseScaleToFit(qcoeff, entries, config);
+  const divisor = SCALES[scale];
+  const dcRange = signedRange(config.dcBits);
+  const acRange = signedRange(config.acBits);
+  return {
+    scale,
+    dcStored: clamp(roundNearest(qcoeff[0] / divisor), dcRange.min, dcRange.max),
+    entries: entries.map(entry => ({
+      p: entry.p,
+      stored: clamp(roundNearest(entry.value / divisor), acRange.min, acRange.max)
+    }))
+  };
+}
+
+function prepareOptimizedBlock(qcoeff, qtable, config) {
+  let best = null;
+  let baseError = 0;
+  for (let p = 0; p < 64; p++) {
+    const original = qcoeff[p] * qtable[p];
+    baseError += original * original;
+  }
+
+  const dcRange = signedRange(config.dcBits);
+  const acRange = signedRange(config.acBits);
+
+  for (let scaleCode = 0; scaleCode < SCALES.length; scaleCode++) {
+    const divisor = SCALES[scaleCode];
+    const dcStored = clamp(roundNearest(qcoeff[0] / divisor), dcRange.min, dcRange.max);
+    const dcOriginal = qcoeff[0] * qtable[0];
+    const dcRestored = dcStored * divisor * qtable[0];
+    let totalError = baseError - dcOriginal * dcOriginal + (dcOriginal - dcRestored) ** 2;
+    const candidates = [];
+
+    for (let p = 1; p < 62; p++) {
+      const q = qcoeff[p];
+      if (q === 0) continue;
+      const stored = clamp(roundNearest(q / divisor), acRange.min, acRange.max);
+      const original = q * qtable[p];
+      const restored = stored * divisor * qtable[p];
+      const keepError = (original - restored) ** 2;
+      const benefit = original * original - keepError;
+      if (benefit > 0) candidates.push({ p, stored, benefit });
+    }
+
+    candidates.sort((a, b) => (b.benefit - a.benefit) || (a.p - b.p));
+    const selected = candidates.slice(0, config.maxAc);
+    for (const item of selected) totalError -= item.benefit;
+    selected.sort((a, b) => a.p - b.p);
+
+    if (!best || totalError < best.error) {
+      best = { scale: scaleCode, dcStored, entries: selected.map(({ p, stored }) => ({ p, stored })), error: totalError };
+    }
+  }
+  return best;
+}
+
+function writeUnsignedBits(output, byteOffset, bitOffset, value, bitCount) {
+  let v = value >>> 0;
+  for (let bit = 0; bit < bitCount; bit++) {
+    if (v & (1 << bit)) {
+      const absolute = bitOffset + bit;
+      output[byteOffset + (absolute >> 3)] |= 1 << (absolute & 7);
+    }
+  }
+}
+
+function writeSignedBits(output, byteOffset, bitOffset, value, bitCount) {
+  const modulus = 1 << bitCount;
+  const encoded = value < 0 ? modulus + value : value;
+  writeUnsignedBits(output, byteOffset, bitOffset, encoded, bitCount);
+}
+
+function readUnsignedBits(bytes, byteOffset, bitOffset, bitCount) {
+  let value = 0;
+  for (let bit = 0; bit < bitCount; bit++) {
+    const absolute = bitOffset + bit;
+    if (bytes[byteOffset + (absolute >> 3)] & (1 << (absolute & 7))) value |= 1 << bit;
+  }
+  return value >>> 0;
+}
+
+function readSignedBits(bytes, byteOffset, bitOffset, bitCount) {
+  const raw = readUnsignedBits(bytes, byteOffset, bitOffset, bitCount);
+  const signBit = 1 << (bitCount - 1);
+  return raw & signBit ? raw - (1 << bitCount) : raw;
+}
+
+function packPreparedBlock(output, offset, prepared, stats, config) {
+  output.fill(0, offset, offset + config.blockSize);
+  let maskLo = 1; // DC хранится всегда и первым.
+  let maskHi = 0;
+  for (const entry of prepared.entries) {
+    if (entry.p < 32) maskLo = (maskLo | (1 << entry.p)) >>> 0;
+    else maskHi = (maskHi | (1 << (entry.p - 32))) >>> 0;
+  }
+  maskHi = (maskHi & 0x3FFFFFFF) | ((prepared.scale & 3) << 30);
+
+  const view = new DataView(output.buffer, output.byteOffset + offset, config.blockSize);
+  view.setUint32(0, maskLo, true);
+  view.setUint32(4, maskHi >>> 0, true);
+
+  let bitOffset = 0;
+  writeSignedBits(output, offset + 8, bitOffset, prepared.dcStored, config.dcBits);
+  bitOffset += config.dcBits;
+  for (const entry of prepared.entries) {
+    writeSignedBits(output, offset + 8, bitOffset, entry.stored, config.acBits);
+    bitOffset += config.acBits;
+  }
+
+  stats.scaleCounts[prepared.scale]++;
+  stats.keptCoefficients += 1 + prepared.entries.length;
+}
+
+async function encodeComponent(params) {
+  const {
+    plane, width, height, blocksWide, blocksHigh, qtable,
+    output, firstBlock, progressState, phase, stats, optimized, config
+  } = params;
+  const scratch = {
+    samples: new Float64Array(64), temp: new Float64Array(64),
+    coeff: new Float64Array(64), qcoeff: new Int32Array(64)
+  };
+
+  for (let by = 0; by < blocksHigh; by++) {
+    for (let bx = 0; bx < blocksWide; bx++) {
+      const qcoeff = fdctQuantizeBlock(plane, width, height, bx, by, qtable, scratch);
+      const prepared = optimized
+        ? prepareOptimizedBlock(qcoeff, qtable, config)
+        : prepareFastBlock(qcoeff, qtable, config);
+      const blockIndex = firstBlock + by * blocksWide + bx;
+      packPreparedBlock(output, HEADER_SIZE + blockIndex * config.blockSize, prepared, stats, config);
+      progressState.done++;
+    }
+    progressState.callback(progressState.done, progressState.total, phase);
+    if ((by & 3) === 3 || by + 1 === blocksHigh) await new Promise(resolve => setTimeout(resolve, 0));
+  }
+}
+
+async function encodeImageData(imageData, quality, progressCallback = () => {}, options = {}) {
+  if (!imageData || !Number.isInteger(imageData.width) || !Number.isInteger(imageData.height)) throw new TypeError('Некорректный ImageData.');
+  if (imageData.width < 1 || imageData.height < 1) throw new Error('Изображение имеет нулевой размер.');
+
+  const started = performance.now();
+  const optimized = Boolean(options.optimized);
+  const config = getFormatConfig(options.blockSize || 32);
+  if (config.special === 'mcu422') return encodeImageData422(imageData, quality, progressCallback, options, config, started);
+  const planes = rgbaToYCbCr420(imageData);
+  const qY = scaledQuantTable(QY_BASE, quality);
+  const qC = scaledQuantTable(QC_BASE, quality);
+  const yBlocksWide = Math.ceil(planes.width / 8);
+  const yBlocksHigh = Math.ceil(planes.height / 8);
+  const cBlocksWide = Math.ceil(planes.chromaWidth / 8);
+  const cBlocksHigh = Math.ceil(planes.chromaHeight / 8);
+  const yBlockCount = yBlocksWide * yBlocksHigh;
+  const cBlockCount = cBlocksWide * cBlocksHigh;
+  const totalBlocks = yBlockCount + 2 * cBlockCount;
+
+  const info = { width: planes.width, height: planes.height, yBlocksWide, yBlocksHigh, cBlocksWide, cBlocksHigh, yBlockCount, cBlockCount, totalBlocks };
+  const output = new Uint8Array(HEADER_SIZE + totalBlocks * config.blockSize);
+  writeHeader(output, info, qY, qC, config);
+  const stats = {
+    width: planes.width, height: planes.height, totalBlocks, yBlockCount, cBlockCount,
+    keptCoefficients: 0, scaleCounts: [0, 0, 0, 0], quality, optimized,
+    blockSize: config.blockSize, dcBits: config.dcBits, acBits: config.acBits,
+    maxCoefficients: config.totalCoeffs, formatTitle: config.title
+  };
+  const progressState = { done: 0, total: totalBlocks, callback: progressCallback };
+
+  await encodeComponent({ plane: planes.yPlane, width: planes.width, height: planes.height, blocksWide: yBlocksWide, blocksHigh: yBlocksHigh, qtable: qY, output, firstBlock: 0, progressState, phase: 'Кодирование Y', stats, optimized, config });
+  await encodeComponent({ plane: planes.cbPlane, width: planes.chromaWidth, height: planes.chromaHeight, blocksWide: cBlocksWide, blocksHigh: cBlocksHigh, qtable: qC, output, firstBlock: yBlockCount, progressState, phase: 'Кодирование Cb', stats, optimized, config });
+  await encodeComponent({ plane: planes.crPlane, width: planes.chromaWidth, height: planes.chromaHeight, blocksWide: cBlocksWide, blocksHigh: cBlocksHigh, qtable: qC, output, firstBlock: yBlockCount + cBlockCount, progressState, phase: 'Кодирование Cr', stats, optimized, config });
+
+  stats.elapsedMs = performance.now() - started;
+  stats.averageCoefficients = stats.keptCoefficients / totalBlocks;
+  stats.bitsPerPixel = (output.byteLength * 8) / (planes.width * planes.height);
+  return { bytes: output, stats };
+}
+
+function readHeader(bytes) {
+  if (!(bytes instanceof Uint8Array) || bytes.byteLength < HEADER_SIZE) throw new Error('Слишком короткий DCTBS2-файл.');
+  const magic = new TextDecoder().decode(bytes.subarray(0, 6));
+  if (magic !== 'DCTBS2') throw new Error('Неверная сигнатура DCTBS2.');
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const u32 = offset => view.getUint32(offset, true);
+  const config = getFormatConfigFromHeader(u32(12), u32(48));
+  const info = {
+    width: u32(16), height: u32(20), yBlocksWide: u32(24), yBlocksHigh: u32(28),
+    cBlocksWide: u32(32), cBlocksHigh: u32(36), yBlockCount: u32(52),
+    crFirstBlock: u32(56), totalBlocks: u32(60), qY: bytes.slice(64, 128), qC: bytes.slice(128, 192),
+    blockSize: config.blockSize, config
+  };
+  info.cBlockCount = info.cBlocksWide * info.cBlocksHigh;
+  info.chromaWidth = Math.ceil(info.width / 2);
+  info.chromaHeight = config.special === 'mcu422' ? info.height : Math.ceil(info.height / 2);
+  const expected = config.special === 'mcu422'
+    ? HEADER_SIZE + info.yBlockCount * config.blockSize
+    : HEADER_SIZE + info.totalBlocks * config.blockSize;
+  if (bytes.byteLength < expected) throw new Error(`Файл обрезан: ${bytes.byteLength} вместо ${expected} байт.`);
+  return info;
+}
+
+function idctBlock(dequantized, scratch) {
+  const { temp, samples } = scratch;
+  for (let v = 0; v < 8; v++) {
+    for (let x = 0; x < 8; x++) {
+      let sum = 0;
+      for (let u = 0; u < 8; u++) sum += dequantized[v * 8 + u] * BASIS[u * 8 + x];
+      temp[v * 8 + x] = sum;
+    }
+  }
+  for (let y = 0; y < 8; y++) {
+    for (let x = 0; x < 8; x++) {
+      let sum = 0;
+      for (let v = 0; v < 8; v++) sum += temp[v * 8 + x] * BASIS[v * 8 + y];
+      samples[y * 8 + x] = clamp(sum + 128, 0, 255);
+    }
+  }
+  return samples;
+}
+
+function maskHas(maskLo, maskHi, p) {
+  return p < 32 ? Boolean(maskLo & (1 << p)) : Boolean(maskHi & (1 << (p - 32)));
+}
+
+async function decodeComponent(bytes, params) {
+  const { firstBlock, blocksWide, blocksHigh, width, height, qtable, progressState, phase, config } = params;
+  const plane = new Float32Array(width * height);
+  const coeff = new Float64Array(64);
+  const scratch = { temp: new Float64Array(64), samples: new Float64Array(64) };
+
+  for (let by = 0; by < blocksHigh; by++) {
+    for (let bx = 0; bx < blocksWide; bx++) {
+      const blockIndex = firstBlock + by * blocksWide + bx;
+      const offset = HEADER_SIZE + blockIndex * config.blockSize;
+      const view = new DataView(bytes.buffer, bytes.byteOffset + offset, config.blockSize);
+      const maskLo = view.getUint32(0, true);
+      const rawMaskHi = view.getUint32(4, true);
+      const scaleCode = rawMaskHi >>> 30;
+      const scale = SCALES[scaleCode];
+      const maskHi = rawMaskHi & 0x3FFFFFFF;
+      coeff.fill(0);
+
+      let bitOffset = 0;
+      const dcStored = readSignedBits(bytes, offset + 8, bitOffset, config.dcBits);
+      bitOffset += config.dcBits;
+      coeff[0] = dcStored * scale * qtable[0];
+      let acCount = 0;
+
+      for (let p = 1; p < 62; p++) {
+        if (!maskHas(maskLo, maskHi, p)) continue;
+        if (acCount >= config.maxAc) throw new Error(`В блоке ${blockIndex} слишком много AC-коэффициентов.`);
+        const stored = readSignedBits(bytes, offset + 8, bitOffset, config.acBits);
+        bitOffset += config.acBits;
+        coeff[p] = stored * scale * qtable[p];
+        acCount++;
+      }
+
+      const samples = idctBlock(coeff, scratch);
+      for (let y = 0; y < 8; y++) {
+        const py = by * 8 + y;
+        if (py >= height) break;
+        for (let x = 0; x < 8; x++) {
+          const px = bx * 8 + x;
+          if (px >= width) break;
+          plane[py * width + px] = samples[y * 8 + x];
+        }
+      }
+      progressState.done++;
+    }
+    progressState.callback(progressState.done, progressState.total, phase);
+    if ((by & 3) === 3 || by + 1 === blocksHigh) await new Promise(resolve => setTimeout(resolve, 0));
+  }
+  return plane;
+}
+
+function bilinearSample(plane, width, height, x, y) {
+  const x0 = clamp(Math.floor(x), 0, width - 1);
+  const y0 = clamp(Math.floor(y), 0, height - 1);
+  const x1 = Math.min(x0 + 1, width - 1);
+  const y1 = Math.min(y0 + 1, height - 1);
+  const fx = clamp(x - x0, 0, 1);
+  const fy = clamp(y - y0, 0, 1);
+  const a = plane[y0 * width + x0] * (1 - fx) + plane[y0 * width + x1] * fx;
+  const b = plane[y1 * width + x0] * (1 - fx) + plane[y1 * width + x1] * fx;
+  return a * (1 - fy) + b * fy;
+}
+
+async function decodeD24(bytes, progressCallback = () => {}) {
+  const info = readHeader(bytes);
+  if (info.config.special === 'mcu422') return decodeD24422(bytes, info, progressCallback);
+  const progressState = { done: 0, total: info.totalBlocks, callback: progressCallback };
+  const yPlane = await decodeComponent(bytes, { firstBlock: 0, blocksWide: info.yBlocksWide, blocksHigh: info.yBlocksHigh, width: info.width, height: info.height, qtable: info.qY, progressState, phase: 'Декодирование Y', config: info.config });
+  const cbPlane = await decodeComponent(bytes, { firstBlock: info.yBlockCount, blocksWide: info.cBlocksWide, blocksHigh: info.cBlocksHigh, width: info.chromaWidth, height: info.chromaHeight, qtable: info.qC, progressState, phase: 'Декодирование Cb', config: info.config });
+  const crPlane = await decodeComponent(bytes, { firstBlock: info.crFirstBlock, blocksWide: info.cBlocksWide, blocksHigh: info.cBlocksHigh, width: info.chromaWidth, height: info.chromaHeight, qtable: info.qC, progressState, phase: 'Декодирование Cr', config: info.config });
+
+  const out = new ImageData(info.width, info.height);
+  for (let y = 0; y < info.height; y++) {
+    for (let x = 0; x < info.width; x++) {
+      const yi = y * info.width + x;
+      const Y = yPlane[yi];
+      const cx = x / 2;
+      const cy = y / 2;
+      const Cb = bilinearSample(cbPlane, info.chromaWidth, info.chromaHeight, cx, cy) - 128;
+      const Cr = bilinearSample(crPlane, info.chromaWidth, info.chromaHeight, cx, cy) - 128;
+      const i = yi * 4;
+      out.data[i] = clamp(roundNearest(Y + 1.402 * Cr), 0, 255);
+      out.data[i + 1] = clamp(roundNearest(Y - 0.344136 * Cb - 0.714136 * Cr), 0, 255);
+      out.data[i + 2] = clamp(roundNearest(Y + 1.772 * Cb), 0, 255);
+      out.data[i + 3] = 255;
+    }
+    if ((y & 31) === 31) await new Promise(resolve => setTimeout(resolve, 0));
+  }
+  return { imageData: out, info };
+}
+
+
+const RECT_BASIS_CACHE = new Map();
+function getRectBasis(size) {
+  if (RECT_BASIS_CACHE.has(size)) return RECT_BASIS_CACHE.get(size);
+  const basis = new Float64Array(size * size);
+  for (let k = 0; k < size; k++) {
+    const alpha = k === 0 ? Math.sqrt(1 / size) : Math.sqrt(2 / size);
+    for (let n = 0; n < size; n++) {
+      basis[k * size + n] = alpha * Math.cos(Math.PI * (2 * n + 1) * k / (2 * size));
+    }
+  }
+  RECT_BASIS_CACHE.set(size, basis);
+  return basis;
+}
+
+function makeFrequencyScan(width, height, count, mode = 'isotropic') {
+  const points = [];
+  for (let v = 0; v < height; v++) {
+    for (let u = 0; u < width; u++) {
+      if (u === 0 && v === 0) continue;
+      const un = width > 1 ? u / (width - 1) : 0;
+      const vn = height > 1 ? v / (height - 1) : 0;
+      let f;
+      if (mode === 'horizontal') f = 0.30 * un * un + 1.70 * vn * vn;
+      else if (mode === 'vertical') f = 1.70 * un * un + 0.30 * vn * vn;
+      else if (mode === 'cross') {
+        f = Math.min(0.25 * un * un + 2.0 * vn * vn,
+                     2.0 * un * un + 0.25 * vn * vn);
+      } else f = un * un + vn * vn;
+      points.push({ u, v, p: v * width + u, f });
+    }
+  }
+  points.sort((a, b) => (a.f - b.f) || ((a.u + a.v) - (b.u + b.v)) || (a.v - b.v) || (a.u - b.u));
+  return Int32Array.from(points.slice(0, count), item => item.p);
+}
+
+function makeSparseScan(width, height, count) {
+  const out = new Int32Array(count);
+  out[0] = 0;
+  out.set(makeFrequencyScan(width, height, count - 1, 'isotropic'), 1);
+  return out;
+}
+
+const RECT_SCALES = Object.freeze([1, 2, 3, 6]);
+const RECT_ORIENTATIONS = Object.freeze(['isotropic', 'horizontal', 'vertical', 'cross']);
+
+function makeDenseProfiles(width, height, denseLayouts) {
+  const profiles = [];
+  for (const orientation of RECT_ORIENTATIONS) {
+    for (const [bits, count] of denseLayouts) {
+      profiles.push(Object.freeze({ bits, count, orientation, positions: makeFrequencyScan(width, height, count, orientation) }));
+    }
+  }
+  return Object.freeze(profiles);
+}
+
+function makeRectSpec({ width, height, recordSize, maskBytes, sparseMaxValues, profileBits, denseDcBits, denseLayouts }) {
+  const maskBits = maskBytes * 8;
+  const modeBit = maskBits - 3;
+  const scaleBit = maskBits - 2;
+  const profileBit = modeBit - profileBits;
+  return Object.freeze({
+    width, height, recordSize, maskBytes, sparseMaxValues, profileBits, denseDcBits,
+    maskBits, modeBit, scaleBit, profileBit,
+    sparseEligible: modeBit,
+    sparseScan: makeSparseScan(width, height, modeBit),
+    denseProfiles: makeDenseProfiles(width, height, denseLayouts)
+  });
+}
+
+const RECT64_Y_SPEC = makeRectSpec({ width: 16, height: 16, recordSize: 32, maskBytes: 16, sparseMaxValues: 16, profileBits: 4, denseDcBits: 9, denseLayouts: [[5, 48], [6, 40], [7, 34], [8, 30]] });
+const RECT64_C_SPEC = makeRectSpec({ width: 8, height: 16, recordSize: 16, maskBytes: 8, sparseMaxValues: 8, profileBits: 3, denseDcBits: 8, denseLayouts: [[6, 19], [7, 16]] });
+const RECT48_Y_SPEC = makeRectSpec({ width: 16, height: 16, recordSize: 24, maskBytes: 8, sparseMaxValues: 16, profileBits: 4, denseDcBits: 9, denseLayouts: [[5, 35], [6, 29], [7, 25], [8, 22]] });
+const RECT48_C_SPEC = makeRectSpec({ width: 8, height: 16, recordSize: 12, maskBytes: 4, sparseMaxValues: 8, profileBits: 4, denseDcBits: 8, denseLayouts: [[5, 16], [6, 13], [7, 11], [8, 10]] });
+const RECT32_Y_SPEC = makeRectSpec({ width: 16, height: 16, recordSize: 16, maskBytes: 6, sparseMaxValues: 10, profileBits: 4, denseDcBits: 10, denseLayouts: [[5, 22], [6, 18], [7, 15], [8, 13]] });
+const RECT32_C_SPEC = makeRectSpec({ width: 8, height: 16, recordSize: 8, maskBytes: 3, sparseMaxValues: 5, profileBits: 3, denseDcBits: 8, denseLayouts: [[5, 10], [6, 8]] });
+const RECT24M_Y_SPEC = makeRectSpec({ width: 16, height: 16, recordSize: 12, maskBytes: 4, sparseMaxValues: 8, profileBits: 4, denseDcBits: 9, denseLayouts: [[4, 20], [5, 16], [6, 13]] });
+const RECT24M_C_SPEC = makeRectSpec({ width: 8, height: 16, recordSize: 6, maskBytes: 2, sparseMaxValues: 4, profileBits: 4, denseDcBits: 8, denseLayouts: [[3, 11], [4, 8], [5, 6]] });
+
+function makeInlineDictionarySpec(baseSpec, profileId, dcBits, acBits, acCount) {
+  const profiles = baseSpec.denseProfiles.filter((_, index) => index !== profileId);
+  return Object.freeze({
+    ...baseSpec,
+    denseProfiles: Object.freeze(profiles),
+    inlineResidualProfile: Object.freeze({
+      profileId, dcBits, acBits, acCount,
+      positions: makeFrequencyScan(baseSpec.width, baseSpec.height, acCount, 'isotropic')
+    })
+  });
+}
+
+const RECT32D_Y_SPEC = makeInlineDictionarySpec(RECT32_Y_SPEC, 15, 9, 6, 17);
+const RECT24D_Y_SPEC = makeInlineDictionarySpec(RECT24M_Y_SPEC, 15, 9, 6, 12);
+
+function getRect422Bundle(config) {
+  switch (config.modeCode) {
+    case 64:
+      return { ySpec: RECT64_Y_SPEC, cSpec: RECT64_C_SPEC, description: 'гибрид 2 бита/пиксель: Y32 + C16 + C16' };
+    case 48:
+      return { ySpec: RECT48_Y_SPEC, cSpec: RECT48_C_SPEC, description: 'гибрид 1,5 бита/пиксель: Y24 + C12 + C12' };
+    case 3201:
+      return { ySpec: RECT32_Y_SPEC, cSpec: RECT32_C_SPEC, description: 'гибрид 1 бит/пиксель: Y16 + C8 + C8', inlineDictionary: false };
+    case 3203:
+      return { ySpec: RECT32D_Y_SPEC, cSpec: RECT32_C_SPEC, description: 'адаптивный DCT/словарь 1 бит/пиксель: Y16 + C8 + C8', inlineDictionary: true };
+    case 2401:
+      return { ySpec: RECT24M_Y_SPEC, cSpec: RECT24M_C_SPEC, description: 'гибрид 0,75 бит/пиксель: Y12 + C6 + C6', inlineDictionary: false };
+    case 2403:
+      return { ySpec: RECT24D_Y_SPEC, cSpec: RECT24M_C_SPEC, description: 'адаптивный DCT/словарь 0,75 бит/пиксель: Y12 + C6 + C6', inlineDictionary: true };
+    default:
+      throw new Error(`Неизвестный MCU 4:2:2 режим: ${config.modeCode}`);
+  }
+}
+
+
+const RESIDUAL_EDGE_POSITIONS = Object.freeze([-4.5, -3.0, -1.5, 0.0, 1.5, 3.0, 4.5]);
+const RESIDUAL_EDGE_SIGMAS = Object.freeze([0.72, 1.40]);
+const RESIDUAL_AMPLITUDE_FACTORS = Object.freeze([0.105, 0.065]);
+
+const RESIDUAL_DICTIONARY = (() => {
+  const templates = [null];
+  for (let orientation = 0; orientation < 8; orientation++) {
+    const angle = orientation * Math.PI / 8;
+    const nx = Math.cos(angle), ny = Math.sin(angle);
+    for (let position = 0; position < 7; position++) {
+      for (let widthCode = 0; widthCode < 2; widthCode++) {
+        const sigma = RESIDUAL_EDGE_SIGMAS[widthCode];
+        const edge = RESIDUAL_EDGE_POSITIONS[position];
+        const values = new Float32Array(256);
+        let mean = 0;
+        for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+          const d = (x - 7.5) * nx + (y - 7.5) * ny - edge;
+          const a = Math.abs(d);
+          const sign = d < 0 ? -1 : d > 0 ? 1 : 0;
+          const value = -sign * (Math.exp(-a / sigma) - 0.22 * Math.exp(-a / (sigma * 3.0)));
+          values[y * 16 + x] = value;
+          mean += value;
+        }
+        mean /= 256;
+        let maxAbs = 0;
+        for (let i = 0; i < 256; i++) { values[i] -= mean; maxAbs = Math.max(maxAbs, Math.abs(values[i])); }
+        const inv = maxAbs > 1e-9 ? 1 / maxAbs : 1;
+        for (let i = 0; i < 256; i++) values[i] *= inv;
+        templates.push(Object.freeze({ values, orientation, position, widthCode, nx, ny, edge }));
+      }
+    }
+  }
+  return Object.freeze(templates);
+})();
+
+function residualDictionaryIndex(orientation, position, widthCode) {
+  return 1 + (((orientation & 7) * 7 + clamp(position, 0, 6)) * 2 + (widthCode & 1));
+}
+
+function estimateResidualEdgeCandidates(originalCentered, optimized) {
+  let jxx = 0, jyy = 0, jxy = 0;
+  const gradients = [];
+  for (let y = 1; y < 15; y++) for (let x = 1; x < 15; x++) {
+    const gx = 0.5 * (originalCentered[y * 16 + x + 1] - originalCentered[y * 16 + x - 1]);
+    const gy = 0.5 * (originalCentered[(y + 1) * 16 + x] - originalCentered[(y - 1) * 16 + x]);
+    const magnitude = Math.hypot(gx, gy);
+    if (magnitude < 1e-3) continue;
+    jxx += gx * gx; jyy += gy * gy; jxy += gx * gy;
+    gradients.push({ x, y, magnitude });
+  }
+  if (jxx + jyy < 64 || gradients.length === 0) return [];
+  let angle = 0.5 * Math.atan2(2 * jxy, jxx - jyy);
+  if (angle < 0) angle += Math.PI;
+  const orientation = Math.round(angle / (Math.PI / 8)) & 7;
+  const nx = Math.cos(orientation * Math.PI / 8), ny = Math.sin(orientation * Math.PI / 8);
+  let weightedPosition = 0, totalWeight = 0;
+  for (const g of gradients) {
+    weightedPosition += ((g.x - 7.5) * nx + (g.y - 7.5) * ny) * g.magnitude;
+    totalWeight += g.magnitude;
+  }
+  weightedPosition /= Math.max(totalWeight, 1e-9);
+  let position = 0, bestDistance = Infinity;
+  for (let i = 0; i < RESIDUAL_EDGE_POSITIONS.length; i++) {
+    const distance = Math.abs(RESIDUAL_EDGE_POSITIONS[i] - weightedPosition);
+    if (distance < bestDistance) { bestDistance = distance; position = i; }
+  }
+  const orientationRadius = optimized ? 2 : 1;
+  const positionRadius = optimized ? 2 : 1;
+  const indices = new Set();
+  for (let od = -orientationRadius; od <= orientationRadius; od++) {
+    const o = (orientation + od + 8) & 7;
+    for (let pd = -positionRadius; pd <= positionRadius; pd++) {
+      const p = clamp(position + pd, 0, 6);
+      indices.add(residualDictionaryIndex(o, p, 0));
+      indices.add(residualDictionaryIndex(o, p, 1));
+    }
+  }
+  return [...indices];
+}
+
+function inferredResidualAmplitude(samples, dictionaryIndex) {
+  const item = RESIDUAL_DICTIONARY[dictionaryIndex];
+  if (!item) return 0;
+  let negativeSum = 0, negativeCount = 0, positiveSum = 0, positiveCount = 0;
+  for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+    const d = (x - 7.5) * item.nx + (y - 7.5) * item.ny - item.edge;
+    const value = samples[y * 16 + x];
+    if (d < -1) { negativeSum += value; negativeCount++; }
+    else if (d > 1) { positiveSum += value; positiveCount++; }
+  }
+  if (!negativeCount || !positiveCount) return 0;
+  const contrast = Math.abs(positiveSum / positiveCount - negativeSum / negativeCount);
+  return clamp(roundNearest(contrast * RESIDUAL_AMPLITUDE_FACTORS[item.widthCode]), 1, 63);
+}
+
+function chooseResidualDictionaryCorrection(originalCentered, decodedSamples, optimized) {
+  const candidates = estimateResidualEdgeCandidates(originalCentered, optimized);
+  let baseError = 0;
+  const residual = new Float64Array(256);
+  for (let i = 0; i < 256; i++) {
+    residual[i] = originalCentered[i] + 128 - decodedSamples[i];
+    baseError += residual[i] * residual[i];
+  }
+  let bestError = baseError, bestCode = 0;
+  for (const index of candidates) {
+    const item = RESIDUAL_DICTIONARY[index];
+    const magnitude = inferredResidualAmplitude(decodedSamples, index);
+    if (!magnitude) continue;
+    let dot = 0, norm = 0;
+    for (let i = 0; i < 256; i++) { const t = item.values[i]; dot += residual[i] * t; norm += t * t; }
+    const negative = dot < 0;
+    const amplitude = negative ? -magnitude : magnitude;
+    const error = baseError - 2 * amplitude * dot + amplitude * amplitude * norm;
+    if (error < bestError) { bestError = error; bestCode = (index & 0x7F) | (negative ? 0x80 : 0); }
+  }
+  const improvement = baseError - bestError;
+  if (!bestCode || improvement < Math.max(16, baseError * 0.0025)) return { code: 0, error: baseError, improvement: 0 };
+  return { code: bestCode, error: bestError, improvement };
+}
+
+function applyResidualDictionaryCorrection(samples, code) {
+  const index = code & 0x7F;
+  if (!index) return samples;
+  const item = RESIDUAL_DICTIONARY[index];
+  if (!item) return samples;
+  let amplitude = inferredResidualAmplitude(samples, index);
+  if (code & 0x80) amplitude = -amplitude;
+  for (let i = 0; i < 256; i++) samples[i] = clamp(samples[i] + amplitude * item.values[i], 0, 255);
+  return samples;
+}
+
+function fillPreparedRectCoefficients(prepared, qtable, spec, coeff) {
+  coeff.fill(0);
+  const scale = RECT_SCALES[prepared.scale];
+  if (prepared.mode === 0) {
+    for (const entry of prepared.entries) coeff[entry.p] = entry.stored * scale * qtable[entry.p];
+  } else {
+    coeff[0] = prepared.dcStored * scale * qtable[0];
+    const positions = prepared.mode === 2 ? spec.inlineResidualProfile.positions : prepared.profile.positions;
+    const values = prepared.values;
+    for (let i = 0; i < positions.length; i++) coeff[positions[i]] = values[i] * scale * qtable[positions[i]];
+  }
+}
+
+function pixelErrorAgainstOriginal(originalCentered, decodedSamples) {
+  let error = 0;
+  for (let i = 0; i < 256; i++) {
+    const d = originalCentered[i] + 128 - decodedSamples[i];
+    error += d * d;
+  }
+  return error;
+}
+
+function prepareInlineDictionaryCandidate(qcoeff, qtable, spec, originalCentered, optimized, coeff, scratch) {
+  const profile = spec.inlineResidualProfile;
+  if (!profile) return null;
+  let best = null;
+  const dcRange = signedRange(profile.dcBits);
+  const acRange = signedRange(profile.acBits);
+  for (let scaleCode = 0; scaleCode < RECT_SCALES.length; scaleCode++) {
+    const scale = RECT_SCALES[scaleCode];
+    const dcStored = clamp(roundNearest(qcoeff[0] / scale), dcRange.min, dcRange.max);
+    const values = new Int16Array(profile.acCount);
+    coeff.fill(0);
+    coeff[0] = dcStored * scale * qtable[0];
+    for (let i = 0; i < profile.acCount; i++) {
+      const p = profile.positions[i];
+      const stored = clamp(roundNearest(qcoeff[p] / scale), acRange.min, acRange.max);
+      values[i] = stored;
+      coeff[p] = stored * scale * qtable[p];
+    }
+    const decoded = idctRect(coeff, spec, scratch);
+    const correction = chooseResidualDictionaryCorrection(originalCentered, decoded, optimized);
+    if (!best || correction.error < best.error) {
+      best = { mode: 2, scale: scaleCode, profileId: profile.profileId, dcStored, values, residualCode: correction.code, residualImprovement: correction.improvement, error: correction.error };
+    }
+  }
+  return best;
+}
+
+function rgbaToYCbCr422(imageData) {
+  const { width, height, data } = imageData;
+  const chromaWidth = Math.ceil(width / 2);
+  const yPlane = new Float32Array(width * height);
+  const cbPlane = new Float32Array(chromaWidth * height);
+  const crPlane = new Float32Array(chromaWidth * height);
+  const counts = new Uint8Array(chromaWidth * height);
+  let pixel = 0;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++, pixel++) {
+      const i = pixel * 4;
+      const r = data[i], g = data[i + 1], b = data[i + 2];
+      yPlane[pixel] = 0.299 * r + 0.587 * g + 0.114 * b;
+      const ci = y * chromaWidth + (x >> 1);
+      cbPlane[ci] += -0.168736 * r - 0.331264 * g + 0.5 * b + 128;
+      crPlane[ci] +=  0.5 * r - 0.418688 * g - 0.081312 * b + 128;
+      counts[ci]++;
+    }
+  }
+  for (let i = 0; i < counts.length; i++) {
+    const n = counts[i] || 1;
+    cbPlane[i] /= n;
+    crPlane[i] /= n;
+  }
+  return { width, height, chromaWidth, chromaHeight: height, yPlane, cbPlane, crPlane };
+}
+
+function resizeQuantTable(q8, width, height) {
+  const out = new Float64Array(width * height);
+  for (let v = 0; v < height; v++) {
+    const sy = height === 1 ? 0 : v * 7 / (height - 1);
+    const y0 = Math.floor(sy), y1 = Math.min(7, y0 + 1), fy = sy - y0;
+    for (let u = 0; u < width; u++) {
+      const sx = width === 1 ? 0 : u * 7 / (width - 1);
+      const x0 = Math.floor(sx), x1 = Math.min(7, x0 + 1), fx = sx - x0;
+      const a = q8[y0 * 8 + x0] * (1 - fx) + q8[y0 * 8 + x1] * fx;
+      const b = q8[y1 * 8 + x0] * (1 - fx) + q8[y1 * 8 + x1] * fx;
+      out[v * width + u] = Math.max(1, a * (1 - fy) + b * fy);
+    }
+  }
+  return out;
+}
+
+function makeRectScratch(spec) {
+  const count = spec.width * spec.height;
+  return { samples: new Float64Array(count), temp: new Float64Array(count), coeff: new Float64Array(count), qcoeff: new Int32Array(count) };
+}
+
+function fdctQuantizeRect(plane, planeWidth, planeHeight, blockX, blockY, qtable, spec, scratch) {
+  const { width: bw, height: bh } = spec;
+  const bx0 = blockX * bw, by0 = blockY * bh;
+  const basisX = getRectBasis(bw), basisY = getRectBasis(bh);
+  for (let y = 0; y < bh; y++) {
+    const sy = Math.min(by0 + y, planeHeight - 1);
+    for (let x = 0; x < bw; x++) {
+      const sx = Math.min(bx0 + x, planeWidth - 1);
+      scratch.samples[y * bw + x] = plane[sy * planeWidth + sx] - 128;
+    }
+  }
+  for (let y = 0; y < bh; y++) {
+    for (let u = 0; u < bw; u++) {
+      let sum = 0;
+      for (let x = 0; x < bw; x++) sum += scratch.samples[y * bw + x] * basisX[u * bw + x];
+      scratch.temp[y * bw + u] = sum;
+    }
+  }
+  for (let v = 0; v < bh; v++) {
+    for (let u = 0; u < bw; u++) {
+      let sum = 0;
+      for (let y = 0; y < bh; y++) sum += scratch.temp[y * bw + u] * basisY[v * bh + y];
+      const p = v * bw + u;
+      scratch.coeff[p] = sum;
+      scratch.qcoeff[p] = roundNearest(sum / qtable[p]);
+    }
+  }
+  return scratch.qcoeff;
+}
+
+function rectBaseError(qcoeff, qtable) {
+  let error = 0;
+  for (let p = 0; p < qcoeff.length; p++) {
+    const original = qcoeff[p] * qtable[p];
+    error += original * original;
+  }
+  return error;
+}
+
+function prepareRectSparse(qcoeff, qtable, spec, optimized) {
+  const baseError = rectBaseError(qcoeff, qtable);
+  let best = null;
+  for (let scaleCode = 0; scaleCode < RECT_SCALES.length; scaleCode++) {
+    const scale = RECT_SCALES[scaleCode];
+    const candidates = [];
+    for (let slot = 0; slot < spec.sparseEligible; slot++) {
+      const p = spec.sparseScan[slot];
+      const q = qcoeff[p];
+      if (q === 0) continue;
+      const stored = clamp(roundNearest(q / scale), -128, 127);
+      const original = q * qtable[p];
+      const restored = stored * scale * qtable[p];
+      const benefit = original * original - (original - restored) ** 2;
+      const score = optimized ? benefit : Math.abs(original);
+      if (benefit > 0) candidates.push({ slot, p, stored, benefit, score });
+    }
+    candidates.sort((a, b) => (b.score - a.score) || (a.slot - b.slot));
+    const selected = candidates.slice(0, spec.sparseMaxValues);
+    let error = baseError;
+    for (const item of selected) error -= item.benefit;
+    selected.sort((a, b) => a.slot - b.slot);
+    if (!best || error < best.error) best = { mode: 0, scale: scaleCode, entries: selected, error };
+  }
+  return best;
+}
+
+function prepareRectDense(qcoeff, qtable, spec, optimized) {
+  const baseError = rectBaseError(qcoeff, qtable);
+  const profiles = optimized
+    ? spec.denseProfiles
+    : spec.denseProfiles.filter(profile => profile.bits === 6);
+  const dcRange = signedRange(spec.denseDcBits);
+  let best = null;
+
+  for (const profile of profiles) {
+    const profileId = spec.denseProfiles.indexOf(profile);
+    const valueRange = signedRange(profile.bits);
+    for (let scaleCode = 0; scaleCode < RECT_SCALES.length; scaleCode++) {
+      const scale = RECT_SCALES[scaleCode];
+      const dcStored = clamp(roundNearest(qcoeff[0] / scale), dcRange.min, dcRange.max);
+      const dcOriginal = qcoeff[0] * qtable[0];
+      const dcRestored = dcStored * scale * qtable[0];
+      let error = baseError - dcOriginal * dcOriginal + (dcOriginal - dcRestored) ** 2;
+      const values = new Int16Array(profile.count);
+
+      for (let i = 0; i < profile.count; i++) {
+        const p = profile.positions[i];
+        const stored = clamp(roundNearest(qcoeff[p] / scale), valueRange.min, valueRange.max);
+        values[i] = stored;
+        const original = qcoeff[p] * qtable[p];
+        const restored = stored * scale * qtable[p];
+        error -= original * original - (original - restored) ** 2;
+      }
+
+      if (!best || error < best.error) {
+        best = { mode: 1, scale: scaleCode, profileId, profile, dcStored, values, error };
+      }
+    }
+  }
+  return best;
+}
+
+function prepareRectBlock(qcoeff, qtable, spec, optimized) {
+  const sparse = prepareRectSparse(qcoeff, qtable, spec, optimized);
+  const dense = prepareRectDense(qcoeff, qtable, spec, optimized);
+  return dense && dense.error < sparse.error ? dense : sparse;
+}
+
+function rectPayloadPhysicalBit(spec, logicalBit) {
+  return logicalBit < spec.profileBit ? logicalBit : logicalBit + spec.profileBits + 3;
+}
+
+function writeRectPayloadSignedBits(output, byteOffset, logicalBitOffset, value, bitCount, spec) {
+  const modulus = 1 << bitCount;
+  const encoded = value < 0 ? modulus + value : value;
+  for (let bit = 0; bit < bitCount; bit++) {
+    if (!(encoded & (1 << bit))) continue;
+    const physical = rectPayloadPhysicalBit(spec, logicalBitOffset + bit);
+    output[byteOffset + (physical >> 3)] |= 1 << (physical & 7);
+  }
+}
+
+function readRectPayloadSignedBits(bytes, byteOffset, logicalBitOffset, bitCount, spec) {
+  let raw = 0;
+  for (let bit = 0; bit < bitCount; bit++) {
+    const physical = rectPayloadPhysicalBit(spec, logicalBitOffset + bit);
+    if (bytes[byteOffset + (physical >> 3)] & (1 << (physical & 7))) raw |= 1 << bit;
+  }
+  const signBit = 1 << (bitCount - 1);
+  return raw & signBit ? raw - (1 << bitCount) : raw;
+}
+
+function writeRectPayloadUnsignedBits(output, byteOffset, logicalBitOffset, value, bitCount, spec) {
+  for (let bit = 0; bit < bitCount; bit++) {
+    if (!(value & (1 << bit))) continue;
+    const physical = rectPayloadPhysicalBit(spec, logicalBitOffset + bit);
+    output[byteOffset + (physical >> 3)] |= 1 << (physical & 7);
+  }
+}
+
+function readRectPayloadUnsignedBits(bytes, byteOffset, logicalBitOffset, bitCount, spec) {
+  let value = 0;
+  for (let bit = 0; bit < bitCount; bit++) {
+    const physical = rectPayloadPhysicalBit(spec, logicalBitOffset + bit);
+    if (bytes[byteOffset + (physical >> 3)] & (1 << (physical & 7))) value |= 1 << bit;
+  }
+  return value >>> 0;
+}
+
+function packRectBlock(output, offset, prepared, spec, stats) {
+  output.fill(0, offset, offset + spec.recordSize);
+  writeUnsignedBits(output, offset, spec.scaleBit, prepared.scale, 2);
+
+  if (prepared.mode === 0) {
+    for (const item of prepared.entries) output[offset + (item.slot >> 3)] |= 1 << (item.slot & 7);
+    for (let i = 0; i < prepared.entries.length; i++) output[offset + spec.maskBytes + i] = prepared.entries[i].stored & 0xFF;
+    stats.rectModeCounts[0]++;
+    stats.keptCoefficients += prepared.entries.length;
+  } else if (prepared.mode === 2) {
+    const profile = spec.inlineResidualProfile;
+    writeUnsignedBits(output, offset, spec.modeBit, 1, 1);
+    writeUnsignedBits(output, offset, spec.profileBit, profile.profileId, spec.profileBits);
+    let bitOffset = 0;
+    writeRectPayloadSignedBits(output, offset, bitOffset, prepared.dcStored, profile.dcBits, spec);
+    bitOffset += profile.dcBits;
+    for (let i = 0; i < profile.acCount; i++) {
+      writeRectPayloadSignedBits(output, offset, bitOffset, prepared.values[i], profile.acBits, spec);
+      bitOffset += profile.acBits;
+    }
+    writeRectPayloadUnsignedBits(output, offset, bitOffset, prepared.residualCode, 8, spec);
+    stats.rectModeCounts[2]++;
+    stats.keptCoefficients += 1 + profile.acCount;
+    if (prepared.residualCode) { stats.residualCorrections++; stats.residualImprovement += prepared.residualImprovement || 0; }
+  } else {
+    writeUnsignedBits(output, offset, spec.modeBit, 1, 1);
+    writeUnsignedBits(output, offset, spec.profileBit, prepared.profileId, spec.profileBits);
+    let bitOffset = 0;
+    writeRectPayloadSignedBits(output, offset, bitOffset, prepared.dcStored, spec.denseDcBits, spec);
+    bitOffset += spec.denseDcBits;
+    for (let i = 0; i < prepared.profile.count; i++) {
+      writeRectPayloadSignedBits(output, offset, bitOffset, prepared.values[i], prepared.profile.bits, spec);
+      bitOffset += prepared.profile.bits;
+    }
+    stats.rectModeCounts[1]++;
+    stats.keptCoefficients += 1 + prepared.profile.count;
+  }
+
+  stats.scaleCounts[prepared.scale]++;
+}
+
+async function encodeRectComponent({ plane, planeWidth, planeHeight, blocksWide, blocksHigh, qtable, spec, output, startOffset, progressState, phase, stats, optimized, inlineDictionary = false }) {
+  const scratch = makeRectScratch(spec);
+  const originalCentered = inlineDictionary ? new Float64Array(spec.width * spec.height) : null;
+  const coeff = inlineDictionary ? new Float64Array(spec.width * spec.height) : null;
+  const reconstructScratch = inlineDictionary ? { temp: new Float64Array(spec.width * spec.height), samples: new Float64Array(spec.width * spec.height) } : null;
+  const dictionaryScratch = inlineDictionary ? { temp: new Float64Array(spec.width * spec.height), samples: new Float64Array(spec.width * spec.height) } : null;
+
+  for (let by = 0; by < blocksHigh; by++) {
+    for (let bx = 0; bx < blocksWide; bx++) {
+      const qcoeff = fdctQuantizeRect(plane, planeWidth, planeHeight, bx, by, qtable, spec, scratch);
+      if (inlineDictionary) originalCentered.set(scratch.samples);
+      let prepared = prepareRectBlock(qcoeff, qtable, spec, optimized);
+
+      if (inlineDictionary && spec.inlineResidualProfile) {
+        fillPreparedRectCoefficients(prepared, qtable, spec, coeff);
+        const standardDecoded = idctRect(coeff, spec, reconstructScratch);
+        const standardError = pixelErrorAgainstOriginal(originalCentered, standardDecoded);
+        const dictionary = prepareInlineDictionaryCandidate(qcoeff, qtable, spec, originalCentered, optimized, coeff, dictionaryScratch);
+        if (dictionary && dictionary.error < standardError) prepared = dictionary;
+      }
+
+      const index = by * blocksWide + bx;
+      packRectBlock(output, startOffset + index * spec.recordSize, prepared, spec, stats);
+      progressState.done++;
+    }
+    progressState.callback(progressState.done, progressState.total, phase);
+    if ((by & 1) === 1 || by + 1 === blocksHigh) await new Promise(resolve => setTimeout(resolve, 0));
+  }
+}
+
+async function encodeImageData422(imageData, quality, progressCallback, options, config, started) {
+  const optimized = Boolean(options.optimized);
+  const bundle = getRect422Bundle(config);
+  const ySpec = bundle.ySpec;
+  const cSpec = bundle.cSpec;
+  const planes = rgbaToYCbCr422(imageData);
+  const quantTweak = config.qScale ?? 0.75;
+  const qY8 = scaledQuantTable(QY_BASE, quality).map(value => clamp(roundNearest(value * quantTweak), 1, 255));
+  const qC8 = scaledQuantTable(QC_BASE, quality).map(value => clamp(roundNearest(value * quantTweak), 1, 255));
+  const qY = resizeQuantTable(qY8, ySpec.width, ySpec.height);
+  const qC = resizeQuantTable(qC8, cSpec.width, cSpec.height);
+  const blocksWide = Math.ceil(planes.width / ySpec.width);
+  const blocksHigh = Math.ceil(planes.height / ySpec.height);
+  const mcuCount = blocksWide * blocksHigh;
+  const output = new Uint8Array(HEADER_SIZE + mcuCount * config.blockSize);
+  const info = { width: planes.width, height: planes.height, yBlocksWide: blocksWide, yBlocksHigh: blocksHigh, cBlocksWide: blocksWide, cBlocksHigh: blocksHigh, yBlockCount: mcuCount, cBlockCount: mcuCount, totalBlocks: mcuCount * 3 };
+  writeHeader(output, info, qY8, qC8, config);
+  const yStart = HEADER_SIZE;
+  const cbStart = yStart + mcuCount * ySpec.recordSize;
+  const crStart = cbStart + mcuCount * cSpec.recordSize;
+  const maxYDense = ySpec.denseProfiles.reduce((m, p) => Math.max(m, p.count + 1), 0);
+  const maxCDense = cSpec.denseProfiles.reduce((m, p) => Math.max(m, p.count + 1), 0);
+  const stats = {
+    width: planes.width, height: planes.height, totalBlocks: mcuCount * 3, yBlockCount: mcuCount, cBlockCount: mcuCount,
+    keptCoefficients: 0, scaleCounts: [0,0,0,0], rectModeCounts: [0,0,0], residualCorrections: 0, residualImprovement: 0, quality, optimized, blockSize: config.blockSize,
+    formatTitle: config.title, bitLayout: `${bundle.description} · sparse int8 или dense-профили ${RECT_SCALES.join('/')} для scale`,
+    blockLabel: 'Записей компонентов', maxCoefficients: Math.max(maxYDense, maxCDense), scaleValues: RECT_SCALES
+  };
+  const progressState = { done: 0, total: mcuCount * 3, callback: progressCallback };
+  await encodeRectComponent({ plane: planes.yPlane, planeWidth: planes.width, planeHeight: planes.height, blocksWide, blocksHigh, qtable: qY, spec: ySpec, output, startOffset: yStart, progressState, phase: `Кодирование Y ${ySpec.width}×${ySpec.height}`, stats, optimized, inlineDictionary: bundle.inlineDictionary });
+  await encodeRectComponent({ plane: planes.cbPlane, planeWidth: planes.chromaWidth, planeHeight: planes.height, blocksWide, blocksHigh, qtable: qC, spec: cSpec, output, startOffset: cbStart, progressState, phase: `Кодирование Cb ${cSpec.width}×${cSpec.height}`, stats, optimized });
+  await encodeRectComponent({ plane: planes.crPlane, planeWidth: planes.chromaWidth, planeHeight: planes.height, blocksWide, blocksHigh, qtable: qC, spec: cSpec, output, startOffset: crStart, progressState, phase: `Кодирование Cr ${cSpec.width}×${cSpec.height}`, stats, optimized });
+  stats.elapsedMs = performance.now() - started;
+  stats.averageCoefficients = stats.keptCoefficients / stats.totalBlocks;
+  stats.bitsPerPixel = output.byteLength * 8 / (planes.width * planes.height);
+  return { bytes: output, stats };
+}
+
+function idctRect(dequantized, spec, scratch) {
+  const { width: bw, height: bh } = spec;
+  const basisX = getRectBasis(bw), basisY = getRectBasis(bh);
+  for (let v = 0; v < bh; v++) {
+    for (let x = 0; x < bw; x++) {
+      let sum = 0;
+      for (let u = 0; u < bw; u++) sum += dequantized[v * bw + u] * basisX[u * bw + x];
+      scratch.temp[v * bw + x] = sum;
+    }
+  }
+  for (let y = 0; y < bh; y++) {
+    for (let x = 0; x < bw; x++) {
+      let sum = 0;
+      for (let v = 0; v < bh; v++) sum += scratch.temp[v * bw + x] * basisY[v * bh + y];
+      scratch.samples[y * bw + x] = clamp(sum + 128, 0, 255);
+    }
+  }
+  return scratch.samples;
+}
+
+async function decodeRectComponent(bytes, { startOffset, blocksWide, blocksHigh, planeWidth, planeHeight, qtable, spec, progressState, phase }) {
+  const plane = new Float32Array(planeWidth * planeHeight);
+  const coeff = new Float64Array(spec.width * spec.height);
+  const scratch = { temp: new Float64Array(coeff.length), samples: new Float64Array(coeff.length) };
+
+  for (let by = 0; by < blocksHigh; by++) {
+    for (let bx = 0; bx < blocksWide; bx++) {
+      const index = by * blocksWide + bx;
+      const offset = startOffset + index * spec.recordSize;
+      const mode = readUnsignedBits(bytes, offset, spec.modeBit, 1);
+      const scaleCode = readUnsignedBits(bytes, offset, spec.scaleBit, 2);
+      const scale = RECT_SCALES[scaleCode];
+      coeff.fill(0);
+
+      if (mode === 0) {
+        let valueIndex = 0;
+        for (let slot = 0; slot < spec.sparseEligible; slot++) {
+          if (!(bytes[offset + (slot >> 3)] & (1 << (slot & 7)))) continue;
+          if (valueIndex >= spec.sparseMaxValues) throw new Error('Слишком много значений в разреженном прямоугольном DCT-блоке.');
+          const raw = bytes[offset + spec.maskBytes + valueIndex++];
+          const stored = raw >= 128 ? raw - 256 : raw;
+          const p = spec.sparseScan[slot];
+          coeff[p] = stored * scale * qtable[p];
+        }
+      } else {
+        const profileId = readUnsignedBits(bytes, offset, spec.profileBit, spec.profileBits);
+        let residualCode = 0;
+        if (spec.inlineResidualProfile && profileId === spec.inlineResidualProfile.profileId) {
+          const profile = spec.inlineResidualProfile;
+          let bitOffset = 0;
+          const dcStored = readRectPayloadSignedBits(bytes, offset, bitOffset, profile.dcBits, spec);
+          bitOffset += profile.dcBits;
+          coeff[0] = dcStored * scale * qtable[0];
+          for (let i = 0; i < profile.acCount; i++) {
+            const stored = readRectPayloadSignedBits(bytes, offset, bitOffset, profile.acBits, spec);
+            bitOffset += profile.acBits;
+            const p = profile.positions[i];
+            coeff[p] = stored * scale * qtable[p];
+          }
+          residualCode = readRectPayloadUnsignedBits(bytes, offset, bitOffset, 8, spec);
+        } else {
+          const profile = spec.denseProfiles[profileId];
+          if (!profile) throw new Error(`Неверный профиль плотного DCT-блока: ${profileId}`);
+          let bitOffset = 0;
+          const dcStored = readRectPayloadSignedBits(bytes, offset, bitOffset, spec.denseDcBits, spec);
+          bitOffset += spec.denseDcBits;
+          coeff[0] = dcStored * scale * qtable[0];
+          for (let i = 0; i < profile.count; i++) {
+            const stored = readRectPayloadSignedBits(bytes, offset, bitOffset, profile.bits, spec);
+            bitOffset += profile.bits;
+            const p = profile.positions[i];
+            coeff[p] = stored * scale * qtable[p];
+          }
+        }
+        var inlineResidualCode = residualCode;
+      }
+
+      const samples = idctRect(coeff, spec, scratch);
+      if (typeof inlineResidualCode !== 'undefined' && inlineResidualCode) applyResidualDictionaryCorrection(samples, inlineResidualCode);
+      inlineResidualCode = 0;
+      for (let y = 0; y < spec.height; y++) {
+        const py = by * spec.height + y;
+        if (py >= planeHeight) break;
+        for (let x = 0; x < spec.width; x++) {
+          const px = bx * spec.width + x;
+          if (px >= planeWidth) break;
+          plane[py * planeWidth + px] = samples[y * spec.width + x];
+        }
+      }
+      progressState.done++;
+    }
+    progressState.callback(progressState.done, progressState.total, phase);
+    if ((by & 1) === 1 || by + 1 === blocksHigh) await new Promise(resolve => setTimeout(resolve, 0));
+  }
+  return plane;
+}
+
+async function decodeD24422(bytes, info, progressCallback) {
+  const bundle = getRect422Bundle(info.config);
+  const ySpec = bundle.ySpec;
+  const cSpec = bundle.cSpec;
+  const mcuCount = info.yBlockCount;
+  const yStart = HEADER_SIZE;
+  const cbStart = yStart + mcuCount * ySpec.recordSize;
+  const crStart = cbStart + mcuCount * cSpec.recordSize;
+  const qY = resizeQuantTable(info.qY, ySpec.width, ySpec.height);
+  const qC = resizeQuantTable(info.qC, cSpec.width, cSpec.height);
+  const progressState = { done: 0, total: mcuCount * 3, callback: progressCallback };
+  const yPlane = await decodeRectComponent(bytes, { startOffset: yStart, blocksWide: info.yBlocksWide, blocksHigh: info.yBlocksHigh, planeWidth: info.width, planeHeight: info.height, qtable: qY, spec: ySpec, progressState, phase: `Декодирование Y ${ySpec.width}×${ySpec.height}` });
+  const cbPlane = await decodeRectComponent(bytes, { startOffset: cbStart, blocksWide: info.cBlocksWide, blocksHigh: info.cBlocksHigh, planeWidth: info.chromaWidth, planeHeight: info.height, qtable: qC, spec: cSpec, progressState, phase: `Декодирование Cb ${cSpec.width}×${cSpec.height}` });
+  const crPlane = await decodeRectComponent(bytes, { startOffset: crStart, blocksWide: info.cBlocksWide, blocksHigh: info.cBlocksHigh, planeWidth: info.chromaWidth, planeHeight: info.height, qtable: qC, spec: cSpec, progressState, phase: `Декодирование Cr ${cSpec.width}×${cSpec.height}` });
+  const out = new ImageData(info.width, info.height);
+  for (let y = 0; y < info.height; y++) {
+    for (let x = 0; x < info.width; x++) {
+      const pi = y * info.width + x;
+      const Y = yPlane[pi];
+      const Cb = bilinearSample(cbPlane, info.chromaWidth, info.height, x / 2, y) - 128;
+      const Cr = bilinearSample(crPlane, info.chromaWidth, info.height, x / 2, y) - 128;
+      const i = pi * 4;
+      out.data[i] = clamp(roundNearest(Y + 1.402 * Cr), 0, 255);
+      out.data[i + 1] = clamp(roundNearest(Y - 0.344136 * Cb - 0.714136 * Cr), 0, 255);
+      out.data[i + 2] = clamp(roundNearest(Y + 1.772 * Cb), 0, 255);
+      out.data[i + 3] = 255;
+    }
+    if ((y & 31) === 31) await new Promise(resolve => setTimeout(resolve, 0));
+  }
+  return { imageData: out, info };
+}
+
+function calculatePSNR(original, decoded) {
+  if (original.width !== decoded.width || original.height !== decoded.height) return NaN;
+  let error = 0;
+  const pixels = original.width * original.height;
+  for (let i = 0; i < original.data.length; i += 4) {
+    const dr = original.data[i] - decoded.data[i];
+    const dg = original.data[i + 1] - decoded.data[i + 1];
+    const db = original.data[i + 2] - decoded.data[i + 2];
+    error += dr * dr + dg * dg + db * db;
+  }
+  const mse = error / (pixels * 3);
+  return mse === 0 ? Infinity : 10 * Math.log10((255 * 255) / mse);
+}
+
+function formatBytes(bytes) {
+  if (bytes < 1024) return `${bytes} байт`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} КиБ`;
+  return `${(bytes / (1024 * 1024)).toFixed(2)} МиБ`;
+}
+
+function showStats(stats, inputBytes, outputBytes) {
+  const ratio = inputBytes > 0 ? outputBytes / inputBytes : 0;
+  const scaleValues = stats.scaleValues || SCALES;
+  const scaleText = stats.scaleCounts.map((n, i) => `×${scaleValues[i]}: ${n}`).join(' · ');
+  const psnrText = Number.isFinite(stats.psnr) ? `${stats.psnr.toFixed(2)} дБ` : stats.psnr === Infinity ? '∞' : '—';
+  const items = [
+    ['Режим', stats.mode],
+    ['Формат блока', stats.formatTitle],
+    ['Разрядность', stats.bitLayout || `DC ${stats.dcBits} бит · AC ${stats.acBits} бит`],
+    ['Размер изображения', `${stats.width} × ${stats.height}`],
+    ['Выходной файл', formatBytes(outputBytes)],
+    ['Квантование', `${stats.quality ?? '—'}${stats.autoQuality ? ' · авто' : ''}`],
+    ['RGB PSNR', psnrText],
+    ['Бит на пиксель', stats.bitsPerPixel.toFixed(3)],
+    [stats.blockLabel || 'Блоков 8×8', stats.totalBlocks.toLocaleString('ru-RU')],
+    ['Среднее коэффициентов', stats.averageCoefficients.toFixed(2)],
+    ['Размер к исходному файлу', `${(ratio * 100).toFixed(1)}%`],
+    ['Время кодирования', `${(stats.elapsedMs / 1000).toFixed(2)} с`],
+    ['Масштабы блоков', scaleText]
+  ];
+  if (stats.quantSearchText) items.push(['Автоподбор', stats.quantSearchText]);
+  if (stats.rectModeCounts) items.push(['Подрежимы MCU', `разреженных: ${stats.rectModeCounts[0]} · плотных: ${stats.rectModeCounts[1]} · словарных: ${stats.rectModeCounts[2] || 0}`]);
+  if (stats.residualCorrections > 0 || /словар/i.test(stats.formatTitle || '')) items.push(['Коррекция границ', `${stats.residualCorrections || 0} MCU`]);
+  statsEl.innerHTML = items.map(([name, value]) => `<div class="stat"><span>${escapeHtml(name)}</span><b>${escapeHtml(value)}</b></div>`).join('');
+  statsEl.hidden = false;
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
+}
+
+function currentPreviewSource() {
+  return previewMode.value === 'decoded' && decodedSource ? decodedSource : originalSource;
+}
+
+function resizePreviewCanvas() {
+  const rect = viewport.getBoundingClientRect();
+  const dpr = Math.max(1, window.devicePixelRatio || 1);
+  const width = Math.max(1, Math.round(rect.width * dpr));
+  const height = Math.max(1, Math.round(rect.height * dpr));
+  if (previewCanvas.width !== width || previewCanvas.height !== height) {
+    previewCanvas.width = width;
+    previewCanvas.height = height;
+  }
+  drawPreview();
+}
+
+function fitPreview() {
+  const source = currentPreviewSource();
+  if (!source) return clearPreview();
+  resizePreviewCanvas();
+  const rect = viewport.getBoundingClientRect();
+  const scale = Math.min(rect.width / source.width, rect.height / source.height) * 0.96;
+  view.scale = clamp(scale, view.minScale, view.maxScale);
+  view.offsetX = (rect.width - source.width * view.scale) / 2;
+  view.offsetY = (rect.height - source.height * view.scale) / 2;
+  drawPreview();
+}
+
+function actualSizePreview() {
+  const source = currentPreviewSource();
+  if (!source) return;
+  const rect = viewport.getBoundingClientRect();
+  view.scale = 1;
+  view.offsetX = (rect.width - source.width) / 2;
+  view.offsetY = (rect.height - source.height) / 2;
+  drawPreview();
+}
+
+function clearPreview() {
+  resizePreviewCanvas();
+  const dpr = Math.max(1, window.devicePixelRatio || 1);
+  previewCtx.setTransform(1, 0, 0, 1, 0, 0);
+  previewCtx.fillStyle = '#777';
+  previewCtx.fillRect(0, 0, previewCanvas.width, previewCanvas.height);
+  zoomLabel.textContent = '—';
+}
+
+function drawPreview() {
+  const source = currentPreviewSource();
+  const dpr = Math.max(1, window.devicePixelRatio || 1);
+  previewCtx.setTransform(1, 0, 0, 1, 0, 0);
+  previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+  if (!source) {
+    zoomLabel.textContent = '—';
+    return;
+  }
+  previewCtx.imageSmoothingEnabled = view.scale < 2;
+  previewCtx.imageSmoothingQuality = 'high';
+  previewCtx.setTransform(dpr * view.scale, 0, 0, dpr * view.scale, dpr * view.offsetX, dpr * view.offsetY);
+  previewCtx.drawImage(source, 0, 0);
+  previewCtx.setTransform(1, 0, 0, 1, 0, 0);
+  zoomLabel.textContent = `${Math.round(view.scale * 100)}%`;
+}
+
+function zoomAt(clientX, clientY, factor) {
+  const source = currentPreviewSource();
+  if (!source) return;
+  const rect = viewport.getBoundingClientRect();
+  const x = clientX - rect.left;
+  const y = clientY - rect.top;
+  const oldScale = view.scale;
+  const newScale = clamp(oldScale * factor, view.minScale, view.maxScale);
+  if (newScale === oldScale) return;
+  const imageX = (x - view.offsetX) / oldScale;
+  const imageY = (y - view.offsetY) / oldScale;
+  view.scale = newScale;
+  view.offsetX = x - imageX * newScale;
+  view.offsetY = y - imageY * newScale;
+  drawPreview();
+}
+
+viewport.addEventListener('wheel', event => {
+  if (!event.ctrlKey || !currentPreviewSource()) return;
+  event.preventDefault();
+  zoomAt(event.clientX, event.clientY, Math.exp(-event.deltaY * 0.002));
+}, { passive: false });
+
+previewCanvas.addEventListener('pointerdown', event => {
+  if (!currentPreviewSource()) return;
+  previewCanvas.setPointerCapture(event.pointerId);
+  view.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+  previewCanvas.classList.add('dragging');
+  resetGestureState();
+});
+
+previewCanvas.addEventListener('pointermove', event => {
+  if (!view.pointers.has(event.pointerId)) return;
+  view.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+  const points = [...view.pointers.values()];
+
+  if (points.length === 1) {
+    const point = points[0];
+    if (view.lastSingle) {
+      view.offsetX += point.x - view.lastSingle.x;
+      view.offsetY += point.y - view.lastSingle.y;
+      drawPreview();
+    }
+    view.lastSingle = point;
+    view.lastPinch = null;
+  } else if (points.length >= 2) {
+    const a = points[0];
+    const b = points[1];
+    const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    const distance = Math.hypot(a.x - b.x, a.y - b.y);
+    if (view.lastPinch && view.lastPinch.distance > 0) {
+      view.offsetX += mid.x - view.lastPinch.mid.x;
+      view.offsetY += mid.y - view.lastPinch.mid.y;
+      zoomAt(mid.x, mid.y, distance / view.lastPinch.distance);
+    }
+    view.lastPinch = { mid, distance };
+    view.lastSingle = null;
+  }
+});
+
+function endPointer(event) {
+  view.pointers.delete(event.pointerId);
+  if (view.pointers.size === 0) previewCanvas.classList.remove('dragging');
+  resetGestureState();
+}
+
+previewCanvas.addEventListener('pointerup', endPointer);
+previewCanvas.addEventListener('pointercancel', endPointer);
+previewCanvas.addEventListener('lostpointercapture', endPointer);
+
+function resetGestureState() {
+  const points = [...view.pointers.values()];
+  view.lastSingle = points.length === 1 ? points[0] : null;
+  if (points.length >= 2) {
+    const a = points[0];
+    const b = points[1];
+    view.lastPinch = {
+      mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
+      distance: Math.hypot(a.x - b.x, a.y - b.y)
+    };
+  } else {
+    view.lastPinch = null;
+  }
+}
+
+async function runSelfTest() {
+  try {
+    const width = 32;
+    const height = 24;
+    const data = new Uint8ClampedArray(width * height * 4);
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const i = (y * width + x) * 4;
+        data[i] = Math.round(x * 255 / (width - 1));
+        data[i + 1] = Math.round(y * 255 / (height - 1));
+        data[i + 2] = ((x ^ y) * 31) & 255;
+        data[i + 3] = 255;
+      }
+    }
+    const imageData = new ImageData(data, width, height);
+    const expectedBlocks = Math.ceil(width / 8) * Math.ceil(height / 8) + 2 * Math.ceil(Math.ceil(width / 2) / 8) * Math.ceil(Math.ceil(height / 2) / 8);
+    const results = [];
+    for (const blockSize of ['32', '24', '16', '64', '48', 'm32', 'm32d', '24m', '24d']) {
+      const config = getFormatConfig(blockSize);
+      const encoded = await encodeImageData(imageData, 75, () => {}, { optimized: true, blockSize });
+      const decoded = await decodeD24(encoded.bytes);
+      const expectedSize = config.special === 'mcu422'
+        ? HEADER_SIZE + Math.ceil(width / 16) * Math.ceil(height / 16) * config.blockSize
+        : HEADER_SIZE + expectedBlocks * config.blockSize;
+      if (encoded.bytes.byteLength !== expectedSize) throw new Error(`Неверный размер файла для ${blockSize} байт.`);
+      const psnr = calculatePSNR(imageData, decoded.imageData);
+      if (!Number.isFinite(psnr) || psnr < 7) throw new Error(`Подозрительный PSNR ${blockSize}: ${psnr}`);
+      results.push(`${blockSize}=${psnr.toFixed(2)} дБ`);
+    }
+    const proxy = makeQualitySearchProxy(imageData);
+    if (!proxy || proxy.width < 1 || proxy.height < 1) throw new Error('Не создан proxy автоквантования.');
+    document.body.dataset.selftest = 'ok';
+    setStatus(`SELFTEST OK: ${results.join(' · ')}`);
+  } catch (error) {
+    console.error(error);
+    document.body.dataset.selftest = 'failed';
+    setStatus(`SELFTEST FAILED: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+resizePreviewCanvas();
+if (new URLSearchParams(location.search).has('selftest')) runSelfTest();
+</script>
+</body>
+</html>
