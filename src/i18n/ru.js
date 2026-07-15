@@ -261,6 +261,7 @@
     "dct.bitsPerPixel": "Бит на пиксель",
     "dct.rgbRatio": "Размер к RGB",
     "dct.restoredPreview": "Восстановленный DCTBS2",
+    "dct.zoomWheelTitle": "Удерживайте Ctrl и крутите колесо мыши для масштабирования",
     "dct.pixelTitle": "Прямое чтение пикселя",
     "dct.pixelDescription": "Прочитать одну координату из фиксированной записи MCU без декодирования всего изображения.",
     "dct.readPixel": "Прочитать пиксель",

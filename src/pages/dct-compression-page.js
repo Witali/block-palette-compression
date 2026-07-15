@@ -529,12 +529,27 @@ function resetMetrics() {
   }
 }
 
-function setZoom(value) {
+function setZoom(value, viewport = resultViewport, clientX, clientY) {
   if (!state.sourceImageData) {
     return;
   }
 
-  state.zoom = clamp(value, MIN_ZOOM, MAX_ZOOM);
+  const nextZoom = clamp(value, MIN_ZOOM, MAX_ZOOM);
+  const stage = viewport === sourceViewport ? sourceStage : resultStage;
+  const viewportBounds = viewport.getBoundingClientRect();
+  const anchorClientX = clientX === undefined
+    ? viewportBounds.left + viewport.clientWidth / 2
+    : clientX;
+  const anchorClientY = clientY === undefined
+    ? viewportBounds.top + viewport.clientHeight / 2
+    : clientY;
+  const stageBounds = stage.getBoundingClientRect();
+  const imagePoint = {
+    x: (anchorClientX - stageBounds.left) / state.zoom,
+    y: (anchorClientY - stageBounds.top) / state.zoom,
+  };
+
+  state.zoom = nextZoom;
   state.viewMode = "custom";
   const width = Math.max(1, Math.round(state.sourceImageData.width * state.zoom));
   const height = Math.max(1, Math.round(state.sourceImageData.height * state.zoom));
@@ -545,8 +560,19 @@ function setZoom(value) {
   }
 
   zoomLevel.value = `${Math.round(state.zoom * 100)}%`;
+  zoomOutButton.disabled = state.zoom <= MIN_ZOOM;
+  zoomInButton.disabled = state.zoom >= MAX_ZOOM;
   actualSizeButton.setAttribute("aria-pressed", String(state.viewMode === "actual"));
   fitImageButton.setAttribute("aria-pressed", String(state.viewMode === "fit"));
+
+  const updatedStageBounds = stage.getBoundingClientRect();
+  viewport.scrollLeft += updatedStageBounds.left + imagePoint.x * nextZoom - anchorClientX;
+  viewport.scrollTop += updatedStageBounds.top + imagePoint.y * nextZoom - anchorClientY;
+  state.synchronizingScroll = false;
+  synchronizeScroll(
+    viewport,
+    viewport === sourceViewport ? resultViewport : sourceViewport
+  );
 }
 
 function fitImage() {
@@ -583,7 +609,19 @@ function zoomFromWheel(event) {
   }
 
   event.preventDefault();
-  setZoom(state.zoom * (event.deltaY < 0 ? ZOOM_FACTOR : 1 / ZOOM_FACTOR));
+  const viewport = event.currentTarget;
+  const pixelDelta = event.deltaMode === WheelEvent.DOM_DELTA_LINE
+    ? event.deltaY * 16
+    : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
+      ? event.deltaY * viewport.clientHeight
+      : event.deltaY;
+  const nextZoom = clamp(state.zoom * Math.exp(-pixelDelta * 0.002), MIN_ZOOM, MAX_ZOOM);
+
+  if (Math.abs(nextZoom - state.zoom) < 0.0001) {
+    return;
+  }
+
+  setZoom(nextZoom, viewport, event.clientX, event.clientY);
 }
 
 function startDrag(event) {

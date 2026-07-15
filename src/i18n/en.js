@@ -261,6 +261,7 @@
     "dct.bitsPerPixel": "Bits per pixel",
     "dct.rgbRatio": "Compression vs RGB",
     "dct.restoredPreview": "Restored DCTBS2 preview",
+    "dct.zoomWheelTitle": "Hold Ctrl and use the mouse wheel to zoom",
     "dct.pixelTitle": "Direct pixel lookup",
     "dct.pixelDescription": "Read one coordinate from its fixed MCU record without decoding the complete image.",
     "dct.readPixel": "Read pixel",

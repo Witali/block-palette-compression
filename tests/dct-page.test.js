@@ -42,6 +42,16 @@ test("keeps direct coordinate sampling separate from full-image decoding", () =>
   assert.doesNotMatch(lookup, /decodeDctFile/);
 });
 
+test("zooms both previews around the pointer with Ctrl and the mouse wheel", () => {
+  assert.equal((page.match(/data-i18n-title="dct\.zoomWheelTitle"/g) || []).length, 2);
+  assert.match(pageScript, /viewport\.addEventListener\("wheel", zoomFromWheel, \{ passive: false \}\)/);
+  assert.match(pageScript, /if \(!event\.ctrlKey \|\| !state\.sourceImageData\)/);
+  assert.match(pageScript, /Math\.exp\(-pixelDelta \* 0\.002\)/);
+  assert.match(pageScript, /setZoom\(nextZoom, viewport, event\.clientX, event\.clientY\)/);
+  assert.match(pageScript, /x: \(anchorClientX - stageBounds\.left\) \/ state\.zoom/);
+  assert.match(pageScript, /synchronizeScroll\(/);
+});
+
 test("runs DCT encoding and automatic quality search in a worker", () => {
   assert.match(pageScript, /new Worker\("\.\/src\/dct\/dct-worker\.js/);
   assert.match(worker, /dct-format\.js\?v=dct-page-6/);
