@@ -10,7 +10,8 @@ cbuffer SceneConstants : register(b0) {
 };
 
 cbuffer TextureConstants : register(b1) {
-  uint4 PackedMeta[16];
+  // Keep this in sync with kShaderMetadataCapacityWords in shader_texture.h.
+  uint4 PackedMeta[768];
 };
 
 uint Meta(uint index) {

@@ -175,7 +175,9 @@ int wmain(int argc, wchar_t** argv) {
         const std::uint64_t rgba_bytes = static_cast<std::uint64_t>(test.width) * test.height * 4u;
         if (texture.kind != test.kind || texture.width != test.width ||
             texture.height != test.height || texture.mip_count < test.minimum_mips ||
-            texture.data.empty() || texture.metadata.size() < 16 || texture.data.size() >= rgba_bytes) {
+            texture.data.empty() || texture.metadata.size() < 16 ||
+            texture.metadata.size() > texture_demo::kShaderMetadataCapacityWords ||
+            texture.data.size() >= rgba_bytes) {
             std::wcerr << L"FAIL " << test.path << L": shader payload metadata mismatch\n";
             passed = false;
             continue;

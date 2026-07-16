@@ -46,11 +46,11 @@ struct SceneConstants {
 };
 
 struct TextureConstants {
-    std::array<std::uint32_t, 64> words{};
+    std::array<std::uint32_t, texture_demo::kShaderMetadataCapacityWords> words{};
 };
 
 static_assert(sizeof(SceneConstants) == 256);
-static_assert(sizeof(TextureConstants) == 256);
+static_assert(sizeof(TextureConstants) % 256 == 0);
 
 constexpr std::array<Vertex, 24> kVertices = {{
     {{-1,-1,-1},{0,0,-1},{0,1}}, {{-1,1,-1},{0,0,-1},{0,0}},
@@ -497,8 +497,11 @@ private:
     }
 
     bool UploadTexture(const texture_demo::ShaderTexture& texture) {
-        if (texture.data.empty() || texture.metadata.size() > texture_mapped_->words.size()) {
-            return Fail(L"Texture produced an invalid shader payload");
+        if (texture.data.empty()) {
+            return Fail(L"Texture decoder produced an empty shader payload");
+        }
+        if (texture.metadata.size() > texture_mapped_->words.size()) {
+            return Fail(L"Texture has too many mip levels for the shader metadata buffer");
         }
         const std::uint32_t kind = static_cast<std::uint32_t>(texture.kind);
         if (kind == 0 || kind > pipelines_.size() || !pipelines_[kind - 1]) {

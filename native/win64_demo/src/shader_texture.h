@@ -7,6 +7,12 @@
 
 namespace texture_demo {
 
+// BPLM stores the mip count in one byte and uses 12 metadata words per mip.
+// The rounded capacity stays aligned to a 256-byte Direct3D constant buffer.
+inline constexpr std::size_t kShaderMetadataCapacityWords =
+    (8u + 12u * 255u + 63u) & ~std::size_t{63u};
+static_assert(kShaderMetadataCapacityWords == 3072u);
+
 // The uploaded payload contains compressed/indexed texture data.  It never
 // contains a width*height RGB(A) bitmap for project formats.
 enum class ShaderTextureKind : std::uint32_t {
