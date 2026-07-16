@@ -33,7 +33,7 @@ inline bool CheckedRgbaSize(
 ) {
     if (width == 0 || height == 0 ||
         width > kMaximumTextureDimension || height > kMaximumTextureDimension) {
-        error = L"Texture dimensions are outside the Direct3D 11 limit";
+        error = L"Texture dimensions are outside the native renderer limit";
         return false;
     }
     const std::uint64_t total = static_cast<std::uint64_t>(width) * height * 4u;

@@ -1,38 +1,32 @@
-#include "texture_loader.h"
+#include "shader_texture.h"
 
 #include <windows.h>
 #include <commdlg.h>
-#include <d3d11.h>
+#include <d3d12.h>
 #include <d3dcompiler.h>
-#include <directxmath.h>
-#include <shellapi.h>
+#include <dxgi1_6.h>
+#include <DirectXMath.h>
 #include <wrl/client.h>
 
 #include <algorithm>
 #include <array>
 #include <chrono>
-#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
 #include <string>
 #include <vector>
 
+using Microsoft::WRL::ComPtr;
+using namespace DirectX;
+
 namespace {
 
-using DirectX::XMFLOAT2;
-using DirectX::XMFLOAT3;
-using DirectX::XMFLOAT4;
-using DirectX::XMFLOAT4X4;
-using DirectX::XMMATRIX;
-using Microsoft::WRL::ComPtr;
-
-constexpr wchar_t kWindowClass[] = L"BlockTextureWin64Demo";
-constexpr UINT_PTR kRenderTimer = 1;
-constexpr int kUploadButton = 1001;
-constexpr int kSampleCombo = 1002;
-constexpr int kPauseButton = 1003;
-constexpr int kStatusLabel = 1004;
+constexpr wchar_t kWindowClass[] = L"BlockTextureDirectX12Demo";
+constexpr UINT kFrameCount = 2;
+constexpr UINT kUploadId = 1001;
+constexpr UINT kPauseId = 1002;
+constexpr UINT kPresetId = 1003;
 
 struct Vertex {
     XMFLOAT3 position;
@@ -41,705 +35,632 @@ struct Vertex {
 };
 
 struct SceneConstants {
-    XMFLOAT4X4 world_view_projection;
-    XMFLOAT4X4 world;
-    XMFLOAT4 key_light_direction;
-    XMFLOAT4 fill_light_direction;
+    XMFLOAT4X4 model_view_projection;
+    XMFLOAT4X4 model;
+    XMFLOAT4 light_position;
+    XMFLOAT4 camera_position;
+    XMFLOAT4 light_color;
+    XMFLOAT4 ambient_color;
+    std::array<XMFLOAT4, 4> padding{};
 };
 
-struct SampleTexture {
-    const wchar_t* label;
-    const wchar_t* filename;
+struct TextureConstants {
+    std::array<std::uint32_t, 64> words{};
 };
 
-constexpr std::array<SampleTexture, 5> kSamples = {{
-    {L"BPAL v5 — stone", L"stone-texture-wic-2.38bpp.bpal"},
-    {L"BPLM v1 — stone + stored mips", L"stone-texture-wic.bplm"},
-    {L"DCTBS2 v2 — stone", L"stone-texture-wic-1.5bpp.dctbs2"},
-    {L"BPDH v1 — landscape", L"landscape-alaska.bpdh"},
-    {L"JPEG — Windows WIC", L"stone-texture-small.jpg"},
+static_assert(sizeof(SceneConstants) == 256);
+static_assert(sizeof(TextureConstants) == 256);
+
+constexpr std::array<Vertex, 24> kVertices = {{
+    {{-1,-1,-1},{0,0,-1},{0,1}}, {{-1,1,-1},{0,0,-1},{0,0}},
+    {{1,1,-1},{0,0,-1},{1,0}}, {{1,-1,-1},{0,0,-1},{1,1}},
+    {{1,-1,1},{0,0,1},{0,1}}, {{1,1,1},{0,0,1},{0,0}},
+    {{-1,1,1},{0,0,1},{1,0}}, {{-1,-1,1},{0,0,1},{1,1}},
+    {{-1,-1,1},{-1,0,0},{0,1}}, {{-1,1,1},{-1,0,0},{0,0}},
+    {{-1,1,-1},{-1,0,0},{1,0}}, {{-1,-1,-1},{-1,0,0},{1,1}},
+    {{1,-1,-1},{1,0,0},{0,1}}, {{1,1,-1},{1,0,0},{0,0}},
+    {{1,1,1},{1,0,0},{1,0}}, {{1,-1,1},{1,0,0},{1,1}},
+    {{-1,1,-1},{0,1,0},{0,1}}, {{-1,1,1},{0,1,0},{0,0}},
+    {{1,1,1},{0,1,0},{1,0}}, {{1,1,-1},{0,1,0},{1,1}},
+    {{-1,-1,1},{0,-1,0},{0,1}}, {{-1,-1,-1},{0,-1,0},{0,0}},
+    {{1,-1,-1},{0,-1,0},{1,0}}, {{1,-1,1},{0,-1,0},{1,1}},
 }};
 
-constexpr char kShaderSource[] = R"(
-cbuffer Scene : register(b0) {
-    row_major float4x4 worldViewProjection;
-    row_major float4x4 world;
-    float4 keyLightDirection;
-    float4 fillLightDirection;
-};
+constexpr std::array<std::uint16_t, 36> kIndices = {{
+    0,1,2, 0,2,3, 4,5,6, 4,6,7,
+    8,9,10, 8,10,11, 12,13,14, 12,14,15,
+    16,17,18, 16,18,19, 20,21,22, 20,22,23,
+}};
 
-struct VertexInput {
-    float3 position : POSITION;
-    float3 normal : NORMAL;
-    float2 uv : TEXCOORD0;
-};
-
-struct PixelInput {
-    float4 position : SV_POSITION;
-    float3 normal : NORMAL;
-    float2 uv : TEXCOORD0;
-};
-
-PixelInput VSMain(VertexInput input) {
-    PixelInput output;
-    output.position = mul(float4(input.position, 1.0), worldViewProjection);
-    output.normal = mul(float4(input.normal, 0.0), world).xyz;
-    output.uv = input.uv;
-    return output;
+D3D12_HEAP_PROPERTIES HeapProperties(D3D12_HEAP_TYPE type) {
+    D3D12_HEAP_PROPERTIES properties{};
+    properties.Type = type;
+    properties.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+    properties.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+    properties.CreationNodeMask = 1;
+    properties.VisibleNodeMask = 1;
+    return properties;
 }
 
-Texture2D cubeTexture : register(t0);
-SamplerState cubeSampler : register(s0);
-
-float3 SrgbToLinear(float3 color) {
-    float3 lower = color / 12.92;
-    float3 upper = pow((color + 0.055) / 1.055, 2.4);
-    return lerp(lower, upper, step(0.04045, color));
+D3D12_RESOURCE_DESC BufferDescription(UINT64 bytes) {
+    D3D12_RESOURCE_DESC description{};
+    description.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+    description.Width = bytes;
+    description.Height = 1;
+    description.DepthOrArraySize = 1;
+    description.MipLevels = 1;
+    description.SampleDesc.Count = 1;
+    description.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+    return description;
 }
 
-float3 LinearToSrgb(float3 color) {
-    float3 lower = color * 12.92;
-    float3 upper = 1.055 * pow(max(color, 0.0), 1.0 / 2.4) - 0.055;
-    return lerp(lower, upper, step(0.0031308, color));
+D3D12_RESOURCE_BARRIER Transition(
+    ID3D12Resource* resource,
+    D3D12_RESOURCE_STATES before,
+    D3D12_RESOURCE_STATES after
+) {
+    D3D12_RESOURCE_BARRIER barrier{};
+    barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    barrier.Transition.pResource = resource;
+    barrier.Transition.StateBefore = before;
+    barrier.Transition.StateAfter = after;
+    barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    return barrier;
 }
 
-float4 PSMain(PixelInput input) : SV_TARGET {
-    float3 normal = normalize(input.normal);
-    float4 color = cubeTexture.Sample(cubeSampler, input.uv);
-    float keyDiffuse = saturate(dot(normal, normalize(-keyLightDirection.xyz)));
-    float fillDiffuse = saturate(dot(normal, normalize(-fillLightDirection.xyz)));
-    float hemisphere = normal.y * 0.5 + 0.5;
-    float3 ambient = lerp(float3(0.42, 0.46, 0.55), float3(0.64, 0.66, 0.70), hemisphere);
-    float3 direct = keyDiffuse * float3(0.95, 0.85, 0.70)
-        + fillDiffuse * float3(0.30, 0.38, 0.52);
-    float3 litColor = SrgbToLinear(color.rgb) * (ambient + direct) * 1.25;
-    return float4(LinearToSrgb(saturate(litColor)), color.a);
-}
-)";
-
-std::wstring HresultMessage(HRESULT result) {
-    wchar_t* message = nullptr;
-    const DWORD flags = FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM |
-        FORMAT_MESSAGE_IGNORE_INSERTS;
+std::wstring HrMessage(const wchar_t* operation, HRESULT result) {
+    wchar_t detail[512]{};
     FormatMessageW(
-        flags,
+        FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
         nullptr,
         static_cast<DWORD>(result),
-        MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-        reinterpret_cast<wchar_t*>(&message),
         0,
-        nullptr
-    );
-    std::wstring text = message != nullptr ? message : L"Unknown Direct3D error";
-    if (message != nullptr) LocalFree(message);
-    while (!text.empty() && (text.back() == L'\r' || text.back() == L'\n')) text.pop_back();
-    return text;
+        detail,
+        static_cast<DWORD>(std::size(detail)),
+        nullptr);
+    return std::wstring(operation) + L" failed (0x" +
+        [&]() {
+            wchar_t hex[16]{};
+            swprintf_s(hex, L"%08X", static_cast<unsigned>(result));
+            return std::wstring(hex);
+        }() + L"): " + detail;
 }
 
-std::filesystem::path ExecutableDirectory() {
-    std::wstring path(32768, L'\0');
+std::filesystem::path ModuleDirectory() {
+    std::array<wchar_t, 32768> path{};
     const DWORD length = GetModuleFileNameW(nullptr, path.data(), static_cast<DWORD>(path.size()));
-    path.resize(length);
-    return std::filesystem::path(path).parent_path();
+    return std::filesystem::path(std::wstring(path.data(), length)).parent_path();
 }
 
-texture_demo::TextureImage MakeCheckerboard() {
-    texture_demo::TextureImage image;
-    image.format = L"Procedural fallback";
-    texture_demo::MipLevel level;
-    level.width = 256;
-    level.height = 256;
-    level.rgba.resize(static_cast<std::size_t>(level.width) * level.height * 4u);
-    for (std::uint32_t y = 0; y < level.height; ++y) {
-        for (std::uint32_t x = 0; x < level.width; ++x) {
-            const bool bright = ((x / 32u) ^ (y / 32u)) % 2u != 0;
-            const std::size_t offset = (static_cast<std::size_t>(y) * level.width + x) * 4u;
-            level.rgba[offset] = bright ? 60 : 14;
-            level.rgba[offset + 1] = bright ? 190 : 48;
-            level.rgba[offset + 2] = bright ? 220 : 68;
-            level.rgba[offset + 3] = 255;
-        }
-    }
-    image.mips.push_back(std::move(level));
-    return image;
-}
+class DemoApplication;
+DemoApplication* g_application = nullptr;
 
 class DemoApplication {
 public:
-    explicit DemoApplication(HINSTANCE instance) : instance_(instance) {}
+    ~DemoApplication() {
+        if (queue_ && fence_) WaitForGpu();
+        if (scene_mapped_) scene_constants_->Unmap(0, nullptr);
+        if (texture_mapped_) texture_constants_->Unmap(0, nullptr);
+        if (fence_event_) CloseHandle(fence_event_);
+    }
 
-    int Run(int show_command) {
+    bool Initialize(HINSTANCE instance, int show) {
         WNDCLASSEXW window_class{};
         window_class.cbSize = sizeof(window_class);
         window_class.style = CS_HREDRAW | CS_VREDRAW;
         window_class.lpfnWndProc = WindowProc;
-        window_class.hInstance = instance_;
-        window_class.hCursor = LoadCursorW(nullptr, IDC_ARROW);
-        window_class.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
-        window_class.hIconSm = window_class.hIcon;
+        window_class.hInstance = instance;
+        window_class.hCursor = LoadCursor(nullptr, IDC_ARROW);
+        window_class.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
         window_class.lpszClassName = kWindowClass;
-        if (!RegisterClassExW(&window_class)) return 1;
+        if (!RegisterClassExW(&window_class)) return Fail(L"Could not register the window class");
 
+        RECT rectangle{0, 0, 1180, 780};
+        AdjustWindowRect(&rectangle, WS_OVERLAPPEDWINDOW, FALSE);
         window_ = CreateWindowExW(
-            0,
-            kWindowClass,
-            L"Block Texture Formats — Native Win64 Demo",
-            WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
-            CW_USEDEFAULT,
-            CW_USEDEFAULT,
-            1180,
-            820,
-            nullptr,
-            nullptr,
-            instance_,
-            this
-        );
-        if (window_ == nullptr) return 1;
+            0, kWindowClass, L"Block Palette Compression - Native DirectX 12",
+            WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT,
+            rectangle.right - rectangle.left, rectangle.bottom - rectangle.top,
+            nullptr, nullptr, instance, nullptr);
+        if (!window_) return Fail(L"Could not create the application window");
 
         CreateControls();
-        DragAcceptFiles(window_, TRUE);
-        if (!CreateDeviceResources()) {
-            MessageBoxW(window_, last_error_.c_str(), L"Direct3D initialization failed", MB_ICONERROR);
-            return 1;
-        }
-        LoadInitialTexture();
-        ShowWindow(window_, show_command);
+        RECT client{};
+        GetClientRect(window_, &client);
+        width_ = std::max<LONG>(1, client.right);
+        height_ = std::max<LONG>(1, client.bottom);
+        if (!InitializeD3d()) return false;
+        LoadPreset(0);
+        ShowWindow(window_, show);
         UpdateWindow(window_);
-        SetTimer(window_, kRenderTimer, 16, nullptr);
+        started_ = std::chrono::steady_clock::now();
+        return true;
+    }
 
+    int Run() {
         MSG message{};
-        while (GetMessageW(&message, nullptr, 0, 0) > 0) {
-            TranslateMessage(&message);
-            DispatchMessageW(&message);
+        while (message.message != WM_QUIT) {
+            if (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE)) {
+                TranslateMessage(&message);
+                DispatchMessageW(&message);
+            } else if (!minimized_) {
+                Render();
+            } else {
+                WaitMessage();
+            }
         }
         return static_cast<int>(message.wParam);
     }
 
-private:
-    static LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
-        DemoApplication* app = nullptr;
-        if (message == WM_NCCREATE) {
-            const auto* create = reinterpret_cast<CREATESTRUCTW*>(lparam);
-            app = static_cast<DemoApplication*>(create->lpCreateParams);
-            SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(app));
-            app->window_ = window;
-        } else {
-            app = reinterpret_cast<DemoApplication*>(GetWindowLongPtrW(window, GWLP_USERDATA));
-        }
-        return app != nullptr ? app->HandleMessage(message, wparam, lparam) :
-            DefWindowProcW(window, message, wparam, lparam);
-    }
-
-    LRESULT HandleMessage(UINT message, WPARAM wparam, LPARAM lparam) {
+    LRESULT OnMessage(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
         switch (message) {
         case WM_COMMAND:
-            if (LOWORD(wparam) == kUploadButton && HIWORD(wparam) == BN_CLICKED) {
-                ShowUploadDialog();
-                return 0;
+            if (LOWORD(wparam) == kUploadId && HIWORD(wparam) == BN_CLICKED) OpenTexture();
+            if (LOWORD(wparam) == kPauseId && HIWORD(wparam) == BN_CLICKED) TogglePause();
+            if (LOWORD(wparam) == kPresetId && HIWORD(wparam) == CBN_SELCHANGE) {
+                LoadPreset(static_cast<int>(SendMessageW(preset_, CB_GETCURSEL, 0, 0)));
             }
-            if (LOWORD(wparam) == kPauseButton && HIWORD(wparam) == BN_CLICKED) {
-                paused_ = !paused_;
-                SetWindowTextW(pause_button_, paused_ ? L"Resume" : L"Pause");
-                return 0;
-            }
-            if (LOWORD(wparam) == kSampleCombo && HIWORD(wparam) == CBN_SELCHANGE) {
-                const LRESULT selected = SendMessageW(sample_combo_, CB_GETCURSEL, 0, 0);
-                if (selected >= 0 && selected < static_cast<LRESULT>(kSamples.size())) {
-                    LoadSample(static_cast<std::size_t>(selected));
-                }
-                return 0;
-            }
-            break;
-        case WM_DROPFILES: {
-            const HDROP drop = reinterpret_cast<HDROP>(wparam);
-            std::wstring path(32768, L'\0');
-            const UINT length = DragQueryFileW(drop, 0, path.data(), static_cast<UINT>(path.size()));
-            path.resize(length);
-            DragFinish(drop);
-            if (!path.empty()) LoadTexture(path);
             return 0;
-        }
-        case WM_KEYDOWN:
-            if (wparam == VK_SPACE) {
-                paused_ = !paused_;
-                SetWindowTextW(pause_button_, paused_ ? L"Resume" : L"Pause");
-                return 0;
-            }
-            break;
         case WM_SIZE:
-            LayoutControls(LOWORD(lparam), HIWORD(lparam));
-            if (device_ && wparam != SIZE_MINIMIZED) ResizeSwapChain(LOWORD(lparam), HIWORD(lparam));
+            minimized_ = wparam == SIZE_MINIMIZED;
+            if (!minimized_ && device_ && swap_chain_) {
+                Resize(std::max<UINT>(1u, LOWORD(lparam)), std::max<UINT>(1u, HIWORD(lparam)));
+            }
             return 0;
-        case WM_TIMER:
-            if (wparam == kRenderTimer) {
-                Render();
-                return 0;
-            }
-            break;
-        case WM_CTLCOLORSTATIC: {
-            const HDC context = reinterpret_cast<HDC>(wparam);
-            SetTextColor(context, RGB(235, 241, 248));
-            SetBkColor(context, RGB(22, 28, 38));
-            return reinterpret_cast<LRESULT>(panel_brush_);
-        }
-        case WM_ERASEBKGND:
-            return 1;
         case WM_DESTROY:
-            KillTimer(window_, kRenderTimer);
-            if (panel_brush_ != nullptr) {
-                DeleteObject(panel_brush_);
-                panel_brush_ = nullptr;
-            }
             PostQuitMessage(0);
             return 0;
         default:
-            break;
+            return DefWindowProcW(window, message, wparam, lparam);
         }
-        return DefWindowProcW(window_, message, wparam, lparam);
+    }
+
+private:
+    static LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
+        return g_application
+            ? g_application->OnMessage(window, message, wparam, lparam)
+            : DefWindowProcW(window, message, wparam, lparam);
+    }
+
+    bool Fail(const std::wstring& message) {
+        MessageBoxW(window_, message.c_str(), L"DirectX 12 Demo", MB_OK | MB_ICONERROR);
+        return false;
+    }
+
+    bool Check(HRESULT result, const wchar_t* operation) {
+        return SUCCEEDED(result) || Fail(HrMessage(operation, result));
     }
 
     void CreateControls() {
-        panel_brush_ = CreateSolidBrush(RGB(22, 28, 38));
-        upload_button_ = CreateWindowExW(
-            0, L"BUTTON", L"Upload…", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-            0, 0, 110, 34, window_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kUploadButton)), instance_, nullptr);
-        pause_button_ = CreateWindowExW(
-            0, L"BUTTON", L"Pause", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-            0, 0, 90, 34, window_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kPauseButton)), instance_, nullptr);
-        sample_combo_ = CreateWindowExW(
-            0, L"COMBOBOX", nullptr,
-            WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST | WS_VSCROLL,
-            0, 0, 310, 400, window_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kSampleCombo)), instance_, nullptr);
-        status_label_ = CreateWindowExW(
-            0, L"STATIC", L"Loading texture…", WS_CHILD | WS_VISIBLE | SS_LEFT | SS_CENTERIMAGE,
-            0, 0, 400, 34, window_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kStatusLabel)), instance_, nullptr);
-        for (const auto& sample : kSamples) {
-            SendMessageW(sample_combo_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(sample.label));
-        }
-        SendMessageW(sample_combo_, CB_SETCURSEL, 1, 0);
-
-        const HFONT font = static_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
-        for (HWND control : {upload_button_, pause_button_, sample_combo_, status_label_}) {
-            SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
-        }
-        RECT client{};
-        GetClientRect(window_, &client);
-        LayoutControls(client.right, client.bottom);
+        upload_ = CreateWindowExW(0, L"BUTTON", L"Upload...", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+            10, 10, 110, 34, window_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kUploadId)), nullptr, nullptr);
+        pause_ = CreateWindowExW(0, L"BUTTON", L"Pause", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+            130, 10, 90, 34, window_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kPauseId)), nullptr, nullptr);
+        preset_ = CreateWindowExW(0, L"COMBOBOX", nullptr,
+            WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL,
+            230, 10, 315, 180, window_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kPresetId)), nullptr, nullptr);
+        status_ = CreateWindowExW(0, L"STATIC", L"Initializing DirectX 12...",
+            WS_CHILD | WS_VISIBLE | SS_LEFT | SS_CENTERIMAGE,
+            557, 10, 585, 34, window_, nullptr, nullptr, nullptr);
+        SendMessageW(preset_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"BPAL v5 - stone"));
+        SendMessageW(preset_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"BPLM v1 - stone + mips"));
+        SendMessageW(preset_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"DCTBS2 - stone 1.5 bpp"));
+        SendMessageW(preset_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"BPDH - Alaska landscape"));
+        SendMessageW(preset_, CB_SETCURSEL, 0, 0);
     }
 
-    void LayoutControls(int width, int) const {
-        const int margin = 14;
-        MoveWindow(upload_button_, margin, margin, 110, 34, TRUE);
-        MoveWindow(pause_button_, margin + 120, margin, 90, 34, TRUE);
-        MoveWindow(sample_combo_, margin + 220, margin, 315, 400, TRUE);
-        MoveWindow(status_label_, margin + 548, margin, std::max(160, width - margin * 2 - 548), 34, TRUE);
-    }
+    bool InitializeD3d() {
+        UINT factory_flags = 0;
+#if defined(_DEBUG)
+        ComPtr<ID3D12Debug> debug;
+        if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&debug)))) {
+            debug->EnableDebugLayer();
+            factory_flags = DXGI_CREATE_FACTORY_DEBUG;
+        }
+#endif
+        if (!Check(CreateDXGIFactory2(factory_flags, IID_PPV_ARGS(&factory_)), L"CreateDXGIFactory2")) return false;
+        for (UINT index = 0;; ++index) {
+            ComPtr<IDXGIAdapter1> adapter;
+            if (factory_->EnumAdapterByGpuPreference(
+                    index, DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE, IID_PPV_ARGS(&adapter)) == DXGI_ERROR_NOT_FOUND) break;
+            DXGI_ADAPTER_DESC1 description{};
+            adapter->GetDesc1(&description);
+            if ((description.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) == 0 &&
+                SUCCEEDED(D3D12CreateDevice(adapter.Get(), D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&device_)))) break;
+        }
+        if (!device_) {
+            ComPtr<IDXGIAdapter> warp;
+            if (!Check(factory_->EnumWarpAdapter(IID_PPV_ARGS(&warp)), L"EnumWarpAdapter") ||
+                !Check(D3D12CreateDevice(warp.Get(), D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&device_)), L"D3D12CreateDevice")) {
+                return false;
+            }
+        }
 
-    bool CreateDeviceResources() {
-        RECT client{};
-        GetClientRect(window_, &client);
-        DXGI_SWAP_CHAIN_DESC swap_description{};
-        swap_description.BufferDesc.Width = std::max(1L, client.right);
-        swap_description.BufferDesc.Height = std::max(1L, client.bottom);
-        swap_description.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+        D3D12_COMMAND_QUEUE_DESC queue_description{};
+        queue_description.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
+        if (!Check(device_->CreateCommandQueue(&queue_description, IID_PPV_ARGS(&queue_)), L"CreateCommandQueue")) return false;
+
+        DXGI_SWAP_CHAIN_DESC1 swap_description{};
+        swap_description.Width = width_;
+        swap_description.Height = height_;
+        swap_description.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
         swap_description.SampleDesc.Count = 1;
         swap_description.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-        swap_description.BufferCount = 2;
-        swap_description.OutputWindow = window_;
-        swap_description.Windowed = TRUE;
-        swap_description.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
+        swap_description.BufferCount = kFrameCount;
+        swap_description.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
+        ComPtr<IDXGISwapChain1> swap_chain;
+        if (!Check(factory_->CreateSwapChainForHwnd(
+                queue_.Get(), window_, &swap_description, nullptr, nullptr, &swap_chain), L"CreateSwapChainForHwnd")) return false;
+        factory_->MakeWindowAssociation(window_, DXGI_MWA_NO_ALT_ENTER);
+        if (!Check(swap_chain.As(&swap_chain_), L"Query IDXGISwapChain3")) return false;
+        frame_index_ = swap_chain_->GetCurrentBackBufferIndex();
 
-        const std::array<D3D_FEATURE_LEVEL, 3> levels = {
-            D3D_FEATURE_LEVEL_11_0,
-            D3D_FEATURE_LEVEL_10_1,
-            D3D_FEATURE_LEVEL_10_0,
-        };
-        UINT flags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
-#if defined(_DEBUG)
-        flags |= D3D11_CREATE_DEVICE_DEBUG;
-#endif
-        D3D_FEATURE_LEVEL selected{};
-        HRESULT result = D3D11CreateDeviceAndSwapChain(
-            nullptr,
-            D3D_DRIVER_TYPE_HARDWARE,
-            nullptr,
-            flags,
-            levels.data(),
-            static_cast<UINT>(levels.size()),
-            D3D11_SDK_VERSION,
-            &swap_description,
-            &swap_chain_,
-            &device_,
-            &selected,
-            &context_
-        );
-#if defined(_DEBUG)
-        if (result == DXGI_ERROR_SDK_COMPONENT_MISSING) {
-            flags &= ~D3D11_CREATE_DEVICE_DEBUG;
-            result = D3D11CreateDeviceAndSwapChain(
-                nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, flags,
-                levels.data(), static_cast<UINT>(levels.size()), D3D11_SDK_VERSION,
-                &swap_description, &swap_chain_, &device_, &selected, &context_);
-        }
-#endif
-        if (FAILED(result)) {
-            last_error_ = L"Could not create a Direct3D 11 device: " + HresultMessage(result);
-            return false;
-        }
-        if (!CreateRenderTargets() || !CreatePipeline()) return false;
-        previous_frame_ = std::chrono::steady_clock::now();
-        return true;
+        D3D12_DESCRIPTOR_HEAP_DESC rtv_description{};
+        rtv_description.NumDescriptors = kFrameCount;
+        rtv_description.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+        if (!Check(device_->CreateDescriptorHeap(&rtv_description, IID_PPV_ARGS(&rtv_heap_)), L"Create RTV heap")) return false;
+        rtv_stride_ = device_->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+        D3D12_DESCRIPTOR_HEAP_DESC dsv_description{};
+        dsv_description.NumDescriptors = 1;
+        dsv_description.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
+        if (!Check(device_->CreateDescriptorHeap(&dsv_description, IID_PPV_ARGS(&dsv_heap_)), L"Create DSV heap")) return false;
+
+        if (!Check(device_->CreateCommandAllocator(
+                D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&allocator_)), L"CreateCommandAllocator") ||
+            !Check(device_->CreateCommandList(
+                0, D3D12_COMMAND_LIST_TYPE_DIRECT, allocator_.Get(), nullptr,
+                IID_PPV_ARGS(&command_list_)), L"CreateCommandList")) return false;
+        command_list_->Close();
+
+        if (!CreateRenderTargets() || !CreateDepthBuffer() || !CreatePipeline() ||
+            !CreateGeometry() || !CreateConstantBuffers()) return false;
+        if (!Check(device_->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence_)), L"CreateFence")) return false;
+        fence_event_ = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+        return fence_event_ != nullptr || Fail(L"Could not create the GPU fence event");
     }
 
     bool CreateRenderTargets() {
-        ComPtr<ID3D11Texture2D> back_buffer;
-        HRESULT result = swap_chain_->GetBuffer(0, IID_PPV_ARGS(&back_buffer));
-        if (SUCCEEDED(result)) result = device_->CreateRenderTargetView(back_buffer.Get(), nullptr, &render_target_);
-        if (FAILED(result)) {
-            last_error_ = L"Could not create the back-buffer view: " + HresultMessage(result);
-            return false;
+        D3D12_CPU_DESCRIPTOR_HANDLE handle = rtv_heap_->GetCPUDescriptorHandleForHeapStart();
+        for (UINT index = 0; index < kFrameCount; ++index) {
+            if (!Check(swap_chain_->GetBuffer(index, IID_PPV_ARGS(&render_targets_[index])), L"Get swap-chain buffer")) return false;
+            device_->CreateRenderTargetView(render_targets_[index].Get(), nullptr, handle);
+            handle.ptr += rtv_stride_;
         }
-        D3D11_TEXTURE2D_DESC back_description{};
-        back_buffer->GetDesc(&back_description);
-        D3D11_TEXTURE2D_DESC depth_description{};
-        depth_description.Width = back_description.Width;
-        depth_description.Height = back_description.Height;
-        depth_description.MipLevels = 1;
-        depth_description.ArraySize = 1;
-        depth_description.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
-        depth_description.SampleDesc.Count = 1;
-        depth_description.BindFlags = D3D11_BIND_DEPTH_STENCIL;
-        ComPtr<ID3D11Texture2D> depth;
-        result = device_->CreateTexture2D(&depth_description, nullptr, &depth);
-        if (SUCCEEDED(result)) result = device_->CreateDepthStencilView(depth.Get(), nullptr, &depth_view_);
-        if (FAILED(result)) {
-            last_error_ = L"Could not create the depth buffer: " + HresultMessage(result);
-            return false;
-        }
-        viewport_width_ = back_description.Width;
-        viewport_height_ = back_description.Height;
         return true;
     }
 
-    bool CompileShader(const char* entry, const char* target, ComPtr<ID3DBlob>& bytecode) {
+    bool CreateDepthBuffer() {
+        D3D12_RESOURCE_DESC description{};
+        description.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+        description.Width = width_;
+        description.Height = height_;
+        description.DepthOrArraySize = 1;
+        description.MipLevels = 1;
+        description.Format = DXGI_FORMAT_D32_FLOAT;
+        description.SampleDesc.Count = 1;
+        description.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+        description.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
+        D3D12_CLEAR_VALUE clear{};
+        clear.Format = DXGI_FORMAT_D32_FLOAT;
+        clear.DepthStencil.Depth = 1.0f;
+        const auto heap = HeapProperties(D3D12_HEAP_TYPE_DEFAULT);
+        if (!Check(device_->CreateCommittedResource(
+                &heap, D3D12_HEAP_FLAG_NONE, &description, D3D12_RESOURCE_STATE_DEPTH_WRITE,
+                &clear, IID_PPV_ARGS(&depth_)), L"Create depth buffer")) return false;
+        D3D12_DEPTH_STENCIL_VIEW_DESC view{};
+        view.Format = DXGI_FORMAT_D32_FLOAT;
+        view.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
+        device_->CreateDepthStencilView(depth_.Get(), &view, dsv_heap_->GetCPUDescriptorHandleForHeapStart());
+        return true;
+    }
+
+    bool CompileShader(const wchar_t* file, const char* entry, const char* target, ComPtr<ID3DBlob>& blob) {
         ComPtr<ID3DBlob> errors;
-        const HRESULT result = D3DCompile(
-            kShaderSource,
-            sizeof(kShaderSource) - 1,
-            "native_cube.hlsl",
-            nullptr,
-            nullptr,
-            entry,
-            target,
-            D3DCOMPILE_ENABLE_STRICTNESS | D3DCOMPILE_OPTIMIZATION_LEVEL3,
-            0,
-            &bytecode,
-            &errors
-        );
+        const UINT flags = D3DCOMPILE_ENABLE_STRICTNESS |
+#if defined(_DEBUG)
+            D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
+#else
+            D3DCOMPILE_OPTIMIZATION_LEVEL3;
+#endif
+        const HRESULT result = D3DCompileFromFile(
+            file, nullptr, D3D_COMPILE_STANDARD_FILE_INCLUDE, entry, target,
+            flags, 0, &blob, &errors);
         if (FAILED(result)) {
-            const char* text = errors ? static_cast<const char*>(errors->GetBufferPointer()) : "Unknown shader error";
-            std::string narrow(text, errors ? errors->GetBufferSize() : std::strlen(text));
-            last_error_.assign(narrow.begin(), narrow.end());
-            return false;
+            std::wstring message = HrMessage(L"D3DCompileFromFile", result);
+            if (errors) {
+                const std::string text(static_cast<const char*>(errors->GetBufferPointer()), errors->GetBufferSize());
+                message += L"\n" + std::wstring(text.begin(), text.end());
+            }
+            return Fail(message);
         }
         return true;
     }
 
     bool CreatePipeline() {
-        ComPtr<ID3DBlob> vertex_bytecode;
-        ComPtr<ID3DBlob> pixel_bytecode;
-        if (!CompileShader("VSMain", "vs_4_0", vertex_bytecode) ||
-            !CompileShader("PSMain", "ps_4_0", pixel_bytecode)) return false;
-        HRESULT result = device_->CreateVertexShader(
-            vertex_bytecode->GetBufferPointer(), vertex_bytecode->GetBufferSize(), nullptr, &vertex_shader_);
-        if (SUCCEEDED(result)) result = device_->CreatePixelShader(
-            pixel_bytecode->GetBufferPointer(), pixel_bytecode->GetBufferSize(), nullptr, &pixel_shader_);
-        const std::array<D3D11_INPUT_ELEMENT_DESC, 3> layout = {{
-            {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, offsetof(Vertex, position), D3D11_INPUT_PER_VERTEX_DATA, 0},
-            {"NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, offsetof(Vertex, normal), D3D11_INPUT_PER_VERTEX_DATA, 0},
-            {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, offsetof(Vertex, uv), D3D11_INPUT_PER_VERTEX_DATA, 0},
+        const auto shader_path = ModuleDirectory() / L"texture_shader.hlsl";
+        ComPtr<ID3DBlob> vertex_shader;
+        ComPtr<ID3DBlob> pixel_shader;
+        if (!CompileShader(shader_path.c_str(), "VSMain", "vs_5_1", vertex_shader) ||
+            !CompileShader(shader_path.c_str(), "PSMain", "ps_5_1", pixel_shader)) return false;
+
+        std::array<D3D12_ROOT_PARAMETER, 3> parameters{};
+        parameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
+        parameters[0].Descriptor.ShaderRegister = 0;
+        parameters[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+        parameters[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
+        parameters[1].Descriptor.ShaderRegister = 1;
+        parameters[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+        parameters[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_SRV;
+        parameters[2].Descriptor.ShaderRegister = 0;
+        parameters[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+        D3D12_ROOT_SIGNATURE_DESC signature_description{};
+        signature_description.NumParameters = static_cast<UINT>(parameters.size());
+        signature_description.pParameters = parameters.data();
+        signature_description.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
+        ComPtr<ID3DBlob> serialized;
+        ComPtr<ID3DBlob> errors;
+        if (!Check(D3D12SerializeRootSignature(
+                &signature_description, D3D_ROOT_SIGNATURE_VERSION_1, &serialized, &errors),
+                L"D3D12SerializeRootSignature") ||
+            !Check(device_->CreateRootSignature(
+                0, serialized->GetBufferPointer(), serialized->GetBufferSize(),
+                IID_PPV_ARGS(&root_signature_)), L"CreateRootSignature")) return false;
+
+        const std::array<D3D12_INPUT_ELEMENT_DESC, 3> input = {{
+            {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, offsetof(Vertex, position), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+            {"NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, offsetof(Vertex, normal), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+            {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, offsetof(Vertex, uv), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
         }};
-        if (SUCCEEDED(result)) result = device_->CreateInputLayout(
-            layout.data(), static_cast<UINT>(layout.size()),
-            vertex_bytecode->GetBufferPointer(), vertex_bytecode->GetBufferSize(), &input_layout_);
-        if (FAILED(result)) {
-            last_error_ = L"Could not create the shader pipeline: " + HresultMessage(result);
-            return false;
-        }
-
-        const std::array<Vertex, 24> vertices = {{
-            {{-1,-1,-1},{0,0,-1},{0,1}}, {{-1, 1,-1},{0,0,-1},{0,0}},
-            {{ 1, 1,-1},{0,0,-1},{1,0}}, {{ 1,-1,-1},{0,0,-1},{1,1}},
-            {{ 1,-1, 1},{0,0, 1},{0,1}}, {{ 1, 1, 1},{0,0, 1},{0,0}},
-            {{-1, 1, 1},{0,0, 1},{1,0}}, {{-1,-1, 1},{0,0, 1},{1,1}},
-            {{-1,-1, 1},{-1,0,0},{0,1}}, {{-1, 1, 1},{-1,0,0},{0,0}},
-            {{-1, 1,-1},{-1,0,0},{1,0}}, {{-1,-1,-1},{-1,0,0},{1,1}},
-            {{ 1,-1,-1},{ 1,0,0},{0,1}}, {{ 1, 1,-1},{ 1,0,0},{0,0}},
-            {{ 1, 1, 1},{ 1,0,0},{1,0}}, {{ 1,-1, 1},{ 1,0,0},{1,1}},
-            {{-1, 1,-1},{0, 1,0},{0,1}}, {{-1, 1, 1},{0, 1,0},{0,0}},
-            {{ 1, 1, 1},{0, 1,0},{1,0}}, {{ 1, 1,-1},{0, 1,0},{1,1}},
-            {{-1,-1, 1},{0,-1,0},{0,1}}, {{-1,-1,-1},{0,-1,0},{0,0}},
-            {{ 1,-1,-1},{0,-1,0},{1,0}}, {{ 1,-1, 1},{0,-1,0},{1,1}},
-        }};
-        constexpr std::array<std::uint16_t, 36> indices = {{
-            0,1,2, 0,2,3, 4,5,6, 4,6,7, 8,9,10, 8,10,11,
-            12,13,14, 12,14,15, 16,17,18, 16,18,19, 20,21,22, 20,22,23,
-        }};
-        D3D11_BUFFER_DESC vertex_description{};
-        vertex_description.ByteWidth = sizeof(vertices);
-        vertex_description.Usage = D3D11_USAGE_IMMUTABLE;
-        vertex_description.BindFlags = D3D11_BIND_VERTEX_BUFFER;
-        D3D11_SUBRESOURCE_DATA vertex_data{vertices.data(), 0, 0};
-        result = device_->CreateBuffer(&vertex_description, &vertex_data, &vertex_buffer_);
-        D3D11_BUFFER_DESC index_description{};
-        index_description.ByteWidth = sizeof(indices);
-        index_description.Usage = D3D11_USAGE_IMMUTABLE;
-        index_description.BindFlags = D3D11_BIND_INDEX_BUFFER;
-        D3D11_SUBRESOURCE_DATA index_data{indices.data(), 0, 0};
-        if (SUCCEEDED(result)) result = device_->CreateBuffer(&index_description, &index_data, &index_buffer_);
-        D3D11_BUFFER_DESC constant_description{};
-        constant_description.ByteWidth = sizeof(SceneConstants);
-        constant_description.Usage = D3D11_USAGE_DEFAULT;
-        constant_description.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
-        if (SUCCEEDED(result)) result = device_->CreateBuffer(&constant_description, nullptr, &constant_buffer_);
-
-        D3D11_SAMPLER_DESC sampler_description{};
-        sampler_description.Filter = D3D11_FILTER_ANISOTROPIC;
-        sampler_description.AddressU = D3D11_TEXTURE_ADDRESS_WRAP;
-        sampler_description.AddressV = D3D11_TEXTURE_ADDRESS_WRAP;
-        sampler_description.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;
-        sampler_description.MaxAnisotropy = 8;
-        sampler_description.MaxLOD = D3D11_FLOAT32_MAX;
-        if (SUCCEEDED(result)) result = device_->CreateSamplerState(&sampler_description, &sampler_);
-        D3D11_RASTERIZER_DESC rasterizer_description{};
-        rasterizer_description.FillMode = D3D11_FILL_SOLID;
-        rasterizer_description.CullMode = D3D11_CULL_NONE;
-        rasterizer_description.DepthClipEnable = TRUE;
-        if (SUCCEEDED(result)) result = device_->CreateRasterizerState(&rasterizer_description, &rasterizer_);
-        if (FAILED(result)) {
-            last_error_ = L"Could not create cube resources: " + HresultMessage(result);
-            return false;
-        }
-        return true;
-    }
-
-    void ResizeSwapChain(UINT width, UINT height) {
-        if (width == 0 || height == 0) return;
-        context_->OMSetRenderTargets(0, nullptr, nullptr);
-        render_target_.Reset();
-        depth_view_.Reset();
-        const HRESULT result = swap_chain_->ResizeBuffers(0, width, height, DXGI_FORMAT_UNKNOWN, 0);
-        if (FAILED(result) || !CreateRenderTargets()) {
-            SetStatus(L"Resize failed: " + HresultMessage(result));
-        }
-    }
-
-    bool UploadTexture(const texture_demo::TextureImage& image, std::wstring& error) {
-        if (image.mips.empty()) {
-            error = L"Decoded texture has no mip levels";
-            return false;
-        }
-        D3D11_TEXTURE2D_DESC description{};
-        description.Width = image.mips[0].width;
-        description.Height = image.mips[0].height;
-        description.ArraySize = 1;
-        description.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+        D3D12_GRAPHICS_PIPELINE_STATE_DESC description{};
+        description.pRootSignature = root_signature_.Get();
+        description.VS = {vertex_shader->GetBufferPointer(), vertex_shader->GetBufferSize()};
+        description.PS = {pixel_shader->GetBufferPointer(), pixel_shader->GetBufferSize()};
+        description.InputLayout = {input.data(), static_cast<UINT>(input.size())};
+        description.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+        description.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+        description.NumRenderTargets = 1;
+        description.DSVFormat = DXGI_FORMAT_D32_FLOAT;
         description.SampleDesc.Count = 1;
-        description.Usage = D3D11_USAGE_DEFAULT;
-        description.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-        const bool stored_mips = image.mips.size() > 1;
-        description.MipLevels = stored_mips ? static_cast<UINT>(image.mips.size()) : 0;
-        if (!stored_mips) {
-            description.BindFlags |= D3D11_BIND_RENDER_TARGET;
-            description.MiscFlags = D3D11_RESOURCE_MISC_GENERATE_MIPS;
-        }
+        description.SampleMask = UINT_MAX;
+        description.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
+        description.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
+        description.RasterizerState.DepthClipEnable = TRUE;
+        description.BlendState.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+        description.DepthStencilState.DepthEnable = TRUE;
+        description.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
+        description.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
+        description.DepthStencilState.StencilEnable = FALSE;
+        return Check(device_->CreateGraphicsPipelineState(&description, IID_PPV_ARGS(&pipeline_)), L"CreateGraphicsPipelineState");
+    }
 
-        std::vector<D3D11_SUBRESOURCE_DATA> initial_data;
-        if (stored_mips) {
-            initial_data.reserve(image.mips.size());
-            for (const auto& mip : image.mips) {
-                initial_data.push_back({mip.rgba.data(), mip.width * 4u, 0});
-            }
-        }
-        ComPtr<ID3D11Texture2D> texture;
-        HRESULT result = device_->CreateTexture2D(
-            &description,
-            stored_mips ? initial_data.data() : nullptr,
-            &texture
-        );
-        if (FAILED(result)) {
-            error = L"Direct3D could not allocate the texture: " + HresultMessage(result);
-            return false;
-        }
-        D3D11_SHADER_RESOURCE_VIEW_DESC view_description{};
-        view_description.Format = description.Format;
-        view_description.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-        view_description.Texture2D.MostDetailedMip = 0;
-        view_description.Texture2D.MipLevels = stored_mips ? description.MipLevels : UINT(-1);
-        ComPtr<ID3D11ShaderResourceView> view;
-        result = device_->CreateShaderResourceView(texture.Get(), &view_description, &view);
-        if (FAILED(result)) {
-            error = L"Direct3D could not create the texture view: " + HresultMessage(result);
-            return false;
-        }
-        if (!stored_mips) {
-            context_->UpdateSubresource(texture.Get(), 0, nullptr, image.mips[0].rgba.data(),
-                image.mips[0].width * 4u, 0);
-            context_->GenerateMips(view.Get());
-        }
-        texture_view_ = std::move(view);
+    bool CreateUploadBuffer(UINT64 bytes, ComPtr<ID3D12Resource>& resource, const wchar_t* operation) {
+        const auto heap = HeapProperties(D3D12_HEAP_TYPE_UPLOAD);
+        const auto description = BufferDescription(bytes);
+        return Check(device_->CreateCommittedResource(
+            &heap, D3D12_HEAP_FLAG_NONE, &description, D3D12_RESOURCE_STATE_GENERIC_READ,
+            nullptr, IID_PPV_ARGS(&resource)), operation);
+    }
+
+    bool CreateGeometry() {
+        if (!CreateUploadBuffer(sizeof(kVertices), vertex_buffer_, L"Create vertex buffer") ||
+            !CreateUploadBuffer(sizeof(kIndices), index_buffer_, L"Create index buffer")) return false;
+        void* mapped = nullptr;
+        vertex_buffer_->Map(0, nullptr, &mapped);
+        std::memcpy(mapped, kVertices.data(), sizeof(kVertices));
+        vertex_buffer_->Unmap(0, nullptr);
+        index_buffer_->Map(0, nullptr, &mapped);
+        std::memcpy(mapped, kIndices.data(), sizeof(kIndices));
+        index_buffer_->Unmap(0, nullptr);
+        vertex_view_ = {vertex_buffer_->GetGPUVirtualAddress(), sizeof(kVertices), sizeof(Vertex)};
+        index_view_ = {index_buffer_->GetGPUVirtualAddress(), sizeof(kIndices), DXGI_FORMAT_R16_UINT};
         return true;
     }
 
-    void LoadInitialTexture() {
-        LoadSample(1);
-        if (!texture_view_) {
-            auto fallback = MakeCheckerboard();
-            std::wstring error;
-            UploadTexture(fallback, error);
-            SetStatus(L"Bundled samples were not found; using a procedural texture");
+    bool CreateConstantBuffers() {
+        if (!CreateUploadBuffer(sizeof(SceneConstants), scene_constants_, L"Create scene constants") ||
+            !CreateUploadBuffer(sizeof(TextureConstants), texture_constants_, L"Create texture constants")) return false;
+        if (!Check(scene_constants_->Map(0, nullptr, reinterpret_cast<void**>(&scene_mapped_)), L"Map scene constants") ||
+            !Check(texture_constants_->Map(0, nullptr, reinterpret_cast<void**>(&texture_mapped_)), L"Map texture constants")) return false;
+        return true;
+    }
+
+    bool UploadTexture(const texture_demo::ShaderTexture& texture) {
+        if (texture.data.empty() || texture.metadata.size() > texture_mapped_->words.size()) {
+            return Fail(L"Texture produced an invalid shader payload");
         }
+        WaitForGpu();
+        ComPtr<ID3D12Resource> resource;
+        if (!CreateUploadBuffer(texture.data.size(), resource, L"Create shader texture buffer")) return false;
+        void* mapped = nullptr;
+        if (!Check(resource->Map(0, nullptr, &mapped), L"Map shader texture buffer")) return false;
+        std::memcpy(mapped, texture.data.data(), texture.data.size());
+        resource->Unmap(0, nullptr);
+        texture_buffer_ = std::move(resource);
+        texture_mapped_->words.fill(0);
+        std::copy(texture.metadata.begin(), texture.metadata.end(), texture_mapped_->words.begin());
+        active_texture_ = texture;
+        const double source_mb = texture.source_bytes / 1048576.0;
+        const double gpu_mb = texture.data.size() / 1048576.0;
+        wchar_t status[512]{};
+        swprintf_s(status, L"%s  •  %u × %u  •  %u mip(s)  •  source %.2f MiB  •  GPU %.2f MiB  •  shader texel decode",
+            texture.format.c_str(), texture.width, texture.height, texture.mip_count, source_mb, gpu_mb);
+        SetWindowTextW(status_, status);
+        return true;
     }
 
-    void LoadSample(std::size_t index) {
-        const auto path = ExecutableDirectory() / L"assets" / kSamples[index].filename;
-        LoadTexture(path.wstring());
-    }
-
-    void LoadTexture(const std::wstring& path) {
-        SetStatus(L"Decoding " + std::filesystem::path(path).filename().wstring() + L"…");
-        texture_demo::TextureImage image;
+    bool LoadTexture(const std::filesystem::path& path) {
+        texture_demo::ShaderTexture texture;
         std::wstring error;
-        if (!texture_demo::LoadTextureFile(path, image, error)) {
-            SetStatus(L"Load failed");
-            MessageBoxW(window_, error.c_str(), L"Texture load failed", MB_ICONERROR);
-            return;
+        if (!texture_demo::LoadShaderTextureFile(path.wstring(), texture, error)) {
+            return Fail(L"Could not load texture:\n" + path.wstring() + L"\n\n" + error);
         }
-        if (!UploadTexture(image, error)) {
-            SetStatus(L"GPU upload failed");
-            MessageBoxW(window_, error.c_str(), L"Texture upload failed", MB_ICONERROR);
-            return;
-        }
-        const auto& base = image.mips[0];
-        std::wstring status = image.format + L"  •  " + std::to_wstring(base.width) + L" × " +
-            std::to_wstring(base.height) + L"  •  " + std::to_wstring(image.mips.size()) + L" mip";
-        if (image.mips.size() != 1) status += L"s";
-        status += L"  •  " + std::filesystem::path(path).filename().wstring();
-        SetStatus(status);
+        return UploadTexture(texture);
     }
 
-    void ShowUploadDialog() {
-        std::wstring filename(32768, L'\0');
-        constexpr wchar_t filter[] =
-            L"All supported textures\0*.bpal;*.bplm;*.dctbs2;*.bpdh;*.png;*.jpg;*.jpeg;*.bmp;*.tif;*.tiff\0"
-            L"Project textures\0*.bpal;*.bplm;*.dctbs2;*.bpdh\0"
-            L"Standard images (WIC)\0*.png;*.jpg;*.jpeg;*.bmp;*.tif;*.tiff\0"
-            L"All files\0*.*\0\0";
+    void LoadPreset(int index) {
+        const std::array<const wchar_t*, 4> files = {
+            L"stone-texture-wic-2.38bpp.bpal",
+            L"stone-texture-wic.bplm",
+            L"stone-texture-wic-1.5bpp.dctbs2",
+            L"landscape-alaska.bpdh",
+        };
+        if (index < 0 || index >= static_cast<int>(files.size())) return;
+        LoadTexture(ModuleDirectory() / L"assets" / files[index]);
+    }
+
+    void OpenTexture() {
+        std::array<wchar_t, 32768> path{};
         OPENFILENAMEW dialog{};
         dialog.lStructSize = sizeof(dialog);
         dialog.hwndOwner = window_;
-        dialog.lpstrFilter = filter;
-        dialog.lpstrFile = filename.data();
-        dialog.nMaxFile = static_cast<DWORD>(filename.size());
-        dialog.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_HIDEREADONLY;
-        dialog.lpstrTitle = L"Upload a texture to the rotating cube";
-        if (GetOpenFileNameW(&dialog)) LoadTexture(filename.c_str());
+        dialog.lpstrFilter = L"Project textures (*.bpal;*.bplm;*.dctbs2;*.bpdh)\0*.bpal;*.bplm;*.dctbs2;*.bpdh\0All files (*.*)\0*.*\0";
+        dialog.lpstrFile = path.data();
+        dialog.nMaxFile = static_cast<DWORD>(path.size());
+        dialog.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
+        if (GetOpenFileNameW(&dialog)) LoadTexture(path.data());
     }
 
-    void SetStatus(const std::wstring& text) const {
-        SetWindowTextW(status_label_, text.c_str());
+    void TogglePause() {
+        const auto now = std::chrono::steady_clock::now();
+        if (paused_) {
+            started_ = now - std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+                std::chrono::duration<float>(paused_seconds_));
+            paused_ = false;
+            SetWindowTextW(pause_, L"Pause");
+        } else {
+            paused_seconds_ = std::chrono::duration<float>(now - started_).count();
+            paused_ = true;
+            SetWindowTextW(pause_, L"Resume");
+        }
+    }
+
+    void UpdateConstants() {
+        const float seconds = paused_ ? paused_seconds_ :
+            std::chrono::duration<float>(std::chrono::steady_clock::now() - started_).count();
+        const XMMATRIX model = XMMatrixRotationY(seconds * 0.62f) * XMMatrixRotationX(seconds * 0.31f);
+        const XMVECTOR eye = XMVectorSet(0.0f, 0.4f, -4.4f, 1.0f);
+        const XMMATRIX view = XMMatrixLookAtLH(eye, XMVectorZero(), XMVectorSet(0, 1, 0, 0));
+        const XMMATRIX projection = XMMatrixPerspectiveFovLH(
+            XMConvertToRadians(48.0f), static_cast<float>(width_) / height_, 0.1f, 100.0f);
+        XMStoreFloat4x4(&scene_mapped_->model, model);
+        XMStoreFloat4x4(&scene_mapped_->model_view_projection, model * view * projection);
+        scene_mapped_->light_position = {2.7f, 3.4f, -2.5f, 1.0f};
+        scene_mapped_->camera_position = {0.0f, 0.4f, -4.4f, 1.0f};
+        scene_mapped_->light_color = {1.20f, 1.12f, 1.02f, 1.0f};
+        scene_mapped_->ambient_color = {0.42f, 0.45f, 0.51f, 1.0f};
     }
 
     void Render() {
-        if (!render_target_ || viewport_width_ == 0 || viewport_height_ == 0) return;
-        const auto now = std::chrono::steady_clock::now();
-        const float delta = std::chrono::duration<float>(now - previous_frame_).count();
-        previous_frame_ = now;
-        if (!paused_) angle_ += std::min(delta, 0.1f) * 0.72f;
-
-        const float clear[4] = {0.055f, 0.080f, 0.120f, 1.0f};
-        context_->ClearRenderTargetView(render_target_.Get(), clear);
-        context_->ClearDepthStencilView(depth_view_.Get(), D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 1.0f, 0);
-        ID3D11RenderTargetView* target = render_target_.Get();
-        context_->OMSetRenderTargets(1, &target, depth_view_.Get());
-        D3D11_VIEWPORT viewport{0, 0, static_cast<float>(viewport_width_),
-            static_cast<float>(viewport_height_), 0, 1};
-        context_->RSSetViewports(1, &viewport);
-        context_->RSSetState(rasterizer_.Get());
-
-        const XMMATRIX world = DirectX::XMMatrixRotationX(angle_ * 0.63f) *
-            DirectX::XMMatrixRotationY(angle_);
-        const XMMATRIX view = DirectX::XMMatrixLookAtLH(
-            DirectX::XMVectorSet(0, 0.15f, -4.2f, 1),
-            DirectX::XMVectorZero(),
-            DirectX::XMVectorSet(0, 1, 0, 0));
-        const float aspect = static_cast<float>(viewport_width_) / viewport_height_;
-        const XMMATRIX projection = DirectX::XMMatrixPerspectiveFovLH(
-            DirectX::XMConvertToRadians(50.0f), aspect, 0.1f, 100.0f);
-        SceneConstants constants{};
-        DirectX::XMStoreFloat4x4(&constants.world, world);
-        DirectX::XMStoreFloat4x4(&constants.world_view_projection, world * view * projection);
-        constants.key_light_direction = {-0.45f, -0.65f, 0.60f, 0};
-        constants.fill_light_direction = {0.50f, 0.10f, 0.86f, 0};
-        context_->UpdateSubresource(constant_buffer_.Get(), 0, nullptr, &constants, 0, 0);
-
-        constexpr UINT stride = sizeof(Vertex);
-        constexpr UINT offset = 0;
-        ID3D11Buffer* vertex = vertex_buffer_.Get();
-        context_->IASetInputLayout(input_layout_.Get());
-        context_->IASetVertexBuffers(0, 1, &vertex, &stride, &offset);
-        context_->IASetIndexBuffer(index_buffer_.Get(), DXGI_FORMAT_R16_UINT, 0);
-        context_->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-        context_->VSSetShader(vertex_shader_.Get(), nullptr, 0);
-        ID3D11Buffer* constants_buffer = constant_buffer_.Get();
-        context_->VSSetConstantBuffers(0, 1, &constants_buffer);
-        context_->PSSetShader(pixel_shader_.Get(), nullptr, 0);
-        context_->PSSetConstantBuffers(0, 1, &constants_buffer);
-        ID3D11ShaderResourceView* texture = texture_view_.Get();
-        context_->PSSetShaderResources(0, 1, &texture);
-        ID3D11SamplerState* sampler = sampler_.Get();
-        context_->PSSetSamplers(0, 1, &sampler);
-        context_->DrawIndexed(36, 0, 0);
-        swap_chain_->Present(1, 0);
+        if (!texture_buffer_) return;
+        UpdateConstants();
+        if (FAILED(allocator_->Reset()) || FAILED(command_list_->Reset(allocator_.Get(), pipeline_.Get()))) return;
+        auto to_render = Transition(render_targets_[frame_index_].Get(),
+            D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
+        command_list_->ResourceBarrier(1, &to_render);
+        D3D12_CPU_DESCRIPTOR_HANDLE rtv = rtv_heap_->GetCPUDescriptorHandleForHeapStart();
+        rtv.ptr += static_cast<SIZE_T>(frame_index_) * rtv_stride_;
+        const D3D12_CPU_DESCRIPTOR_HANDLE dsv = dsv_heap_->GetCPUDescriptorHandleForHeapStart();
+        const float clear[] = {0.018f, 0.026f, 0.039f, 1.0f};
+        command_list_->ClearRenderTargetView(rtv, clear, 0, nullptr);
+        command_list_->ClearDepthStencilView(dsv, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+        D3D12_VIEWPORT viewport{0, 0, static_cast<float>(width_), static_cast<float>(height_), 0, 1};
+        D3D12_RECT scissor{0, 0, static_cast<LONG>(width_), static_cast<LONG>(height_)};
+        command_list_->RSSetViewports(1, &viewport);
+        command_list_->RSSetScissorRects(1, &scissor);
+        command_list_->OMSetRenderTargets(1, &rtv, FALSE, &dsv);
+        command_list_->SetGraphicsRootSignature(root_signature_.Get());
+        command_list_->SetGraphicsRootConstantBufferView(0, scene_constants_->GetGPUVirtualAddress());
+        command_list_->SetGraphicsRootConstantBufferView(1, texture_constants_->GetGPUVirtualAddress());
+        command_list_->SetGraphicsRootShaderResourceView(2, texture_buffer_->GetGPUVirtualAddress());
+        command_list_->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        command_list_->IASetVertexBuffers(0, 1, &vertex_view_);
+        command_list_->IASetIndexBuffer(&index_view_);
+        command_list_->DrawIndexedInstanced(static_cast<UINT>(kIndices.size()), 1, 0, 0, 0);
+        auto to_present = Transition(render_targets_[frame_index_].Get(),
+            D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
+        command_list_->ResourceBarrier(1, &to_present);
+        if (FAILED(command_list_->Close())) return;
+        ID3D12CommandList* lists[] = {command_list_.Get()};
+        queue_->ExecuteCommandLists(1, lists);
+        if (SUCCEEDED(swap_chain_->Present(1, 0))) {
+            WaitForGpu();
+            frame_index_ = swap_chain_->GetCurrentBackBufferIndex();
+        }
     }
 
-    HINSTANCE instance_ = nullptr;
-    HWND window_ = nullptr;
-    HWND upload_button_ = nullptr;
-    HWND pause_button_ = nullptr;
-    HWND sample_combo_ = nullptr;
-    HWND status_label_ = nullptr;
-    HBRUSH panel_brush_ = nullptr;
-    bool paused_ = false;
-    float angle_ = 0.0f;
-    UINT viewport_width_ = 0;
-    UINT viewport_height_ = 0;
-    std::wstring last_error_;
-    std::chrono::steady_clock::time_point previous_frame_{};
+    void WaitForGpu() {
+        if (!queue_ || !fence_ || !fence_event_) return;
+        const UINT64 value = ++fence_value_;
+        if (FAILED(queue_->Signal(fence_.Get(), value))) return;
+        if (fence_->GetCompletedValue() < value) {
+            fence_->SetEventOnCompletion(value, fence_event_);
+            WaitForSingleObject(fence_event_, INFINITE);
+        }
+    }
 
-    ComPtr<ID3D11Device> device_;
-    ComPtr<ID3D11DeviceContext> context_;
-    ComPtr<IDXGISwapChain> swap_chain_;
-    ComPtr<ID3D11RenderTargetView> render_target_;
-    ComPtr<ID3D11DepthStencilView> depth_view_;
-    ComPtr<ID3D11VertexShader> vertex_shader_;
-    ComPtr<ID3D11PixelShader> pixel_shader_;
-    ComPtr<ID3D11InputLayout> input_layout_;
-    ComPtr<ID3D11Buffer> vertex_buffer_;
-    ComPtr<ID3D11Buffer> index_buffer_;
-    ComPtr<ID3D11Buffer> constant_buffer_;
-    ComPtr<ID3D11SamplerState> sampler_;
-    ComPtr<ID3D11RasterizerState> rasterizer_;
-    ComPtr<ID3D11ShaderResourceView> texture_view_;
+    void Resize(UINT width, UINT height) {
+        if (width == width_ && height == height_) return;
+        WaitForGpu();
+        for (auto& target : render_targets_) target.Reset();
+        depth_.Reset();
+        width_ = width;
+        height_ = height;
+        if (FAILED(swap_chain_->ResizeBuffers(kFrameCount, width_, height_,
+                DXGI_FORMAT_R8G8B8A8_UNORM, 0))) return;
+        frame_index_ = swap_chain_->GetCurrentBackBufferIndex();
+        CreateRenderTargets();
+        CreateDepthBuffer();
+    }
+
+    HWND window_ = nullptr;
+    HWND upload_ = nullptr;
+    HWND pause_ = nullptr;
+    HWND preset_ = nullptr;
+    HWND status_ = nullptr;
+    UINT width_ = 1;
+    UINT height_ = 1;
+    bool minimized_ = false;
+    bool paused_ = false;
+    float paused_seconds_ = 0;
+    std::chrono::steady_clock::time_point started_{};
+
+    ComPtr<IDXGIFactory6> factory_;
+    ComPtr<ID3D12Device> device_;
+    ComPtr<ID3D12CommandQueue> queue_;
+    ComPtr<IDXGISwapChain3> swap_chain_;
+    ComPtr<ID3D12DescriptorHeap> rtv_heap_;
+    ComPtr<ID3D12DescriptorHeap> dsv_heap_;
+    std::array<ComPtr<ID3D12Resource>, kFrameCount> render_targets_;
+    ComPtr<ID3D12Resource> depth_;
+    ComPtr<ID3D12CommandAllocator> allocator_;
+    ComPtr<ID3D12GraphicsCommandList> command_list_;
+    ComPtr<ID3D12RootSignature> root_signature_;
+    ComPtr<ID3D12PipelineState> pipeline_;
+    ComPtr<ID3D12Resource> vertex_buffer_;
+    ComPtr<ID3D12Resource> index_buffer_;
+    ComPtr<ID3D12Resource> scene_constants_;
+    ComPtr<ID3D12Resource> texture_constants_;
+    ComPtr<ID3D12Resource> texture_buffer_;
+    ComPtr<ID3D12Fence> fence_;
+    D3D12_VERTEX_BUFFER_VIEW vertex_view_{};
+    D3D12_INDEX_BUFFER_VIEW index_view_{};
+    SceneConstants* scene_mapped_ = nullptr;
+    TextureConstants* texture_mapped_ = nullptr;
+    HANDLE fence_event_ = nullptr;
+    UINT64 fence_value_ = 0;
+    UINT frame_index_ = 0;
+    UINT rtv_stride_ = 0;
+    texture_demo::ShaderTexture active_texture_;
 };
 
 }  // namespace
 
-int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show_command) {
-    SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
-    const HRESULT com_result = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
-    DemoApplication application(instance);
-    const int result = application.Run(show_command);
-    if (SUCCEEDED(com_result)) CoUninitialize();
+int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
+    const HRESULT com = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    DemoApplication application;
+    g_application = &application;
+    const int result = application.Initialize(instance, show) ? application.Run() : 1;
+    g_application = nullptr;
+    if (SUCCEEDED(com)) CoUninitialize();
     return result;
 }

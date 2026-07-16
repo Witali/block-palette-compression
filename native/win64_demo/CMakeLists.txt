@@ -16,8 +16,12 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 set(REPOSITORY_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../..")
 set(BPAL_ROOT "${REPOSITORY_ROOT}/native/bpal5_simd")
 
+include(CTest)
+
 add_library(texture_codecs STATIC
     src/texture_loader.cpp
+    src/shader_texture.cpp
+    src/shader_texture_bpdh.cpp
     src/bplm_decoder.cpp
     src/dctbs2_decoder.cpp
     src/bpdh_decoder.cpp
@@ -35,13 +39,28 @@ if(MSVC)
     target_compile_options(texture_codecs PRIVATE /W4 /permissive- /utf-8)
 endif()
 
+if(BUILD_TESTING)
+    add_executable(shader_texture_tests tests/shader_texture_tests.cpp)
+    target_link_libraries(shader_texture_tests PRIVATE texture_codecs)
+    target_compile_definitions(shader_texture_tests PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+    if(MSVC)
+        target_compile_options(shader_texture_tests PRIVATE /W4 /permissive- /utf-8)
+    endif()
+    add_test(
+        NAME shader_texture_tests
+        COMMAND shader_texture_tests "${REPOSITORY_ROOT}"
+    )
+endif()
+
 add_executable(block_texture_demo WIN32
     src/main.cpp
+    src/texture_shader.hlsl
     src/app.manifest
 )
+set_source_files_properties(src/texture_shader.hlsl PROPERTIES HEADER_FILE_ONLY TRUE)
 target_link_libraries(block_texture_demo PRIVATE
     texture_codecs
-    d3d11
+    d3d12
     dxgi
     d3dcompiler
     comdlg32
@@ -58,7 +77,6 @@ set(DEMO_ASSETS
     "${REPOSITORY_ROOT}/assets/bpal/stone-texture-wic.bplm"
     "${REPOSITORY_ROOT}/assets/dct/stone-texture-wic-1.5bpp.dctbs2"
     "${REPOSITORY_ROOT}/assets/bpdh/landscape-alaska.bpdh"
-    "${REPOSITORY_ROOT}/assets/stone-texture-small.jpg"
 )
 add_custom_command(TARGET block_texture_demo POST_BUILD
     COMMAND "${CMAKE_COMMAND}" -E make_directory "$<TARGET_FILE_DIR:block_texture_demo>/assets"
@@ -70,8 +88,12 @@ foreach(ASSET IN LISTS DEMO_ASSETS)
             "$<TARGET_FILE_DIR:block_texture_demo>/assets/"
     )
 endforeach()
+add_custom_command(TARGET block_texture_demo POST_BUILD
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/texture_shader.hlsl"
+        "$<TARGET_FILE_DIR:block_texture_demo>/texture_shader.hlsl"
+)
 
-include(CTest)
 if(BUILD_TESTING)
     add_executable(texture_codec_tests tests/codec_tests.cpp)
     target_link_libraries(texture_codec_tests PRIVATE texture_codecs)
