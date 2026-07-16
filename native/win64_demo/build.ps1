@@ -1,6 +1,7 @@
 param(
     [ValidateSet("Debug", "Release")]
     [string]$Configuration = "Release",
+    [string]$Target,
     [switch]$Clean
 )
 
@@ -40,7 +41,7 @@ foreach ($Line in $EnvironmentLines) {
     if ($Separator -gt 0) {
         $Name = $Line.Substring(0, $Separator)
         $Value = $Line.Substring($Separator + 1)
-        if ($Name.Equals("PATH", [StringComparison]::Ordinal)) {
+        if ($Name.Equals("PATH", [StringComparison]::OrdinalIgnoreCase)) {
             $DeveloperPath = $Value
         } elseif (-not $Name.Equals("Path", [StringComparison]::OrdinalIgnoreCase)) {
             Set-Item -Path ("Env:" + $Name) -Value $Value
@@ -57,10 +58,20 @@ $Compiler = (Get-Command cl.exe -ErrorAction Stop).Source
     "-DCMAKE_MAKE_PROGRAM=$BundledNinja" "-DCMAKE_BUILD_TYPE=$Configuration" `
     "-DCMAKE_C_COMPILER=$Compiler" "-DCMAKE_CXX_COMPILER=$Compiler" -DBUILD_TESTING=ON
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-& $CMake --build $BuildDirectory --parallel
+if ($Target) {
+    & $CMake --build $BuildDirectory --parallel --target $Target
+} else {
+    & $CMake --build $BuildDirectory --parallel
+}
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-& $CMake --build $BuildDirectory --target test
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+if (-not $Target) {
+    & $CMake --build $BuildDirectory --target test
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+}
 
 $Executable = Join-Path $BuildDirectory "block_texture_demo.exe"
-Write-Host "Built and tested: $Executable"
+if ($Target) {
+    Write-Host "Built target: $Target"
+} else {
+    Write-Host "Built and tested: $Executable"
+}

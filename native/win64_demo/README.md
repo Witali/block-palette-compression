@@ -1,23 +1,33 @@
-# Native Win64 texture demo
+# Native Win64 DirectX 12 texture demo
 
 `block_texture_demo.exe` is a self-contained 64-bit Windows desktop demo built
-with the Win32 API and Direct3D 11. It renders a continuously rotating textured
-cube and replaces its GPU texture immediately when another file is selected.
+with the Win32 API and DirectX 12. It renders a continuously rotating textured
+cube and replaces its shader-readable texture buffer immediately when another
+file is selected.
 It does not embed a browser, WebView, Node.js, or JavaScript runtime.
+
+Project textures are not expanded to a full RGB or RGBA bitmap. The CPU only
+validates the container and prepares compact palette/index tables. The pixel
+shader receives them through a `ByteAddressBuffer` and reconstructs the texel
+requested by the rasterizer:
+
+- BPAL/BPLM perform palette and block-index lookup per coordinate, including
+  stored BPLM mip selection;
+- DCTBS2 keeps the original fixed-size MCU records and performs bounded IDCT
+  for the requested texel;
+- BPDH stores palette records plus block-local Y/Cb/Cr component samples. RGB
+  conversion is performed only for the requested texel.
 
 ## Texture support
 
 - **BPAL v5** with explicit RGB/scalar palettes, including packed palettes;
 - **BPLM v1**, with the stored mip chain uploaded directly to Direct3D;
-- **DCTBS2 v2** fixed-record modes, including grouped, split-luma, and skip
-  coefficient coding (prototype-library records are rejected with an explicit
-  message);
+- **DCTBS2 v2** 1.5 bpp grouped-front fixed records, decoded directly in HLSL;
 - **BPDH v1** palette, DCT, and mixed coding-unit streams;
-- standard Windows Imaging Component formats such as PNG, JPEG, BMP, and TIFF.
 
-The bundled sample selector exercises BPAL, BPLM, DCTBS2, BPDH, and JPEG. The
+The bundled sample selector exercises BPAL, BPLM, DCTBS2, and BPDH. The
 **Upload...** button opens the native Windows file picker. A file can also be
-dropped on the window. **Pause** or the Space key stops and resumes rotation.
+selected while rendering. **Pause** stops and resumes rotation.
 
 ## Build
 
@@ -36,7 +46,8 @@ codec compatibility test. The resulting application is:
 native/win64_demo/build-x64/block_texture_demo.exe
 ```
 
-Use `-Clean` for a clean rebuild and `-Configuration Debug` for a debug binary.
+Use `-Clean` for a clean rebuild, `-Configuration Debug` for a debug binary,
+or `-Target shader_texture_tests` to build one target.
 
 ## Verification
 
@@ -44,3 +55,7 @@ Use `-Clean` for a clean rebuild and `-Configuration Debug` for a debug binary.
 their dimensions, mip counts, and full-image FNV-1a checksums. The expected
 checksums are generated from the JavaScript reference decoders, so the test
 catches pixel-level compatibility regressions in every custom format path.
+
+`shader_texture_tests` separately verifies that every project format produces
+valid coordinate-decoder metadata and a GPU payload smaller than a full RGBA
+bitmap. The Release executable also has a runtime smoke test during development.
