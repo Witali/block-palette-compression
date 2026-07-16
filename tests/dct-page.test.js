@@ -72,11 +72,13 @@ test("zooms both previews around the pointer with Ctrl and the mouse wheel", () 
 
 test("runs DCT encoding and automatic quality search in a worker", () => {
   assert.match(pageScript, /new Worker\("\.\/src\/dct\/dct-worker\.js/);
-  assert.match(worker, /dct-format\.js\?v=dct-page-11/);
+  assert.match(worker, /dct-format\.js\?v=dct-page-13/);
   assert.match(worker, /findBestDctQuality/);
   assert.match(worker, /encodeDctFile/);
   assert.match(worker, /decodedPixels: decoded\.pixels\.buffer/);
   assert.match(worker, /\[encoded\.buffer, decoded\.pixels\.buffer\]/);
+  assert.match(worker, /onProgress: postProgress/);
+  assert.match(pageScript, /searching \? "dct\.progressSearching" : "dct\.progressEncoding"/);
 });
 
 test("offers separately versioned 3-, 16-, and 32-entry DCT prototype libraries", () => {

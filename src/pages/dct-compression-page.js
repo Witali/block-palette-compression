@@ -406,7 +406,7 @@ function processImage() {
   const source = state.sourceImageData;
   const jpegImport = jpegImportInput.checked && Boolean(state.sourceJpegBytes);
   const autoQuality = !jpegImport && autoQualityInput.checked;
-  const worker = new Worker("./src/dct/dct-worker.js?v=dct-page-11");
+  const worker = new Worker("./src/dct/dct-worker.js?v=dct-page-13");
   const pixels = source.data.slice();
   const jpegBytes = jpegImport ? state.sourceJpegBytes.slice() : null;
 
@@ -552,11 +552,12 @@ function showProgress(autoQuality) {
 function renderProgress(progress) {
   const total = Math.max(1, progress.total || 1);
   const percent = Math.min(100, Math.round((progress.completed || 0) * 100 / total));
+  const searching = progress.stage === "sample" || progress.stage === "refine";
   progressBar.value = percent;
   progressPercent.value = `${percent}%`;
   progressStage.textContent = progress.stage === "full"
     ? t("dct.progressFinalists")
-    : t("dct.progressSearching");
+    : t(searching ? "dct.progressSearching" : "dct.progressEncoding");
   progressDetail.textContent = t("dct.progressQuality", {
     quality: progress.quality,
     completed: progress.completed,

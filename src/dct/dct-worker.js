@@ -1,6 +1,6 @@
 "use strict";
 
-importScripts("../decoders/gpu-jpeg.js", "./dct-format.js?v=dct-page-11");
+importScripts("../decoders/gpu-jpeg.js", "./dct-format.js?v=dct-page-13");
 
 self.addEventListener("message", ({ data }) => {
   if (!data || data.type !== "encode") {
@@ -9,6 +9,9 @@ self.addEventListener("message", ({ data }) => {
 
   try {
     const pixels = new Uint8ClampedArray(data.pixels);
+    const postProgress = (progress) => {
+      self.postMessage({ type: "progress", requestId: data.requestId, ...progress });
+    };
     const options = {
       preset: data.preset,
       quality: data.quality,
@@ -19,6 +22,7 @@ self.addEventListener("message", ({ data }) => {
       libraryFrequencySplit: data.libraryFrequencySplit,
       libraryClusterSamples: data.libraryClusterSamples,
       libraryCandidateCount: data.libraryCandidateCount,
+      onProgress: postProgress,
     };
     let encoded;
     let decoded;
@@ -56,9 +60,7 @@ self.addEventListener("message", ({ data }) => {
           libraryFrequencySplit: data.libraryFrequencySplit,
           libraryClusterSamples: data.libraryClusterSamples,
           libraryCandidateCount: data.libraryCandidateCount,
-          onProgress(progress) {
-            self.postMessage({ type: "progress", requestId: data.requestId, ...progress });
-          },
+          onProgress: postProgress,
         }
       );
 

@@ -352,6 +352,32 @@ test("finds an automatic quality and records the measured search", () => {
   assert.deepEqual(result.decoded.pixels, decodeDctFile(result.encoded).pixels);
 });
 
+test("reports fixed-quality encoding progress with and without a prototype library", () => {
+  const width = 32;
+  const height = 16;
+  const source = makePixels(width, height);
+
+  for (const dctLibrary of [false, true]) {
+    const progress = [];
+    encodeDctFile(source, width, height, {
+      preset: "2",
+      quality: 75,
+      dctLibrary,
+      librarySize: 3,
+      onProgress: (entry) => progress.push(entry),
+    });
+
+    assert.ok(progress.length >= 2);
+    assert.equal(progress[0].stage, "encode");
+    assert.equal(progress[0].completed, 0);
+    assert.equal(progress[0].quality, 75);
+    assert.equal(progress.at(-1).completed, progress.at(-1).total);
+    assert.ok(progress.every((entry, index) =>
+      index === 0 || entry.completed >= progress[index - 1].completed
+    ));
+  }
+});
+
 test("rejects truncated files, invalid modes, and invalid coordinates", () => {
   const source = makePixels(16, 16);
   const encoded = encodeDctFile(source, 16, 16, { preset: "2", quality: 75 });

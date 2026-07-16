@@ -186,6 +186,8 @@
     }
 
     const output = createDctOutput(layout, quality, options, splitLuma8x8, coefficientCoding);
+    const reportProgress = createDctProgressReporter(options, layout.mcuCount, quality);
+    reportProgress(0);
 
     for (let mcuIndex = 0; mcuIndex < layout.mcuCount; mcuIndex += 1) {
       const mcuX = mcuIndex % layout.mcuColumns;
@@ -227,6 +229,7 @@
         coefficientCoding,
         splitLuma8x8
       );
+      reportProgress(mcuIndex + 1);
     }
 
     return output;
@@ -253,7 +256,17 @@
     const libraryCandidateCount = requestedReferenceCoding === "sidecar"
       ? normalizeLibraryCandidateCount(options.libraryCandidateCount) : 0;
     const libraryComponents = normalizeLibraryComponents(options.libraryComponents);
-    const source = collectDctLibrarySource(pixels, width, height, layout, splitLuma8x8);
+    const progressTotal = layout.mcuCount * 2 + 3;
+    const reportProgress = createDctProgressReporter(options, progressTotal, quality);
+    reportProgress(0);
+    const source = collectDctLibrarySource(
+      pixels,
+      width,
+      height,
+      layout,
+      splitLuma8x8,
+      reportProgress
+    );
     const yRecordBytes = splitLuma8x8 ? layout.yBytes / 4 : layout.yBytes;
     const yLibrary = buildDctPrototypeLibrary(
         source.yVectors,
@@ -266,6 +279,7 @@
         coefficientCoding,
         libraryClusterSamples
       );
+    reportProgress(layout.mcuCount + 1);
     const cbLibrary = buildDctPrototypeLibrary(
         source.cbVectors,
         libraryComponents.has("cb") ? requestedLibrarySize : 0,
@@ -277,6 +291,7 @@
         coefficientCoding,
         libraryClusterSamples
       );
+    reportProgress(layout.mcuCount + 2);
     const crLibrary = buildDctPrototypeLibrary(
         source.crVectors,
         libraryComponents.has("cr") ? requestedLibrarySize : 0,
@@ -288,6 +303,7 @@
         coefficientCoding,
         libraryClusterSamples
       );
+    reportProgress(layout.mcuCount + 3);
     const library = {
       referenceCoding: requestedReferenceCoding === "sidecar" ? "sidecar" :
         Math.max(yLibrary.count, cbLibrary.count, crLibrary.count) <= 3 ? "header" : "tail",
@@ -390,6 +406,7 @@
         library.frequencySplit
       );
       writeDctLibraryReference(trailer, library.cr, mcuIndex, crLibraryIndex);
+      reportProgress(layout.mcuCount + 4 + mcuIndex);
     }
 
     output.set(trailer, HEADER_BYTES + layout.payloadBytes);
@@ -403,6 +420,8 @@
     const coefficientCoding = getCoefficientCoding(options.coefficientCoding, layout.key);
     const splitLuma8x8 = shouldSplitLuma(layout, options);
     const output = createDctOutput(layout, quality, options, splitLuma8x8, coefficientCoding);
+    const reportProgress = createDctProgressReporter(options, layout.mcuCount, quality);
+    reportProgress(0);
 
     for (let mcuIndex = 0; mcuIndex < layout.mcuCount; mcuIndex += 1) {
       const mcuX = mcuIndex % layout.mcuColumns;
@@ -444,6 +463,7 @@
         coefficientCoding,
         splitLuma8x8
       );
+      reportProgress(mcuIndex + 1);
     }
 
     return output;
@@ -490,7 +510,14 @@
     return layout.bpp >= 3 && options.splitLuma8x8 !== false;
   }
 
-  function collectDctLibrarySource(pixels, width, height, layout, splitLuma8x8) {
+  function collectDctLibrarySource(
+    pixels,
+    width,
+    height,
+    layout,
+    splitLuma8x8,
+    onMcu = () => {}
+  ) {
     const mcus = [];
     const yVectors = [];
     const cbVectors = [];
@@ -510,9 +537,25 @@
       cbVectors.push(cb);
       crVectors.push(cr);
       mcus.push({ y, cb, cr });
+      onMcu(mcuIndex + 1);
     }
 
     return { mcus, yVectors, cbVectors, crVectors };
+  }
+
+  function createDctProgressReporter(options, total, quality) {
+    const onProgress = typeof options.onProgress === "function" ? options.onProgress : null;
+    const interval = Math.max(1, Math.ceil(total / 100));
+    let lastCompleted = -interval;
+
+    return (completed) => {
+      if (!onProgress || completed !== 0 && completed !== total && completed - lastCompleted < interval) {
+        return;
+      }
+
+      lastCompleted = completed;
+      onProgress({ stage: "encode", completed, total, quality });
+    };
   }
 
   function splitLumaSamples(samples) {
