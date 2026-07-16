@@ -9,7 +9,7 @@
     <link rel="icon" href="./assets/icons/app-icon.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="./assets/icons/app-icon-192.png">
     <link rel="stylesheet" href="./block-palette.css?v=dct-page-1">
-    <link rel="stylesheet" href="./dct-compression.css?v=dct-page-11">
+    <link rel="stylesheet" href="./dct-compression.css?v=dct-page-12">
     <link rel="stylesheet" href="./i18n.css">
   </head>
   <body>
@@ -183,6 +183,43 @@
           </div>
         </div>
 
+        <div class="dct-layout-component-controls" id="dct-layout-component-controls" role="group" aria-label="DCT component" data-i18n-aria-label="dct.layoutComponentAria">
+          <button type="button" class="is-selected" data-dct-layout-component="y" aria-pressed="true" data-i18n="dct.layoutComponentY">Y · luma</button>
+          <button type="button" data-dct-layout-component="cb" aria-pressed="false" data-i18n="dct.layoutComponentCb">Cb · blue chroma</button>
+          <button type="button" data-dct-layout-component="cr" aria-pressed="false" data-i18n="dct.layoutComponentCr">Cr · red chroma</button>
+        </div>
+
+        <div class="dct-layout-coefficient-grid">
+          <div class="dct-layout-panel">
+            <div class="dct-layout-panel-heading">
+              <h3 data-i18n="dct.layoutRecordBits">Bits inside the selected component record</h3>
+              <output id="dct-layout-record-summary" class="dct-layout-inline-summary" aria-live="polite"></output>
+            </div>
+            <div id="dct-layout-records" class="dct-layout-records"></div>
+          </div>
+
+          <div class="dct-layout-panel">
+            <div class="dct-layout-panel-heading">
+              <h3 data-i18n="dct.layoutCoefficientMatrix">Coefficients inside the DCT block</h3>
+              <output id="dct-layout-matrix-summary" class="dct-layout-inline-summary" aria-live="polite"></output>
+            </div>
+            <div class="dct-layout-matrix-frame">
+              <span class="dct-layout-axis is-u" data-i18n="dct.layoutAxisU">u → X frequency</span>
+              <span class="dct-layout-axis is-v" data-i18n="dct.layoutAxisV">v → Y frequency</span>
+              <div id="dct-layout-coefficients" class="dct-layout-coefficients" role="img" aria-label="DCT coefficient matrix"></div>
+            </div>
+            <div id="dct-layout-coefficient-legend" class="dct-layout-coefficient-legend"></div>
+          </div>
+        </div>
+
+        <div class="dct-layout-panel dct-layout-coding-panel">
+          <div class="dct-layout-panel-heading">
+            <h3 data-i18n="dct.layoutCodingModes">Coefficient packing modes</h3>
+            <span class="dct-layout-current-mark"><i aria-hidden="true"></i><span data-i18n="dct.layoutCurrentCandidate">used by the selected preset</span></span>
+          </div>
+          <div id="dct-layout-coding-guide" class="dct-layout-coding-guide" role="list"></div>
+        </div>
+
         <div class="dct-layout-panel dct-layout-pixel-panel">
           <h3 data-i18n="dct.layoutDirectPixel">Direct pixel lookup</h3>
           <div class="dct-layout-path" role="img" aria-label="Coordinates to RGB pixel lookup path" data-i18n-aria-label="dct.layoutPathAria">
@@ -215,10 +252,10 @@
     </dialog>
 
     <script src="./src/dct/dct-format.js?v=dct-page-17"></script>
-    <script src="./src/i18n/en.js?v=dct-page-14"></script>
-    <script src="./src/i18n/ru.js?v=dct-page-14"></script>
+    <script src="./src/i18n/en.js?v=dct-page-15"></script>
+    <script src="./src/i18n/ru.js?v=dct-page-15"></script>
     <script src="./src/i18n/i18n.js"></script>
-    <script src="./src/pages/dct-compression-page.js?v=dct-page-17"></script>
+    <script src="./src/pages/dct-compression-page.js?v=dct-page-18"></script>
     <script src="./src/pwa/register-service-worker.js?v=1"></script>
   </body>
 </html>

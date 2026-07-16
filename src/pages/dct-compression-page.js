@@ -51,6 +51,13 @@ const layoutSummary = document.getElementById("dct-layout-summary");
 const layoutRateChart = document.getElementById("dct-layout-rate-chart");
 const layoutMcuBar = document.getElementById("dct-layout-mcu-bar");
 const layoutSpatial = document.getElementById("dct-layout-spatial");
+const layoutComponentControls = document.getElementById("dct-layout-component-controls");
+const layoutRecordSummary = document.getElementById("dct-layout-record-summary");
+const layoutRecords = document.getElementById("dct-layout-records");
+const layoutMatrixSummary = document.getElementById("dct-layout-matrix-summary");
+const layoutCoefficients = document.getElementById("dct-layout-coefficients");
+const layoutCoefficientLegend = document.getElementById("dct-layout-coefficient-legend");
+const layoutCodingGuide = document.getElementById("dct-layout-coding-guide");
 
 const state = {
   sourceImageData: null,
@@ -68,6 +75,7 @@ const state = {
   viewMode: "fit",
   synchronizingScroll: false,
   drag: null,
+  layoutComponent: "y",
 };
 
 const ZOOM_FACTOR = 1.25;
@@ -92,6 +100,12 @@ presetSelect.addEventListener("change", () => {
   renderDctLayoutDiagram();
   setBusy(false);
   processImage();
+});
+layoutComponentControls.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-dct-layout-component]");
+  if (!button || !layoutComponentControls.contains(button)) return;
+  state.layoutComponent = button.dataset.dctLayoutComponent;
+  renderDctLayoutDiagram();
 });
 qualityInput.addEventListener("input", updateQualityLabel);
 qualityInput.addEventListener("change", () => {
@@ -263,6 +277,12 @@ function renderDctLayoutDiagram() {
     "aria-label",
     t(splitLuma ? "dct.layoutSpatialHighAria" : "dct.layoutSpatialLowAria")
   );
+
+  renderDctLayoutComponentControls();
+  const recordShape = getDctLayoutRecordShape(selected, state.layoutComponent);
+  renderDctLayoutRecords(selectedKey, selected, recordShape);
+  renderDctLayoutCoefficientMatrix(selectedKey, recordShape);
+  renderDctLayoutCodingGuide(selectedKey);
 }
 
 function createDctLayoutSegment(component, bytes, label) {
@@ -281,6 +301,403 @@ function createDctLayoutBlock(component, label) {
   block.textContent = label;
   block.setAttribute("aria-hidden", "true");
   return block;
+}
+
+function renderDctLayoutComponentControls() {
+  for (const button of layoutComponentControls.querySelectorAll("[data-dct-layout-component]")) {
+    const selected = button.dataset.dctLayoutComponent === state.layoutComponent;
+    button.classList.toggle("is-selected", selected);
+    button.setAttribute("aria-pressed", String(selected));
+  }
+}
+
+function getDctLayoutRecordShape(preset, component) {
+  if (component === "y") {
+    const split = preset.bpp >= 3;
+    return {
+      component,
+      width: split ? 8 : 16,
+      height: split ? 8 : 16,
+      bytes: split ? preset.yBytes / 4 : preset.yBytes,
+    };
+  }
+  return { component, width: 8, height: 16, bytes: preset.cbBytes };
+}
+
+function getDctLayoutCodingProfile(presetKey) {
+  if (presetKey === "0.75") return { groups: 2, grouping: "equal", skip: "single" };
+  if (presetKey === "1" || presetKey === "2") {
+    return { groups: 2, grouping: "equal", skip: "dual" };
+  }
+  return {
+    groups: 3,
+    grouping: "front",
+    skip: Number(presetKey) <= 4.5 ? "dual" : null,
+  };
+}
+
+function renderDctLayoutRecords(presetKey, preset, shape) {
+  const variants = getDctLayoutRecordVariants(presetKey, preset, shape);
+  const component = dctLayoutComponentName(shape.component);
+
+  layoutRecordSummary.textContent = t("dct.layoutRecordSummary", {
+    component,
+    width: shape.width,
+    height: shape.height,
+    bytes: shape.bytes,
+  });
+
+  layoutRecords.replaceChildren(...variants.map((variant) => {
+    const record = document.createElement("section");
+    const heading = document.createElement("div");
+    const name = document.createElement("strong");
+    const details = document.createElement("span");
+    const strip = document.createElement("div");
+    const legend = document.createElement("div");
+    const note = document.createElement("p");
+    const totalBits = shape.bytes * 8;
+
+    record.className = "dct-layout-record";
+    heading.className = "dct-layout-record-heading";
+    name.textContent = variant.name;
+    details.textContent = `${totalBits} bit · ${variant.order}`;
+    heading.append(name, details);
+
+    strip.className = "dct-layout-bit-strip";
+    strip.setAttribute("role", "img");
+    strip.setAttribute("aria-label", t("dct.layoutRecordAria", {
+      name: variant.name,
+      bits: totalBits,
+    }));
+    legend.className = "dct-layout-bit-legend";
+
+    for (const field of variant.fields) {
+      const segment = document.createElement("span");
+      const key = document.createElement("span");
+      const swatch = document.createElement("i");
+      const range = field.start === field.end
+        ? String(field.start) : `${field.start}–${field.end}`;
+
+      segment.className = `dct-layout-bit-field is-${field.type}`;
+      segment.style.flexGrow = String(field.bits);
+      segment.style.flexBasis = "0";
+      segment.textContent = field.bits / totalBits >= 0.05 ? field.short : "";
+      segment.title = `${field.label}: ${field.bits} bit [${range}]`;
+      segment.setAttribute("aria-hidden", "true");
+      strip.append(segment);
+
+      key.className = "dct-layout-bit-key";
+      swatch.className = `dct-layout-bit-swatch is-${field.type}`;
+      swatch.setAttribute("aria-hidden", "true");
+      key.append(swatch, `${field.label} · ${field.bits} b [${range}]`);
+      legend.append(key);
+    }
+
+    note.className = "dct-layout-record-note";
+    note.textContent = variant.note;
+    record.append(heading, strip, legend, note);
+    return record;
+  }));
+}
+
+function getDctLayoutRecordVariants(presetKey, preset, shape) {
+  const profile = getDctLayoutCodingProfile(presetKey);
+  const grouped = createDctLayoutGroupedVariant(shape, profile);
+
+  if (Number(presetKey) <= 4.5) {
+    const allowSkip = shape.component === "y" || preset.bpp >= 3;
+    return allowSkip
+      ? [grouped, createDctLayoutSkipVariant(shape, profile.skip)]
+      : [grouped];
+  }
+
+  if (shape.component !== "y") return [grouped];
+  const variants = [grouped, createDctLayoutMaskedVariant(shape)];
+  if (presetKey === "9") variants.push(createDctLayoutImplicit2Variant());
+  return variants;
+}
+
+function createDctLayoutGroupedVariant(shape, profile) {
+  const totalBits = shape.bytes * 8;
+  const maximumAc = shape.width * shape.height - 1;
+  const acCount = Math.min(
+    maximumAc,
+    Math.max(0, Math.floor((totalBits - 18 - profile.groups * 3) / 5))
+  );
+  const usedBits = 18 + profile.groups * 3 + acCount * 5;
+  return {
+    name: t("dct.layoutGroupedVariant", { groups: profile.groups }),
+    order: t("dct.layoutMsbFirst"),
+    note: t("dct.layoutGroupedNote", { count: acCount }),
+    fields: addDctLayoutBitRanges([
+      dctLayoutBitField("P", t("dct.layoutFieldProfile"), 4, "profile"),
+      dctLayoutBitField("0", t("dct.layoutFieldSkipZero"), 1, "flag"),
+      dctLayoutBitField("Sdc", t("dct.layoutFieldDcScale"), 3, "scale"),
+      dctLayoutBitField("DC", t("dct.layoutFieldSignedDc", { bits: 10 }), 10, "dc"),
+      dctLayoutBitField("Sg", t("dct.layoutFieldGroupScales", { count: profile.groups }), profile.groups * 3, "group"),
+      dctLayoutBitField(`AC×${acCount}`, t("dct.layoutFieldSignedAc", { count: acCount, bits: 5 }), acCount * 5, "ac"),
+      dctLayoutBitField("∅", t("dct.layoutFieldPadding"), totalBits - usedBits, "pad"),
+    ]),
+  };
+}
+
+function createDctLayoutSkipVariant(shape, skipMode) {
+  const totalBits = shape.bytes * 8;
+  const tokenLayout = getDctLayoutSkipTokenLayout(shape, skipMode);
+  const fields = [
+    dctLayoutBitField("P", t("dct.layoutFieldSkipProfile"), 4, "profile"),
+    dctLayoutBitField("1", t("dct.layoutFieldSkipOne"), 1, "flag"),
+    dctLayoutBitField("S", t("dct.layoutFieldMainScale"), 3, "scale"),
+    dctLayoutBitField("DC", t("dct.layoutFieldSignedDc", { bits: 10 }), 10, "dc"),
+  ];
+
+  if (skipMode === "single") {
+    fields.push(dctLayoutBitField(
+      `T6×${tokenLayout.tokenCount}`,
+      t("dct.layoutFieldSkipTokens", { count: tokenLayout.tokenCount }),
+      tokenLayout.tokenCount * 8,
+      "group"
+    ));
+  } else {
+    fields.push(
+      dctLayoutBitField(
+        `C×${tokenLayout.coarseCount}`,
+        t("dct.layoutFieldCoarseTokens", { count: tokenLayout.coarseCount }),
+        tokenLayout.coarseCount * 8,
+        "group"
+      ),
+      dctLayoutBitField(
+        `F×${tokenLayout.fineCount}`,
+        t("dct.layoutFieldFineTokens", { count: tokenLayout.fineCount }),
+        tokenLayout.fineCount * 6,
+        "ac"
+      )
+    );
+  }
+  fields.push(dctLayoutBitField("∅", t("dct.layoutFieldPadding"), totalBits - tokenLayout.usedBits, "pad"));
+
+  return {
+    name: t(skipMode === "single" ? "dct.layoutSkipRleVariant" : "dct.layoutDualScaleVariant"),
+    order: t("dct.layoutMsbFirst"),
+    note: skipMode === "single"
+      ? t("dct.layoutSkipRleNote", { count: tokenLayout.tokenCount })
+      : t("dct.layoutDualScaleNote", {
+        coarse: tokenLayout.coarseCount,
+        fine: tokenLayout.fineCount,
+      }),
+    fields: addDctLayoutBitRanges(fields),
+  };
+}
+
+function getDctLayoutSkipTokenLayout(shape, skipMode) {
+  const payloadBits = shape.bytes * 8 - 18;
+  if (skipMode === "single") {
+    const tokenCount = Math.floor(payloadBits / 8);
+    return { tokenCount, coarseCount: tokenCount, fineCount: 0, usedBits: 18 + tokenCount * 8 };
+  }
+
+  let tokenCount;
+  let coarseCount;
+  if (shape.bytes === 32) {
+    tokenCount = 32;
+    coarseCount = 16;
+  } else if (shape.bytes === 24) {
+    tokenCount = 24;
+    coarseCount = shape.width === 16 && shape.height === 16 ? 12 : 11;
+  } else if (shape.bytes === 16) {
+    tokenCount = shape.width === 16 && shape.height === 16 ? 15 : 14;
+    coarseCount = shape.width === 16 && shape.height === 16 ? 7 : 8;
+  } else {
+    tokenCount = Math.floor(payloadBits / 7);
+    coarseCount = Math.ceil(tokenCount / 2);
+    while (coarseCount * 8 + (tokenCount - coarseCount) * 6 > payloadBits) {
+      tokenCount -= 1;
+      coarseCount = Math.ceil(tokenCount / 2);
+    }
+  }
+  const fineCount = tokenCount - coarseCount;
+  return {
+    tokenCount,
+    coarseCount,
+    fineCount,
+    usedBits: 18 + coarseCount * 8 + fineCount * 6,
+  };
+}
+
+function createDctLayoutMaskedVariant(shape) {
+  const configs = {
+    16: { dcBits: 10, acBits: 6, acCount: 9 },
+    24: { dcBits: 9, acBits: 7, acCount: 17 },
+    32: { dcBits: 8, acBits: 8, acCount: 23 },
+    40: { dcBits: 8, acBits: 8, acCount: 31 },
+    48: { dcBits: 10, acBits: 8, acCount: 38 },
+  };
+  const config = configs[shape.bytes];
+  const totalBits = shape.bytes * 8;
+  const usedBits = 64 + config.dcBits + config.acBits * config.acCount;
+  return {
+    name: t("dct.layoutMaskedVariant"),
+    order: t("dct.layoutLsbFirst"),
+    note: t("dct.layoutMaskedNote", { count: config.acCount }),
+    fields: addDctLayoutBitRanges([
+      dctLayoutBitField("M62", t("dct.layoutFieldMask62"), 62, "mask"),
+      dctLayoutBitField("S", t("dct.layoutFieldSharedScale"), 2, "scale"),
+      dctLayoutBitField("DC", t("dct.layoutFieldSignedDc", { bits: config.dcBits }), config.dcBits, "dc"),
+      dctLayoutBitField(`AC×${config.acCount}`, t("dct.layoutFieldSignedAc", {
+        count: config.acCount,
+        bits: config.acBits,
+      }), config.acCount * config.acBits, "ac"),
+      dctLayoutBitField("∅", t("dct.layoutFieldPadding"), totalBits - usedBits, "pad"),
+    ]),
+  };
+}
+
+function createDctLayoutImplicit2Variant() {
+  return {
+    name: t("dct.layoutImplicit2Variant"),
+    order: t("dct.layoutLsbFirst"),
+    note: t("dct.layoutImplicit2Note"),
+    fields: addDctLayoutBitRanges([
+      dctLayoutBitField("M60", t("dct.layoutFieldMask60"), 60, "mask"),
+      dctLayoutBitField("S", t("dct.layoutFieldSharedScale"), 2, "scale"),
+      dctLayoutBitField("DC", t("dct.layoutFieldSignedDc", { bits: 10 }), 10, "dc"),
+      dctLayoutBitField("A1", t("dct.layoutFieldImplicitDct1"), 8, "ac"),
+      dctLayoutBitField("A8", t("dct.layoutFieldImplicitDct8"), 8, "ac"),
+      dctLayoutBitField("AC×37", t("dct.layoutFieldRemainingAc"), 296, "ac"),
+    ]),
+  };
+}
+
+function dctLayoutBitField(short, label, bits, type) {
+  return { short, label, bits, type };
+}
+
+function addDctLayoutBitRanges(fields) {
+  let cursor = 0;
+  return fields.filter((field) => field.bits > 0).map((field) => {
+    const ranged = { ...field, start: cursor, end: cursor + field.bits - 1 };
+    cursor += field.bits;
+    return ranged;
+  });
+}
+
+function renderDctLayoutCoefficientMatrix(presetKey, shape) {
+  const masked = shape.component === "y" && Number(presetKey) >= 6;
+  const implicit2 = masked && presetKey === "9";
+  const capacity = presetKey === "6" ? 23 : presetKey === "7.5" ? 31 : implicit2 ? 37 : 38;
+  const tailStart = 64 - capacity;
+  const component = dctLayoutComponentName(shape.component);
+  const packing = t(implicit2
+    ? "dct.layoutMatrixImplicit2" : masked
+      ? "dct.layoutMatrixMasked" : "dct.layoutMatrixProfiled");
+  const cells = [];
+
+  layoutMatrixSummary.textContent = t("dct.layoutMatrixSummary", {
+    component,
+    width: shape.width,
+    height: shape.height,
+    packing,
+  });
+  layoutCoefficients.style.gridTemplateColumns = `repeat(${shape.width}, minmax(0, 1fr))`;
+  layoutCoefficients.style.aspectRatio = `${shape.width} / ${shape.height}`;
+  layoutCoefficients.style.width = shape.width === 8 && shape.height === 16
+    ? "min(50%, 170px)" : "min(100%, 340px)";
+  layoutCoefficients.setAttribute("aria-label", t("dct.layoutMatrixAria", {
+    component,
+    width: shape.width,
+    height: shape.height,
+  }));
+
+  for (let v = 0; v < shape.height; v += 1) {
+    for (let u = 0; u < shape.width; u += 1) {
+      const position = v * shape.width + u;
+      const cell = document.createElement("span");
+      const normalized = Math.sqrt(
+        (u / Math.max(1, shape.width - 1)) ** 2 +
+        (v / Math.max(1, shape.height - 1)) ** 2
+      ) / Math.sqrt(2);
+
+      cell.className = "dct-layout-coefficient";
+      cell.style.setProperty("--dct-frequency-alpha", String(Math.max(0.06, 0.34 * (1 - normalized))));
+      cell.setAttribute("aria-hidden", "true");
+      cell.title = t("dct.layoutCellAc", { position, u, v });
+
+      if (position === 0) {
+        cell.classList.add("is-dc");
+        cell.textContent = "DC";
+        cell.title = t("dct.layoutCellDc");
+      } else if (implicit2 && (position === 1 || position === 8)) {
+        cell.classList.add("is-implicit");
+        cell.textContent = "I";
+        cell.title = t("dct.layoutCellImplicit", { position });
+      } else if (masked && position === 63) {
+        cell.classList.add("is-tail");
+        cell.textContent = "T";
+        cell.title = t("dct.layoutCellTail", { position });
+      } else if (masked && position >= tailStart) {
+        cell.classList.add("is-mask-tail");
+        cell.textContent = "M/T";
+        cell.title = t("dct.layoutCellMaskTail", { position });
+      } else if (masked && position <= 62) {
+        cell.classList.add("is-mask");
+        cell.textContent = "M";
+        cell.title = t("dct.layoutCellMask", { position });
+      }
+      cells.push(cell);
+    }
+  }
+  layoutCoefficients.replaceChildren(...cells);
+
+  const legend = [
+    ["dc", "dct.layoutLegendDc"],
+    ["frequency", "dct.layoutLegendFrequency"],
+  ];
+  if (implicit2) legend.push(["implicit", "dct.layoutLegendImplicit"]);
+  if (masked) {
+    legend.push(["mask", "dct.layoutLegendMask"]);
+    legend.push(["mask-tail", "dct.layoutLegendMaskTail"]);
+    legend.push(["tail", "dct.layoutLegendTail"]);
+  }
+  layoutCoefficientLegend.replaceChildren(...legend.map(([type, key]) => {
+    const item = document.createElement("span");
+    const swatch = document.createElement("i");
+    item.className = "dct-layout-coefficient-key";
+    swatch.className = `dct-layout-coefficient-swatch is-${type}`;
+    swatch.setAttribute("aria-hidden", "true");
+    item.append(swatch, t(key));
+    return item;
+  }));
+}
+
+function renderDctLayoutCodingGuide(presetKey) {
+  const activeIds = presetKey === "0.75" ? [3]
+    : presetKey === "1" || presetKey === "2" ? [4]
+      : presetKey === "1.5" || presetKey === "3" || presetKey === "4.5" ? [5]
+        : presetKey === "9" ? [2, 6, 7] : [2, 6];
+  const rows = [];
+
+  for (let id = 0; id <= 7; id += 1) {
+    const row = document.createElement("div");
+    const code = document.createElement("span");
+    const name = document.createElement("strong");
+    const description = document.createElement("span");
+    const active = activeIds.includes(id);
+
+    row.className = `dct-layout-coding-item${active ? " is-active" : ""}`;
+    row.setAttribute("role", "listitem");
+    if (active) row.setAttribute("aria-current", "true");
+    code.className = "dct-layout-coding-id";
+    code.textContent = `ID ${id}`;
+    name.textContent = t(`dct.layoutCoding${id}Name`);
+    description.textContent = t(`dct.layoutCoding${id}Description`);
+    row.append(code, name, description);
+    rows.push(row);
+  }
+  layoutCodingGuide.replaceChildren(...rows);
+}
+
+function dctLayoutComponentName(component) {
+  return component === "y" ? "Y" : component === "cb" ? "Cb" : "Cr";
 }
 
 async function loadImage(url, name, suppliedBytes = null) {

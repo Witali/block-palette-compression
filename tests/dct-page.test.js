@@ -7,6 +7,7 @@ const path = require("node:path");
 const root = path.resolve(__dirname, "..");
 const page = read("dct-compression.html");
 const home = read("index.html");
+const pageStyles = read("dct-compression.css");
 const pageScript = read("src/pages/dct-compression-page.js");
 const worker = read("src/dct/dct-worker.js");
 const serviceWorker = read("service-worker.js");
@@ -51,6 +52,24 @@ test("embeds a DCTBS2 layout diagram synchronized with the target rate", () => {
     pageScript.indexOf('qualityInput.addEventListener("input"')
   );
   assert.match(presetHandler, /renderDctLayoutDiagram\(\)/);
+});
+
+test("shows component record bits, DCT coefficient positions, and every packing ID", () => {
+  assert.match(page, /id="dct-layout-component-controls"/);
+  assert.match(page, /id="dct-layout-records"/);
+  assert.match(page, /id="dct-layout-coefficients"/);
+  assert.match(page, /id="dct-layout-coding-guide"/);
+  assert.match(pageScript, /function renderDctLayoutRecords\(/);
+  assert.match(pageScript, /function renderDctLayoutCoefficientMatrix\(/);
+  assert.match(pageScript, /function renderDctLayoutCodingGuide\(/);
+  assert.match(pageScript, /dctLayoutBitField\("M62"/);
+  assert.match(pageScript, /dctLayoutBitField\("M60"/);
+  assert.match(pageScript, /dctLayoutBitField\("A1"/);
+  assert.match(pageScript, /dctLayoutBitField\("A8"/);
+  assert.match(pageScript, /presetKey === "9" \? \[2, 6, 7\]/);
+  assert.match(pageStyles, /\.dct-layout-bit-strip/);
+  assert.match(pageStyles, /\.dct-layout-coefficient\.is-mask-tail/);
+  assert.match(pageStyles, /\.dct-layout-coding-item\.is-active/);
 });
 
 test("keeps direct coordinate sampling separate from full-image decoding", () => {
