@@ -226,8 +226,11 @@ function verifyPreset(preset) {
     "9": "grouped-5-front",
   };
   if (Number(preset) >= 6) {
+    const allowed = preset === "9"
+      ? ["grouped-5-front", "masked-tail-8x8", "masked-tail-implicit2-48"]
+      : ["grouped-5-front", "masked-tail-8x8"];
     assert.ok(
-      ["grouped-5-front", "masked-tail-8x8"].includes(cudaInfo.coefficientCodingKey),
+      allowed.includes(cudaInfo.coefficientCodingKey),
       `automatic high-rate coding ${preset}`
     );
   } else {
@@ -262,20 +265,31 @@ function verifyMaskedTailCoding() {
     const groupedFile = path.join(temporary, `grouped-${preset}.dctbs2`);
     const maskedFile = path.join(temporary, `masked-${preset}.dctbs2`);
     const automaticFile = path.join(temporary, `automatic-${preset}.dctbs2`);
+    const implicitFile = path.join(temporary, `implicit-${preset}.dctbs2`);
     run(["encode", inputPpm, groupedFile, "--preset", preset, "--quality", "97",
       "--coefficient-coding", "grouped-5-front"]);
     run(["encode", inputPpm, maskedFile, "--preset", preset, "--quality", "97",
       "--coefficient-coding", "masked-tail-8x8"]);
+    if (preset === "9") {
+      run(["encode", inputPpm, implicitFile, "--preset", preset, "--quality", "97",
+        "--coefficient-coding", "masked-tail-implicit2-48"]);
+    }
     run(["encode", inputPpm, automaticFile, "--preset", preset, "--quality", "97"]);
 
     const grouped = fs.readFileSync(groupedFile);
     const masked = fs.readFileSync(maskedFile);
     const automatic = fs.readFileSync(automaticFile);
+    const implicit = preset === "9" ? fs.readFileSync(implicitFile) : null;
     assert.equal(inspectDctFile(masked).coefficientCodingKey, "masked-tail-8x8");
     const groupedError = rgbError(rgba, decodeDctFile(grouped).pixels);
     const maskedError = rgbError(rgba, decodeDctFile(masked).pixels);
+    const implicitError = implicit
+      ? rgbError(rgba, decodeDctFile(implicit).pixels) : Infinity;
     const automaticError = rgbError(rgba, decodeDctFile(automatic).pixels);
-    assert.ok(automaticError <= groupedError && automaticError <= maskedError);
+    assert.ok(
+      automaticError <= groupedError && automaticError <= maskedError &&
+      automaticError <= implicitError
+    );
 
     const jsMasked = encodeDctFile(rgba, width, height, {
       preset,
@@ -289,8 +303,26 @@ function verifyMaskedTailCoding() {
     assertRgbMatchesRgba(
       readPpm(jsPpm), decodeDctFile(jsMasked).pixels, `masked-tail ${preset}`
     );
+
+    if (preset === "9") {
+      assert.equal(inspectDctFile(implicit).coefficientCodingKey, "masked-tail-implicit2-48");
+      const jsImplicit = encodeDctFile(rgba, width, height, {
+        preset,
+        quality: 97,
+        coefficientCoding: "masked-tail-implicit2-48",
+      });
+      const jsImplicitFile = path.join(temporary, "js-implicit-9.dctbs2");
+      const jsImplicitPpm = path.join(temporary, "js-implicit-9.ppm");
+      fs.writeFileSync(jsImplicitFile, jsImplicit);
+      run(["decode", jsImplicitFile, jsImplicitPpm]);
+      assertRgbMatchesRgba(
+        readPpm(jsImplicitPpm),
+        decodeDctFile(jsImplicit).pixels,
+        "implicit2 48-byte JavaScript encode"
+      );
+    }
   }
-  console.log("ok - masked-tail packing and automatic RGB quality guard are compatible");
+  console.log("ok - masked-tail, implicit2, and automatic RGB quality guard are compatible");
 }
 
 function run(arguments_) {

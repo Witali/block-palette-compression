@@ -97,12 +97,13 @@ The encoder evaluates the grouped and skip candidates and writes the skip form
 only when it reduces coefficient error. Defaults follow the final fixed-rate
 experiments: skip-RLE at 0.75 bpp; dual-scale skip at 1, 1.5, and 2 bpp; and
 dual-scale skip for the 16- and 24-byte high-rate component records (3 and 4.5
-bpp). At 6, 7.5, and 9 bpp the encoder evaluates both grouped coding and the
-masked-tail coding described below, reconstructs both complete RGB images, and
-writes the lower-error file. A tie keeps grouped coding. This file-level guard
-prevents the masked representation from reducing RGB PSNR. Low-rate chroma
-keeps grouped coding; high-rate split-luma files may use adaptive skip for both
-luma and chroma records.
+bpp). At 6 and 7.5 bpp the encoder evaluates grouped coding and the masked-tail
+coding described below. At 9 bpp it also evaluates the 48-byte implicit-2
+variant. It reconstructs every complete RGB image and writes the strictly
+lower-error file; ties keep the earlier coding, beginning with grouped coding.
+This file-level guard prevents either masked representation from reducing RGB
+PSNR. Low-rate chroma keeps grouped coding; high-rate split-luma files may use
+adaptive skip for both luma and chroma records.
 
 Masked-tail 8x8 records begin with a 64-bit little-endian word. Bits 0 through
 61 are an explicit AC mask: bit 0 selects `DCT[1]` (the first AC coefficient),
@@ -130,6 +131,18 @@ ordinary three-group signed-5 representation for other component dimensions.
 Prototype libraries deliberately fall back to coding ID 2 because their
 references occupy fields that masked-tail records do not expose.
 
+Coding ID 7 is a separate 48-byte 8x8 layout. `DCT[1]` (`u=1,v=0`) and
+`DCT[8]` (`u=0,v=1`) are always present and therefore have no mask bits. The
+remaining positions `DCT[2] ... DCT[62]`, excluding `DCT[8]`, use 60
+little-endian mask bits in increasing natural position order. The following
+two bits store the shared multiplier, followed immediately by signed DC10,
+the two implicit AC8 values in position order `DCT[1], DCT[8]`, the explicitly
+masked AC8 values, and the implicit tail. Its exact 384-bit allocation is
+`60 mask + 2 multiplier + 10 DC + 39 * 8 AC`. If the reduced mask has `M` set
+bits, the tail contains `37 - M` values. ID 7 falls back to ID 2 semantics for
+records other than 48-byte 8x8 components and is not used with prototype
+libraries.
+
 Coefficient coding identifiers are:
 
 | ID | Coding |
@@ -141,6 +154,7 @@ Coefficient coding identifiers are:
 | 4 | grouped ID 1 plus adaptive dual-scale skip |
 | 5 | grouped ID 2 plus adaptive dual-scale skip |
 | 6 | 8x8 explicit AC mask plus implicit high-frequency tail; ID 2 fallback for other dimensions |
+| 7 | 48-byte 8x8 mask with implicit `DCT[1]`/`DCT[8]` and 39 AC slots; ID 2 fallback otherwise |
 
 ## Optional DCT prototype library
 

@@ -460,7 +460,7 @@ int skipScanPosition(int kind, int profile, int index) {
 
 int groupCount(int coding) {
     if (coding == 1 || coding == 3 || coding == 4) return 2;
-    return coding == 2 || coding == 5 || coding == 6 ? 3 : 0;
+    return coding == 2 || coding == 5 || coding == 6 || coding == 7 ? 3 : 0;
 }
 
 int mantissaBits(int coding) {
@@ -616,6 +616,81 @@ float sampleMaskedTailRecord(
     return sum;
 }
 
+bool implicit2MaskedPosition(int recordOffset, int position) {
+    if (position == 1 || position == 8 || position < 1 || position > 62) return false;
+    int bit = position - 1;
+    if (position > 1) bit -= 1;
+    if (position > 8) bit -= 1;
+    return readSidecarBits(recordOffset, bit, 1) != 0u;
+}
+
+float sampleImplicit2MaskedTailRecord(
+    int recordOffset,
+    int recordBytes,
+    int localX,
+    int localY,
+    int quality
+) {
+    if (recordBytes != 48) return 0.0;
+    int explicitCount = 0;
+    for (int position = 1; position <= 62; ++position) {
+        if (implicit2MaskedPosition(recordOffset, position)) explicitCount += 1;
+    }
+    const int maxAc = 39;
+    const int implicitCount = 2;
+    int tailCount = maxAc - implicitCount - explicitCount;
+    if (tailCount < 0) return 0.0;
+    int tailStart = 64 - tailCount;
+    for (int position = 1; position <= 62; ++position) {
+        if (position >= tailStart && implicit2MaskedPosition(recordOffset, position)) return 0.0;
+    }
+
+    int bitOffset = 60;
+    int scaleIndex = int(readSidecarBits(recordOffset, bitOffset, 2));
+    bitOffset += 2;
+    int dc = readSignedSidecarBits(recordOffset, bitOffset, 10);
+    bitOffset += 10;
+    float scale = exp2(float(scaleIndex));
+    float sum = 0.0;
+    float correction = 0.0;
+    addCompensated(
+        float(dc) * scale * quantizationStep(0, 1, quality) *
+            basis1D(0, localX, 8) * basis1D(0, localY, 8),
+        sum,
+        correction
+    );
+    const int implicitPositions[2] = int[2](1, 8);
+    for (int index = 0; index < 2; ++index) {
+        int position = implicitPositions[index];
+        int stored = readSignedSidecarBits(recordOffset, bitOffset, 8);
+        bitOffset += 8;
+        int u = position & 7;
+        int v = position >> 3;
+        addCompensated(
+            float(stored) * scale * quantizationStep(position, 1, quality) *
+                basis1D(u, localX, 8) * basis1D(v, localY, 8),
+            sum,
+            correction
+        );
+    }
+    for (int position = 1; position < 64; ++position) {
+        bool storedPosition = position >= tailStart ||
+            implicit2MaskedPosition(recordOffset, position);
+        if (!storedPosition) continue;
+        int stored = readSignedSidecarBits(recordOffset, bitOffset, 8);
+        bitOffset += 8;
+        int u = position & 7;
+        int v = position >> 3;
+        addCompensated(
+            float(stored) * scale * quantizationStep(position, 1, quality) *
+                basis1D(u, localX, 8) * basis1D(v, localY, 8),
+            sum,
+            correction
+        );
+    }
+    return sum;
+}
+
 float sampleRecord(
     int recordOffset,
     int recordBytes,
@@ -630,6 +705,13 @@ float sampleRecord(
     if (coding == 6 && kind == 1) {
         return libraryVersion == 0
             ? sampleMaskedTailRecord(recordOffset, recordBytes, localX, localY, quality)
+            : 0.0;
+    }
+    if (coding == 7 && kind == 1 && recordBytes == 48) {
+        return libraryVersion == 0
+            ? sampleImplicit2MaskedTailRecord(
+                recordOffset, recordBytes, localX, localY, quality
+            )
             : 0.0;
     }
     uint header = byteAt(recordOffset);
@@ -775,8 +857,9 @@ bool validMainHeader(uint flags) {
         u32le(8) == 2u && u32le(12) == EXPECTED_MODE &&
         u32le(32) == EXPECTED_MCU_BYTES && u32le(36) == EXPECTED_Y_BYTES &&
         u32le(40) == EXPECTED_CB_BYTES && u32le(44) == EXPECTED_CR_BYTES &&
-        (flags & ~0x00000f07u) == 0u && ((flags >> 8u) & 15u) <= 6u &&
-        (((flags & FLAG_LIBRARY) == 0u) || ((flags >> 8u) & 15u) != 6u) &&
+        (flags & ~0x00000f07u) == 0u && ((flags >> 8u) & 15u) <= 7u &&
+        (((flags & FLAG_LIBRARY) == 0u) ||
+            (((flags >> 8u) & 15u) != 6u && ((flags >> 8u) & 15u) != 7u)) &&
         (ALLOW_SPLIT_LUMA || (flags & FLAG_SPLIT_LUMA) == 0u);
 }
 

@@ -29,10 +29,14 @@ adds a signed-4 fine group with multiplier 1 or 2. The default is skip-RLE at
 16- and 24-byte high-rate records. The 16/24/32/40/48-byte 8x8 layouts also
 support an explicit AC mask whose bit zero selects AC1 (DC is separate) and
 whose unused value slots form an implicit contiguous high-frequency tail. At
-6, 7.5, and 9 bpp the default `auto` mode encodes this `masked-tail-8x8`
-layout and the earlier `grouped-5-front` layout, measures exact RGB error, and
-keeps the higher-quality result; a tie keeps grouped coding. The decoder still
-accepts older grouped and legacy records.
+6 and 7.5 bpp the default `auto` mode compares this `masked-tail-8x8` layout
+with the earlier `grouped-5-front` layout. At 9 bpp it also evaluates
+`masked-tail-implicit2-48`: the two most frequent low-frequency positions,
+`DCT[1]` and `DCT[8]`, are implicit, allowing 39 AC8 values in each 48-byte
+8x8 record. Auto mode measures exact RGB error and keeps only a strictly
+higher-quality result. A tie keeps grouped coding; a tie between the two
+masked variants keeps the earlier ID 6 layout.
+The decoder still accepts older grouped, masked-tail, and legacy records.
 
 The encoder runs RGB-to-YCbCr conversion, 4:2:2 downsampling, separable DCT,
 profile selection, grouped/skip candidate evaluation, quantization, and packing
@@ -81,8 +85,11 @@ dimensions that are not multiples of 16. List all layouts with:
 .\.tmp\dctcuda-build\dctcuda.exe presets
 ```
 
-Use `--coefficient-coding masked-tail-8x8` or
+Use `--coefficient-coding masked-tail-8x8`,
+`--coefficient-coding masked-tail-implicit2-48`, or
 `--coefficient-coding grouped-5-front` to force one high-rate representation.
+The implicit-2 form applies its special record layout only to 48-byte 8x8
+components and otherwise uses the grouped fallback.
 The default `--coefficient-coding auto` keeps the lower-error RGB result.
 
 Search all CUDA quality candidates and keep the one with the best full-image

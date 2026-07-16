@@ -20,6 +20,8 @@ test("provides CUDA encode, decode, settings search, and pixel commands", () => 
   assert.match(source, /preset\.bytes_per_mcu/);
   assert.match(source, /--coefficient-coding/);
   assert.match(source, /COEFFICIENT_CODING_MASKED_TAIL_8X8 = 6/);
+  assert.match(source, /COEFFICIENT_CODING_MASKED_TAIL_IMPLICIT2_48 = 7/);
+  assert.match(source, /masked-tail-implicit2-48/);
   assert.match(source, /mask_bit = best_position - 1/);
   assert.match(source, /const int tail_start = 64 - tail_count/);
   assert.match(source, /encode_best_coding/);

@@ -127,6 +127,55 @@ test("fills masked records with a non-overlapping implicit AC tail", () => {
   assert.throws(() => inspectDctMcu(invalidOverlap, 0), /overlaps the implicit tail/);
 });
 
+test("uses two implicit low-frequency AC values to fit 39 AC slots in 48 bytes", () => {
+  const encoded = encodeDctFile(makePixels(16, 16), 16, 16, {
+    preset: "9",
+    quality: 97,
+    coefficientCoding: "masked-tail-implicit2-48",
+  });
+  const info = inspectDctFile(encoded);
+  const mcu = inspectDctMcu(encoded, 0);
+
+  assert.equal(info.coefficientCodingKey, "masked-tail-implicit2-48");
+  for (const block of mcu.components.y.blocks) {
+    assert.equal(block.encodingMode, "masked-tail-implicit2");
+    assert.equal(block.implicitAcCount, 2);
+    assert.equal(block.coefficientCount, 40);
+    assert.equal(block.implicitAcCount + block.explicitAcCount + block.tailAcCount, 39);
+    assert.equal(block.tailStart, 64 - block.tailAcCount);
+  }
+
+  const decoded = decodeDctFile(encoded);
+  assert.equal(decoded.pixels.length, 16 * 16 * 4);
+
+  const implicitAc1 = encodeDctFile(makeHorizontalAc1Pixels(16, 16), 16, 16, {
+    preset: "9",
+    quality: 97,
+    coefficientCoding: "masked-tail-implicit2-48",
+  });
+  for (let byte = 0; byte < 7; byte += 1) {
+    assert.equal(implicitAc1[HEADER_BYTES + byte], 0, "DCT[1] must not consume a mask bit");
+  }
+  assert.equal(implicitAc1[HEADER_BYTES + 7] & 0x0f, 0);
+  assert.notEqual(implicitAc1[HEADER_BYTES + 9], 0, "implicit DCT[1] value must be stored");
+
+  const groupedFallback = encodeDctFile(makePixels(16, 16), 16, 16, {
+    preset: "6",
+    quality: 97,
+    coefficientCoding: "grouped-5-front",
+  });
+  const implicitFallback = encodeDctFile(makePixels(16, 16), 16, 16, {
+    preset: "6",
+    quality: 97,
+    coefficientCoding: "masked-tail-implicit2-48",
+  });
+  assert.deepEqual(
+    implicitFallback.slice(HEADER_BYTES),
+    groupedFallback.slice(HEADER_BYTES),
+    "non-48-byte records must keep grouped payload semantics"
+  );
+});
+
 test("uses four independent luma blocks at high rates and reads legacy files", () => {
   const source = makePixels(16, 16);
   const split = encodeDctFile(source, 16, 16, {
@@ -301,16 +350,25 @@ test("selects the lower-error high-rate coding without regressing RGB quality", 
       quality: 97,
       coefficientCoding: "masked-tail-8x8",
     });
+    const implicit = preset === "9" ? encodeDctFile(source, 16, 16, {
+      preset,
+      quality: 97,
+      coefficientCoding: "masked-tail-implicit2-48",
+    }) : null;
     const automatic = encodeDctFile(source, 16, 16, { preset, quality: 97 });
     const groupedError = calculateRgbError(source, decodeDctFile(grouped).pixels);
     const maskedError = calculateRgbError(source, decodeDctFile(masked).pixels);
+    const implicitError = implicit
+      ? calculateRgbError(source, decodeDctFile(implicit).pixels) : Infinity;
     const automaticError = calculateRgbError(source, decodeDctFile(automatic).pixels);
+    const expected = [
+      ["grouped-5-front", groupedError],
+      ["masked-tail-8x8", maskedError],
+      ["masked-tail-implicit2-48", implicitError],
+    ].reduce((best, candidate) => candidate[1] < best[1] ? candidate : best);
 
-    assert.equal(automaticError, Math.min(groupedError, maskedError));
-    assert.equal(
-      inspectDctFile(automatic).coefficientCodingKey,
-      maskedError < groupedError ? "masked-tail-8x8" : "grouped-5-front"
-    );
+    assert.equal(automaticError, expected[1]);
+    assert.equal(inspectDctFile(automatic).coefficientCodingKey, expected[0]);
   }
 
   const tied = encodeDctFile(makeConstantPixels(16, 16, 128), 16, 16, {
