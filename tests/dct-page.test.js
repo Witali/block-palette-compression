@@ -58,6 +58,7 @@ test("shows component record bits, DCT coefficient positions, and every packing 
   assert.match(page, /id="dct-layout-component-controls"/);
   assert.match(page, /id="dct-layout-records"/);
   assert.match(page, /id="dct-layout-coefficients"/);
+  assert.match(page, /id="dct-layout-zigzag"/);
   assert.match(page, /id="dct-layout-coding-guide"/);
   assert.match(pageScript, /function renderDctLayoutRecords\(/);
   assert.match(pageScript, /function renderDctLayoutCoefficientMatrix\(/);
@@ -67,8 +68,13 @@ test("shows component record bits, DCT coefficient positions, and every packing 
   assert.match(pageScript, /dctLayoutBitField\("A1"/);
   assert.match(pageScript, /dctLayoutBitField\("A8"/);
   assert.match(pageScript, /presetKey === "9" \? \[2, 6, 7\]/);
+  assert.match(pageScript, /function renderDctLayoutZigzag\(/);
+  assert.match(pageScript, /function getDctLayoutZigzagPositions\(/);
+  assert.match(pageScript, /diagonal % 2 === 0 \? v : u/);
+  assert.match(pageScript, /marker-end="url\(#dct-layout-zigzag-arrowhead\)"/);
   assert.match(pageStyles, /\.dct-layout-bit-strip/);
   assert.match(pageStyles, /\.dct-layout-coefficient\.is-mask-tail/);
+  assert.match(pageStyles, /\.dct-layout-zigzag\.is-visible/);
   assert.match(pageStyles, /\.dct-layout-coding-item\.is-active/);
 });
 

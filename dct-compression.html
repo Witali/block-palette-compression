@@ -9,7 +9,7 @@
     <link rel="icon" href="./assets/icons/app-icon.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="./assets/icons/app-icon-192.png">
     <link rel="stylesheet" href="./block-palette.css?v=dct-page-1">
-    <link rel="stylesheet" href="./dct-compression.css?v=dct-page-12">
+    <link rel="stylesheet" href="./dct-compression.css?v=dct-page-13">
     <link rel="stylesheet" href="./i18n.css">
   </head>
   <body>
@@ -206,7 +206,10 @@
             <div class="dct-layout-matrix-frame">
               <span class="dct-layout-axis is-u" data-i18n="dct.layoutAxisU">u → X frequency</span>
               <span class="dct-layout-axis is-v" data-i18n="dct.layoutAxisV">v → Y frequency</span>
-              <div id="dct-layout-coefficients" class="dct-layout-coefficients" role="img" aria-label="DCT coefficient matrix"></div>
+              <div id="dct-layout-matrix-plane" class="dct-layout-matrix-plane">
+                <div id="dct-layout-coefficients" class="dct-layout-coefficients" role="img" aria-label="DCT coefficient matrix"></div>
+                <svg id="dct-layout-zigzag" class="dct-layout-zigzag" aria-hidden="true"></svg>
+              </div>
             </div>
             <div id="dct-layout-coefficient-legend" class="dct-layout-coefficient-legend"></div>
           </div>
@@ -252,10 +255,10 @@
     </dialog>
 
     <script src="./src/dct/dct-format.js?v=dct-page-17"></script>
-    <script src="./src/i18n/en.js?v=dct-page-15"></script>
-    <script src="./src/i18n/ru.js?v=dct-page-15"></script>
+    <script src="./src/i18n/en.js?v=dct-page-16"></script>
+    <script src="./src/i18n/ru.js?v=dct-page-16"></script>
     <script src="./src/i18n/i18n.js"></script>
-    <script src="./src/pages/dct-compression-page.js?v=dct-page-18"></script>
+    <script src="./src/pages/dct-compression-page.js?v=dct-page-19"></script>
     <script src="./src/pwa/register-service-worker.js?v=1"></script>
   </body>
 </html>

@@ -55,7 +55,9 @@ const layoutComponentControls = document.getElementById("dct-layout-component-co
 const layoutRecordSummary = document.getElementById("dct-layout-record-summary");
 const layoutRecords = document.getElementById("dct-layout-records");
 const layoutMatrixSummary = document.getElementById("dct-layout-matrix-summary");
+const layoutMatrixPlane = document.getElementById("dct-layout-matrix-plane");
 const layoutCoefficients = document.getElementById("dct-layout-coefficients");
+const layoutZigzag = document.getElementById("dct-layout-zigzag");
 const layoutCoefficientLegend = document.getElementById("dct-layout-coefficient-legend");
 const layoutCodingGuide = document.getElementById("dct-layout-coding-guide");
 
@@ -584,12 +586,14 @@ function addDctLayoutBitRanges(fields) {
 function renderDctLayoutCoefficientMatrix(presetKey, shape) {
   const masked = shape.component === "y" && Number(presetKey) >= 6;
   const implicit2 = masked && presetKey === "9";
+  const showZigzag = shape.width === 8 && shape.height === 16;
   const capacity = presetKey === "6" ? 23 : presetKey === "7.5" ? 31 : implicit2 ? 37 : 38;
   const tailStart = 64 - capacity;
   const component = dctLayoutComponentName(shape.component);
-  const packing = t(implicit2
-    ? "dct.layoutMatrixImplicit2" : masked
-      ? "dct.layoutMatrixMasked" : "dct.layoutMatrixProfiled");
+  const packing = t(showZigzag
+    ? "dct.layoutMatrixProfiledZigzag" : implicit2
+      ? "dct.layoutMatrixImplicit2" : masked
+        ? "dct.layoutMatrixMasked" : "dct.layoutMatrixProfiled");
   const cells = [];
 
   layoutMatrixSummary.textContent = t("dct.layoutMatrixSummary", {
@@ -598,15 +602,19 @@ function renderDctLayoutCoefficientMatrix(presetKey, shape) {
     height: shape.height,
     packing,
   });
-  layoutCoefficients.style.gridTemplateColumns = `repeat(${shape.width}, minmax(0, 1fr))`;
-  layoutCoefficients.style.aspectRatio = `${shape.width} / ${shape.height}`;
-  layoutCoefficients.style.width = shape.width === 8 && shape.height === 16
+  layoutMatrixPlane.style.aspectRatio = `${shape.width} / ${shape.height}`;
+  layoutMatrixPlane.style.width = showZigzag
     ? "min(50%, 170px)" : "min(100%, 340px)";
-  layoutCoefficients.setAttribute("aria-label", t("dct.layoutMatrixAria", {
+  layoutCoefficients.style.gridTemplateColumns = `repeat(${shape.width}, minmax(0, 1fr))`;
+  const matrixAria = t("dct.layoutMatrixAria", {
     component,
     width: shape.width,
     height: shape.height,
-  }));
+  });
+  layoutCoefficients.setAttribute(
+    "aria-label",
+    showZigzag ? `${matrixAria}. ${t("dct.layoutZigzagAria")}` : matrixAria
+  );
 
   for (let v = 0; v < shape.height; v += 1) {
     for (let u = 0; u < shape.width; u += 1) {
@@ -647,6 +655,7 @@ function renderDctLayoutCoefficientMatrix(presetKey, shape) {
     }
   }
   layoutCoefficients.replaceChildren(...cells);
+  renderDctLayoutZigzag(shape, showZigzag);
 
   const legend = [
     ["dc", "dct.layoutLegendDc"],
@@ -658,6 +667,7 @@ function renderDctLayoutCoefficientMatrix(presetKey, shape) {
     legend.push(["mask-tail", "dct.layoutLegendMaskTail"]);
     legend.push(["tail", "dct.layoutLegendTail"]);
   }
+  if (showZigzag) legend.push(["zigzag", "dct.layoutLegendZigzag"]);
   layoutCoefficientLegend.replaceChildren(...legend.map(([type, key]) => {
     const item = document.createElement("span");
     const swatch = document.createElement("i");
@@ -667,6 +677,68 @@ function renderDctLayoutCoefficientMatrix(presetKey, shape) {
     item.append(swatch, t(key));
     return item;
   }));
+}
+
+function renderDctLayoutZigzag(shape, visible) {
+  layoutZigzag.classList.toggle("is-visible", visible);
+  layoutZigzag.replaceChildren();
+  if (!visible) return;
+
+  const positions = getDctLayoutZigzagPositions(shape.width, shape.height);
+  const points = positions.map(({ u, v }) => `${u + 0.5},${v + 0.5}`).join(" ");
+  const directionLines = [];
+  const maximumDiagonal = shape.width + shape.height - 2;
+
+  for (let diagonal = 1; diagonal <= maximumDiagonal; diagonal += 1) {
+    const diagonalPoints = positions
+      .filter(({ u, v }) => u + v === diagonal)
+      .map(({ u, v }) => `${u + 0.5},${v + 0.5}`)
+      .join(" ");
+    if (diagonalPoints.includes(" ")) {
+      directionLines.push(
+        `<polyline class="dct-layout-zigzag-direction" points="${diagonalPoints}" marker-end="url(#dct-layout-zigzag-arrowhead)" />`
+      );
+    }
+  }
+
+  const last = positions[positions.length - 1];
+  layoutZigzag.setAttribute("viewBox", `0 0 ${shape.width} ${shape.height}`);
+  layoutZigzag.setAttribute("preserveAspectRatio", "none");
+  layoutZigzag.innerHTML = `
+    <defs>
+      <marker id="dct-layout-zigzag-arrowhead" class="dct-layout-zigzag-marker" viewBox="0 0 0.42 0.42" refX="0.38" refY="0.21" markerWidth="0.42" markerHeight="0.42" markerUnits="userSpaceOnUse" orient="auto">
+        <path class="dct-layout-zigzag-arrow" d="M0,0 L0.42,0.21 L0,0.42 Z"></path>
+      </marker>
+    </defs>
+    <polyline class="dct-layout-zigzag-halo" points="${points}"></polyline>
+    <polyline class="dct-layout-zigzag-line" points="${points}"></polyline>
+    ${directionLines.join("")}
+    <circle class="dct-layout-zigzag-point" cx="0.5" cy="0.5" r="0.27"></circle>
+    <text class="dct-layout-zigzag-label" x="0.5" y="0.5">0</text>
+    <circle class="dct-layout-zigzag-point" cx="${last.u + 0.5}" cy="${last.v + 0.5}" r="0.27"></circle>
+    <text class="dct-layout-zigzag-label" x="${last.u + 0.5}" y="${last.v + 0.5}">${positions.length - 1}</text>`;
+}
+
+function getDctLayoutZigzagPositions(width, height) {
+  const positions = [{ u: 0, v: 0 }];
+  const ac = [];
+
+  for (let v = 0; v < height; v += 1) {
+    for (let u = 0; u < width; u += 1) {
+      if (u === 0 && v === 0) continue;
+      const diagonal = u + v;
+      ac.push({
+        u,
+        v,
+        score: diagonal + (diagonal % 2 === 0 ? v : u) * 0.001,
+      });
+    }
+  }
+
+  ac.sort((left, right) => left.score - right.score ||
+    left.u + left.v - right.u - right.v || left.v - right.v || left.u - right.u);
+  positions.push(...ac);
+  return positions;
 }
 
 function renderDctLayoutCodingGuide(presetKey) {

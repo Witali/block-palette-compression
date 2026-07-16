@@ -465,13 +465,76 @@
   transform: rotate(180deg);
 }
 
-.dct-layout-coefficients {
+.dct-layout-matrix-plane {
   grid-area: matrix;
-  display: grid;
+  position: relative;
   width: min(100%, 340px);
-  max-height: 430px;
+}
+
+.dct-layout-coefficients {
+  display: grid;
+  width: 100%;
+  height: 100%;
   border-top: 1px solid #36414d;
   border-left: 1px solid #36414d;
+}
+
+.dct-layout-zigzag {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: none;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.dct-layout-zigzag.is-visible {
+  display: block;
+}
+
+.dct-layout-zigzag-halo,
+.dct-layout-zigzag-line,
+.dct-layout-zigzag-direction {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.dct-layout-zigzag-halo {
+  stroke: rgba(5, 10, 16, 0.82);
+  stroke-width: 5px;
+}
+
+.dct-layout-zigzag-line {
+  stroke: #ffe071;
+  stroke-width: 2px;
+}
+
+.dct-layout-zigzag-direction {
+  stroke: transparent;
+  stroke-width: 2px;
+}
+
+.dct-layout-zigzag-arrow {
+  fill: #ffe071;
+  stroke: #071018;
+  stroke-width: 0.35px;
+}
+
+.dct-layout-zigzag-point {
+  fill: #ffe071;
+  stroke: #071018;
+  stroke-width: 0.08px;
+}
+
+.dct-layout-zigzag-label {
+  fill: #071018;
+  font: 800 0.28px/1 ui-monospace, Consolas, monospace;
+  text-anchor: middle;
+  dominant-baseline: central;
 }
 
 .dct-layout-coefficient {
@@ -505,6 +568,16 @@
 }
 
 .dct-layout-coefficient-swatch.is-frequency { background: rgba(77, 150, 237, 0.3); }
+
+.dct-layout-coefficient-swatch.is-zigzag {
+  border: 0;
+  background: linear-gradient(
+    to bottom,
+    transparent 0 38%,
+    #ffe071 38% 62%,
+    transparent 62% 100%
+  );
+}
 
 .dct-layout-coding-panel {
   margin-top: 12px;
