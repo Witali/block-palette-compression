@@ -31,7 +31,60 @@ test("stores every DCT preset as fixed independently addressed MCU records", () 
     assert.equal(info.bytesPerMcu, preset.bytesPerMcu);
     assert.equal(encoded.length, HEADER_BYTES + 4 * preset.bytesPerMcu);
     assert.equal(info.bpp, preset.bpp);
+    assert.equal(info.chroma420, true);
+    assert.equal(info.chromaSubsampling, "4:2:0");
+    assert.equal(info.chromaHeight, 8);
   }
+});
+
+test("writes 4:2:0 by default and keeps legacy 4:2:2 files readable", () => {
+  const width = 19;
+  const height = 17;
+  const source = makePixels(width, height);
+  const encoded420 = encodeDctFile(source, width, height, { preset: "1.5", quality: 82 });
+  const encoded422 = encodeDctFile(source, width, height, {
+    preset: "1.5",
+    quality: 82,
+    chromaSubsampling: "4:2:2",
+  });
+  const info420 = inspectDctFile(encoded420);
+  const info422 = inspectDctFile(encoded422);
+
+  assert.equal(new DataView(encoded420.buffer, encoded420.byteOffset).getUint32(52, true) & 8, 8);
+  assert.equal(new DataView(encoded422.buffer, encoded422.byteOffset).getUint32(52, true) & 8, 0);
+  assert.equal(info420.chromaSubsampling, "4:2:0");
+  assert.equal(info420.chromaHeight, 8);
+  assert.equal(info422.chromaSubsampling, "4:2:2");
+  assert.equal(info422.chromaHeight, 16);
+  assert.equal(encoded420.length, encoded422.length, "subsampling must not change fixed MCU size");
+
+  const red = new Uint8ClampedArray(16 * 16 * 4);
+  for (let offset = 0; offset < red.length; offset += 4) {
+    red[offset] = 255;
+    red[offset + 3] = 255;
+  }
+  const decodedRed = decodeDctFile(encodeDctFile(red, 16, 16, {
+    preset: "9",
+    quality: 100,
+    coefficientCoding: "grouped-5-front",
+  })).pixels;
+  assert.ok(decodedRed[0] > 180 && decodedRed[1] < 80 && decodedRed[2] < 80);
+
+  for (const encoded of [encoded420, encoded422]) {
+    const decoded = decodeDctFile(encoded);
+    for (const [x, y] of [[0, 0], [1, 1], [8, 8], [18, 16]]) {
+      const sampled = sampleDctFilePixel(encoded, x, y);
+      const offset = (y * width + x) * 4;
+      assert.deepEqual(
+        [sampled.r, sampled.g, sampled.b, sampled.a],
+        Array.from(decoded.pixels.slice(offset, offset + 4))
+      );
+    }
+  }
+  assert.throws(
+    () => encodeDctFile(source, width, height, { chromaSubsampling: "4:1:1" }),
+    /Unsupported DCT chroma subsampling/
+  );
 });
 
 test("covers every rate from the preserved reference converter", () => {
@@ -116,6 +169,11 @@ test("fills masked records with a non-overlapping implicit AC tail", () => {
     assert.equal(block.explicitAcCount + block.tailAcCount, 38);
     assert.equal(block.tailStart, 64 - block.tailAcCount);
   }
+  for (const component of [mcu.components.cb, mcu.components.cr]) {
+    assert.equal(component.encodingMode, "masked-tail");
+    assert.equal(component.coefficientCount, 39);
+    assert.equal(component.explicitAcCount + component.tailAcCount, 38);
+  }
   assert.equal(encoded[HEADER_BYTES + 47] & 0xfc, 0, "48-byte reserve bits must stay zero");
 
   const invalidOverlap = encodeDctFile(makeConstantPixels(16, 16, 192), 16, 16, {
@@ -143,6 +201,11 @@ test("uses two implicit low-frequency AC values to fit 39 AC slots in 48 bytes",
     assert.equal(block.coefficientCount, 40);
     assert.equal(block.implicitAcCount + block.explicitAcCount + block.tailAcCount, 39);
     assert.equal(block.tailStart, 64 - block.tailAcCount);
+  }
+  for (const component of [mcu.components.cb, mcu.components.cr]) {
+    assert.equal(component.encodingMode, "masked-tail-implicit2");
+    assert.equal(component.implicitAcCount, 2);
+    assert.equal(component.coefficientCount, 40);
   }
 
   const decoded = decodeDctFile(encoded);
@@ -591,7 +654,7 @@ test("rejects truncated files, invalid modes, and invalid coordinates", () => {
   invalidMode[13] = 0;
   invalidMode[14] = 0;
   invalidMode[15] = 0;
-  unsupportedFlags[52] |= 8;
+  unsupportedFlags[52] |= 16;
   invalidCoefficientCoding[53] = 15;
   splitLowRate[52] |= 2;
   maskedLibrary[52] |= 4;

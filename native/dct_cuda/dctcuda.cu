@@ -34,10 +34,11 @@ constexpr uint32_t DCT_VERSION = 2u;
 constexpr uint32_t FLAG_AUTO_QUALITY = 1u;
 constexpr uint32_t FLAG_SPLIT_LUMA_8X8 = 2u;
 constexpr uint32_t FLAG_DCT_LIBRARY = 4u;
+constexpr uint32_t FLAG_CHROMA_420 = 8u;
 constexpr uint32_t COEFFICIENT_CODING_SHIFT = 8u;
 constexpr uint32_t COEFFICIENT_CODING_MASK = 15u << COEFFICIENT_CODING_SHIFT;
 constexpr uint32_t SUPPORTED_FLAGS = FLAG_AUTO_QUALITY | FLAG_SPLIT_LUMA_8X8 |
-    FLAG_DCT_LIBRARY | COEFFICIENT_CODING_MASK;
+    FLAG_DCT_LIBRARY | FLAG_CHROMA_420 | COEFFICIENT_CODING_MASK;
 constexpr int COEFFICIENT_CODING_LEGACY = 0;
 constexpr int COEFFICIENT_CODING_GROUPED_EQUAL_2 = 1;
 constexpr int COEFFICIENT_CODING_GROUPED_FRONT = 2;
@@ -118,6 +119,7 @@ struct DctInfo {
     uint32_t quality = 0;
     bool auto_quality = false;
     bool split_luma_8x8 = false;
+    bool chroma_420 = false;
     bool library_enabled = false;
     int coefficient_coding = COEFFICIENT_CODING_LEGACY;
     uint32_t search_candidate_count = 0;
@@ -1336,11 +1338,11 @@ __global__ void encode_component_kernel(
     if (position < COUNT) {
         const int local_x = position % WIDTH;
         const int local_y = position / WIDTH;
-        const uint32_t source_y = min(
-            height - 1u,
-            mcu_y * MCU_HEIGHT + static_cast<uint32_t>(block_y + local_y)
-        );
         if constexpr (!CHROMA) {
+            const uint32_t source_y = min(
+                height - 1u,
+                mcu_y * MCU_HEIGHT + static_cast<uint32_t>(block_y + local_y)
+            );
             const int block_x = WIDTH == 8 ? (luma_block & 1) * 8 : 0;
             const uint32_t source_x = min(
                 width - 1u,
@@ -1355,28 +1357,37 @@ __global__ void encode_component_kernel(
             samples[position] = rn_add(value, -128.0);
         } else {
             double sum = 0.0;
-            for (int pair = 0; pair < 2; ++pair) {
-                const uint32_t source_x = min(
-                    width - 1u,
-                    mcu_x * MCU_WIDTH + static_cast<uint32_t>(local_x * 2 + pair)
+            constexpr int VERTICAL_SAMPLES = HEIGHT == 8 ? 2 : 1;
+            for (int sample_y = 0; sample_y < VERTICAL_SAMPLES; ++sample_y) {
+                const uint32_t source_y = min(
+                    height - 1u,
+                    mcu_y * MCU_HEIGHT + static_cast<uint32_t>(local_y * VERTICAL_SAMPLES + sample_y)
                 );
-                const size_t source = (static_cast<size_t>(source_y) * width + source_x) * 3u;
-                const double red = rgb[source];
-                const double green = rgb[source + 1u];
-                const double blue = rgb[source + 2u];
-                double value;
-                if (component == 1) {
-                    value = rn_add(128.0, -rn_mul(0.168736, red));
-                    value = rn_add(value, -rn_mul(0.331264, green));
-                    value = rn_add(value, rn_mul(0.5, blue));
-                } else {
-                    value = rn_add(128.0, rn_mul(0.5, red));
-                    value = rn_add(value, -rn_mul(0.418688, green));
-                    value = rn_add(value, -rn_mul(0.081312, blue));
+                for (int pair = 0; pair < 2; ++pair) {
+                    const uint32_t source_x = min(
+                        width - 1u,
+                        mcu_x * MCU_WIDTH + static_cast<uint32_t>(local_x * 2 + pair)
+                    );
+                    const size_t source = (static_cast<size_t>(source_y) * width + source_x) * 3u;
+                    const double red = rgb[source];
+                    const double green = rgb[source + 1u];
+                    const double blue = rgb[source + 2u];
+                    double value;
+                    if (component == 1) {
+                        value = rn_add(128.0, -rn_mul(0.168736, red));
+                        value = rn_add(value, -rn_mul(0.331264, green));
+                        value = rn_add(value, rn_mul(0.5, blue));
+                    } else {
+                        value = rn_add(128.0, rn_mul(0.5, red));
+                        value = rn_add(value, -rn_mul(0.418688, green));
+                        value = rn_add(value, -rn_mul(0.081312, blue));
+                    }
+                    sum = rn_add(sum, value);
                 }
-                sum = rn_add(sum, value);
             }
-            samples[position] = rn_add(rn_mul(sum, 0.5), -128.0);
+            samples[position] = rn_add(
+                rn_mul(sum, 1.0 / static_cast<double>(VERTICAL_SAMPLES * 2)), -128.0
+            );
         }
     }
     __syncthreads();
@@ -1808,6 +1819,29 @@ __device__ double sample_inverse_dct(const double *coefficients, int x, int y) {
     return output;
 }
 
+__device__ double sample_chroma_420(const double *coefficients, int local_x, int local_y) {
+    const int floor_x = (local_x & 1) == 0 ? (local_x >> 1) - 1 : local_x >> 1;
+    const int floor_y = (local_y & 1) == 0 ? (local_y >> 1) - 1 : local_y >> 1;
+    const int x0 = clamp_int(floor_x, 0, 7);
+    const int y0 = clamp_int(floor_y, 0, 7);
+    const int x1 = clamp_int(floor_x + 1, 0, 7);
+    const int y1 = clamp_int(floor_y + 1, 0, 7);
+    const int fraction_x = (local_x & 1) == 0 ? 3 : 1;
+    const int fraction_y = (local_y & 1) == 0 ? 3 : 1;
+    const double top = rn_add(
+        rn_mul(4 - fraction_x, sample_inverse_dct<8, 8>(coefficients, x0, y0)),
+        rn_mul(fraction_x, sample_inverse_dct<8, 8>(coefficients, x1, y0))
+    );
+    const double bottom = rn_add(
+        rn_mul(4 - fraction_x, sample_inverse_dct<8, 8>(coefficients, x0, y1)),
+        rn_mul(fraction_x, sample_inverse_dct<8, 8>(coefficients, x1, y1))
+    );
+    return rn_mul(
+        rn_add(rn_mul(4 - fraction_y, top), rn_mul(fraction_y, bottom)),
+        1.0 / 16.0
+    );
+}
+
 __device__ uint8_t clamp_byte(double value) {
     return static_cast<uint8_t>(clamp_int(round_signed(value), 0, 255));
 }
@@ -1836,6 +1870,7 @@ __global__ void decode_image_kernel(
     Preset preset,
     int quality,
     bool split_luma_8x8,
+    bool chroma_420,
     int coefficient_coding,
     uint8_t *rgb,
     int *error_flag
@@ -1902,38 +1937,66 @@ __global__ void decode_image_kernel(
             library_layout.cb_reference_bits,
             mcu_index
         );
-        const bool cb_ok = decode_component_record<8, 16, true>(
-            record + preset.y_bytes,
-            static_cast<int>(preset.cb_bytes),
-            quality,
-            coefficient_coding,
-            library,
-            static_cast<int>(library_layout.version),
-            cb_library_index,
-            library_layout.cb_count,
-            library_layout.cb_offset,
-            static_cast<int>(preset.cb_bytes),
-            cb_coefficients
-        );
+        const bool cb_ok = chroma_420
+            ? decode_component_record<8, 8, true>(
+                record + preset.y_bytes,
+                static_cast<int>(preset.cb_bytes),
+                quality,
+                coefficient_coding,
+                library,
+                static_cast<int>(library_layout.version),
+                cb_library_index,
+                library_layout.cb_count,
+                library_layout.cb_offset,
+                static_cast<int>(preset.cb_bytes),
+                cb_coefficients
+            )
+            : decode_component_record<8, 16, true>(
+                record + preset.y_bytes,
+                static_cast<int>(preset.cb_bytes),
+                quality,
+                coefficient_coding,
+                library,
+                static_cast<int>(library_layout.version),
+                cb_library_index,
+                library_layout.cb_count,
+                library_layout.cb_offset,
+                static_cast<int>(preset.cb_bytes),
+                cb_coefficients
+            );
         const int cr_library_index = read_sidecar_reference(
             library,
             library_layout.cr_reference_offset,
             library_layout.cr_reference_bits,
             mcu_index
         );
-        const bool cr_ok = decode_component_record<8, 16, true>(
-            record + preset.y_bytes + preset.cb_bytes,
-            static_cast<int>(preset.cr_bytes),
-            quality,
-            coefficient_coding,
-            library,
-            static_cast<int>(library_layout.version),
-            cr_library_index,
-            library_layout.cr_count,
-            library_layout.cr_offset,
-            static_cast<int>(preset.cr_bytes),
-            cr_coefficients
-        );
+        const bool cr_ok = chroma_420
+            ? decode_component_record<8, 8, true>(
+                record + preset.y_bytes + preset.cb_bytes,
+                static_cast<int>(preset.cr_bytes),
+                quality,
+                coefficient_coding,
+                library,
+                static_cast<int>(library_layout.version),
+                cr_library_index,
+                library_layout.cr_count,
+                library_layout.cr_offset,
+                static_cast<int>(preset.cr_bytes),
+                cr_coefficients
+            )
+            : decode_component_record<8, 16, true>(
+                record + preset.y_bytes + preset.cb_bytes,
+                static_cast<int>(preset.cr_bytes),
+                quality,
+                coefficient_coding,
+                library,
+                static_cast<int>(library_layout.version),
+                cr_library_index,
+                library_layout.cr_count,
+                library_layout.cr_offset,
+                static_cast<int>(preset.cr_bytes),
+                cr_coefficients
+            );
         if (!y_ok || !cb_ok || !cr_ok) {
             atomicExch(error_flag, 1);
         }
@@ -1965,8 +2028,12 @@ __global__ void decode_image_kernel(
     } else {
         luma = sample_inverse_dct<16, 16>(y_coefficients, local_x, local_y) + 128.0;
     }
-    const double cb = sample_inverse_dct<8, 16>(cb_coefficients, local_x / 2, local_y) + 128.0;
-    const double cr = sample_inverse_dct<8, 16>(cr_coefficients, local_x / 2, local_y) + 128.0;
+    const double cb = (chroma_420
+        ? sample_chroma_420(cb_coefficients, local_x, local_y)
+        : sample_inverse_dct<8, 16>(cb_coefficients, local_x / 2, local_y)) + 128.0;
+    const double cr = (chroma_420
+        ? sample_chroma_420(cr_coefficients, local_x, local_y)
+        : sample_inverse_dct<8, 16>(cr_coefficients, local_x / 2, local_y)) + 128.0;
     uint8_t rgba[4];
     convert_to_rgba(luma, cb, cr, rgba);
     const size_t destination = (static_cast<size_t>(y) * width + x) * 3u;
@@ -1982,6 +2049,7 @@ __global__ void sample_pixel_kernel(
     Preset preset,
     int quality,
     bool split_luma_8x8,
+    bool chroma_420,
     int coefficient_coding,
     uint32_t mcu_index,
     int local_x,
@@ -2043,38 +2111,38 @@ __global__ void sample_pixel_kernel(
             library_layout.cb_reference_bits,
             mcu_index
         );
-        const bool cb_ok = decode_component_record<8, 16, true>(
-            record + preset.y_bytes,
-            static_cast<int>(preset.cb_bytes),
-            quality,
-            coefficient_coding,
-            library,
-            static_cast<int>(library_layout.version),
-            cb_library_index,
-            library_layout.cb_count,
-            library_layout.cb_offset,
-            static_cast<int>(preset.cb_bytes),
-            cb_coefficients
-        );
+        const bool cb_ok = chroma_420
+            ? decode_component_record<8, 8, true>(
+                record + preset.y_bytes, static_cast<int>(preset.cb_bytes), quality,
+                coefficient_coding, library, static_cast<int>(library_layout.version),
+                cb_library_index, library_layout.cb_count, library_layout.cb_offset,
+                static_cast<int>(preset.cb_bytes), cb_coefficients
+            )
+            : decode_component_record<8, 16, true>(
+                record + preset.y_bytes, static_cast<int>(preset.cb_bytes), quality,
+                coefficient_coding, library, static_cast<int>(library_layout.version),
+                cb_library_index, library_layout.cb_count, library_layout.cb_offset,
+                static_cast<int>(preset.cb_bytes), cb_coefficients
+            );
         const int cr_library_index = read_sidecar_reference(
             library,
             library_layout.cr_reference_offset,
             library_layout.cr_reference_bits,
             mcu_index
         );
-        const bool cr_ok = decode_component_record<8, 16, true>(
-            record + preset.y_bytes + preset.cb_bytes,
-            static_cast<int>(preset.cr_bytes),
-            quality,
-            coefficient_coding,
-            library,
-            static_cast<int>(library_layout.version),
-            cr_library_index,
-            library_layout.cr_count,
-            library_layout.cr_offset,
-            static_cast<int>(preset.cr_bytes),
-            cr_coefficients
-        );
+        const bool cr_ok = chroma_420
+            ? decode_component_record<8, 8, true>(
+                record + preset.y_bytes + preset.cb_bytes, static_cast<int>(preset.cr_bytes),
+                quality, coefficient_coding, library, static_cast<int>(library_layout.version),
+                cr_library_index, library_layout.cr_count, library_layout.cr_offset,
+                static_cast<int>(preset.cr_bytes), cr_coefficients
+            )
+            : decode_component_record<8, 16, true>(
+                record + preset.y_bytes + preset.cb_bytes, static_cast<int>(preset.cr_bytes),
+                quality, coefficient_coding, library, static_cast<int>(library_layout.version),
+                cr_library_index, library_layout.cr_count, library_layout.cr_offset,
+                static_cast<int>(preset.cr_bytes), cr_coefficients
+            );
         if (!y_ok || !cb_ok || !cr_ok) {
             *error_flag = 1;
             return;
@@ -2089,8 +2157,12 @@ __global__ void sample_pixel_kernel(
         } else {
             luma = sample_inverse_dct<16, 16>(y_coefficients, local_x, local_y) + 128.0;
         }
-        const double cb = sample_inverse_dct<8, 16>(cb_coefficients, local_x / 2, local_y) + 128.0;
-        const double cr = sample_inverse_dct<8, 16>(cr_coefficients, local_x / 2, local_y) + 128.0;
+        const double cb = (chroma_420
+            ? sample_chroma_420(cb_coefficients, local_x, local_y)
+            : sample_inverse_dct<8, 16>(cb_coefficients, local_x / 2, local_y)) + 128.0;
+        const double cr = (chroma_420
+            ? sample_chroma_420(cr_coefficients, local_x, local_y)
+            : sample_inverse_dct<8, 16>(cr_coefficients, local_x / 2, local_y)) + 128.0;
         convert_to_rgba(luma, cb, cr, rgba);
     }
 }
@@ -2130,6 +2202,7 @@ std::vector<uint8_t> make_header(
         52u,
         (auto_quality ? FLAG_AUTO_QUALITY : 0u) |
             (split_luma_8x8 ? FLAG_SPLIT_LUMA_8X8 : 0u) |
+            FLAG_CHROMA_420 |
             (static_cast<uint32_t>(coefficient_coding) << COEFFICIENT_CODING_SHIFT)
     );
     write_u32(header.data(), 56u, static_cast<uint32_t>(payload));
@@ -2160,6 +2233,7 @@ DctInfo inspect_header(const uint8_t *bytes, uint64_t file_size) {
     const uint32_t metadata = read_u32(bytes, 60u);
     info.auto_quality = (flags & FLAG_AUTO_QUALITY) != 0u;
     info.split_luma_8x8 = (flags & FLAG_SPLIT_LUMA_8X8) != 0u;
+    info.chroma_420 = (flags & FLAG_CHROMA_420) != 0u;
     info.library_enabled = (flags & FLAG_DCT_LIBRARY) != 0u;
     info.payload_bytes = payload;
     info.library_bytes = info.library_enabled ? metadata : 0u;
@@ -2339,13 +2413,13 @@ GpuResult encode_gpu(
         );
         cuda_check(cudaGetLastError(), "Launch luma DCT kernel");
     }
-    encode_component_kernel<8, 16, true><<<count, CUDA_THREADS>>>(
+    encode_component_kernel<8, 8, true><<<count, 64>>>(
         device_rgb.get(), width, height, columns, count,
         preset.bytes_per_mcu, preset.y_bytes, preset.cb_bytes, 1, 0,
         static_cast<int>(quality), coefficient_coding, split_luma_8x8, device_output.get()
     );
     cuda_check(cudaGetLastError(), "Launch Cb DCT kernel");
-    encode_component_kernel<8, 16, true><<<count, CUDA_THREADS>>>(
+    encode_component_kernel<8, 8, true><<<count, 64>>>(
         device_rgb.get(), width, height, columns, count,
         preset.bytes_per_mcu, preset.y_bytes + preset.cb_bytes, preset.cr_bytes, 2,
         0, static_cast<int>(quality), coefficient_coding, split_luma_8x8, device_output.get()
@@ -2376,7 +2450,7 @@ GpuResult decode_gpu(const std::vector<uint8_t> &file, const DctInfo &info) {
         device_file.get(), device_library, make_library_layout(info),
         info.width, info.height, info.mcu_columns, info.mcu_count,
         info.preset, static_cast<int>(info.quality), info.split_luma_8x8,
-        info.coefficient_coding,
+        info.chroma_420, info.coefficient_coding,
         device_rgb.get(), device_error.get()
     );
     cuda_check(cudaGetLastError(), "Launch DCTBS2 decode kernel");
@@ -2422,7 +2496,7 @@ std::array<uint8_t, 4> sample_pixel_gpu(
     sample_pixel_kernel<<<1, 1>>>(
         device_record.get(), info.library_enabled ? device_library.get() : nullptr,
         make_library_layout(info), info.preset, static_cast<int>(info.quality),
-        info.split_luma_8x8, info.coefficient_coding,
+        info.split_luma_8x8, info.chroma_420, info.coefficient_coding,
         mcu_index,
         static_cast<int>(x % 16u), static_cast<int>(y % 16u),
         device_rgba.get(), device_error.get()
@@ -2800,6 +2874,7 @@ int command_encode(int argc, char **argv) {
     }
     const DctInfo selected_info = inspect_file(selected.bytes);
     std::cout << ", " << coefficient_coding_name(selected_info.coefficient_coding)
+              << ", chroma 4:2:0"
               << ", " << selected.bytes.size() << " bytes, " << std::fixed
               << std::setprecision(3) << actual_bpp << " actual bpp, PSNR "
               << std::setprecision(4) << psnr << " dB\n"
@@ -2830,6 +2905,7 @@ int command_decode(int argc, char **argv) {
     write_ppm(argv[3], decoded.bytes, info.width, info.height);
     std::cout << "Decoded DCTBS2 " << info.width << 'x' << info.height
               << ": preset " << info.preset.nominal_bpp << " bpp, quality " << info.quality
+              << ", chroma " << (info.chroma_420 ? "4:2:0" : "4:2:2 (legacy)")
               << ", CUDA kernel " << std::fixed << std::setprecision(3)
               << decoded.kernel_ms << " ms, device " << properties.name << '\n';
     return 0;
@@ -2895,7 +2971,9 @@ int command_info(int argc, char **argv) {
               << ", " << info.mcu_columns << 'x' << info.mcu_rows << " MCUs, "
               << info.preset.bytes_per_mcu << " bytes/MCU, " << file.size()
               << " bytes, " << std::fixed << std::setprecision(3) << actual_bpp
-              << " actual bpp, " << coefficient_coding_name(info.coefficient_coding);
+              << " actual bpp, chroma "
+              << (info.chroma_420 ? "4:2:0" : "4:2:2 (legacy)") << ", "
+              << coefficient_coding_name(info.coefficient_coding);
     if (info.auto_quality) {
         std::cout << ", auto quality (" << info.search_candidate_count << " candidates)";
     }

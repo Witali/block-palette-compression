@@ -52,6 +52,17 @@ test("uses deterministic split luma blocks for high-rate files", () => {
   assert.match(readme, /four independent 8x8 Y transforms/);
 });
 
+test("writes 4:2:0 chroma and keeps the legacy 4:2:2 decoder path", () => {
+  assert.match(source, /FLAG_CHROMA_420 = 8u/);
+  assert.match(source, /FLAG_CHROMA_420 \|/);
+  assert.match(source, /encode_component_kernel<8, 8, true>/);
+  assert.match(source, /sample_chroma_420/);
+  assert.match(source, /info\.chroma_420/);
+  assert.match(source, /"4:2:2 \(legacy\)"/);
+  assert.match(readme, /4:2:0 downsampling/);
+  assert.match(readme, /compatibility\s+with earlier 4:2:2 files/);
+});
+
 test("ships reproducible nvcc and CMake build entry points", () => {
   assert.match(build, /Get-Command nvcc\.exe/);
   assert.match(build, /VsDevCmd\.bat/);

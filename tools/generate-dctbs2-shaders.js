@@ -155,6 +155,7 @@ function renderUnrolledComponentDecoder(options) {
     scanName,
     coefficientCount,
     width,
+    height,
     chroma,
   } = options;
   const firstEnd = Math.floor((coefficientCount + 5) / 6);
@@ -183,8 +184,8 @@ function renderUnrolledComponentDecoder(options) {
     "  float correction = 0.0;",
     "",
     "  addDctCompensated(",
-    `    float(dc) * exp2(float(dcScaleIndex)) * dctQuantizationStep(0, ${chroma}) *`,
-    `      dctBasis(0, localX, ${width}) * dctBasis(0, localY, 16),`,
+    `    float(dc) * exp2(float(dcScaleIndex)) * dctQuantizationStep(0, ${chroma}, ${height}) *`,
+    `      dctBasis(0, localX, ${width}) * dctBasis(0, localY, ${height}),`,
     "    sum,",
     "    correction",
     "  );",
@@ -210,9 +211,9 @@ function renderUnrolledComponentDecoder(options) {
         `    int position = ${scanName}[profile * ${coefficientCount} + ${index}];`,
         `    int stored = dctSigned5(${renderWordExtract(wordBit, 5)});`,
         "    addDctCompensated(",
-        `      float(stored) * ${scale} * dctQuantizationStep(position, ${chroma}) *`,
+        `      float(stored) * ${scale} * dctQuantizationStep(position, ${chroma}, ${height}) *`,
         `        dctBasis(position & ${positionMask}, localX, ${width}) *`,
-        `        dctBasis(position >> ${positionShift}, localY, 16),`,
+        `        dctBasis(position >> ${positionShift}, localY, ${height}),`,
         "      sum,",
         "      correction",
         "    );",
@@ -250,14 +251,25 @@ ${renderUnrolledComponentDecoder({
     scanName: "DCT_SCAN_Y",
     coefficientCount: yCount,
     width: 16,
+    height: 16,
     chroma: "false",
   })}
 
 ${renderUnrolledComponentDecoder({
-    functionName: "sampleDctChromaRecord",
-    scanName: "DCT_SCAN_C",
+    functionName: "sampleDctChroma422Record",
+    scanName: "DCT_SCAN_C422",
     coefficientCount: chromaCount,
     width: 8,
+    height: 16,
+    chroma: "true",
+  })}
+
+${renderUnrolledComponentDecoder({
+    functionName: "sampleDctChroma420Record",
+    scanName: "DCT_SCAN_C420",
+    coefficientCount: chromaCount,
+    width: 8,
+    height: 8,
     chroma: "true",
   })}
 // </dctbs2-profile-decoder>`;
@@ -267,7 +279,12 @@ function renderCubeFragmentShader(preset) {
   const yCount = groupedFiveCount(preset.y);
   const chromaCount = groupedFiveCount(preset.cb);
   const yScan = renderCubeIntArray("DCT_SCAN_Y", trimmedScans(16, 16, yCount));
-  const chromaScan = renderCubeIntArray("DCT_SCAN_C", trimmedScans(8, 16, chromaCount));
+  const chroma422Scan = renderCubeIntArray(
+    "DCT_SCAN_C422", trimmedScans(8, 16, chromaCount)
+  );
+  const chroma420Scan = renderCubeIntArray(
+    "DCT_SCAN_C420", trimmedScans(8, 8, chromaCount)
+  );
   let source = fs.readFileSync(cubeTemplatePath, "utf8").replace(/\r\n?/g, "\n");
 
   source = source
@@ -281,7 +298,8 @@ function renderCubeFragmentShader(preset) {
     .replace(/\/\/ Four deterministic significance profiles,[\s\S]*?(?=const int DCT_SCAN_Y)/,
       `// Four deterministic significance scans trimmed for ${preset.key} bpp records.\n`)
     .replace(/const int DCT_SCAN_Y\[\d+\] = int\[\d+\]\([\s\S]*?\);/, yScan)
-    .replace(/const int DCT_SCAN_C\[\d+\] = int\[\d+\]\([\s\S]*?\);/, chromaScan)
+    .replace(/const int DCT_SCAN_C422\[\d+\] = int\[\d+\]\([\s\S]*?\);/, chroma422Scan)
+    .replace(/const int DCT_SCAN_C420\[\d+\] = int\[\d+\]\([\s\S]*?\);/, chroma420Scan)
     .replace(/\/\/ <dctbs2-profile-decoder>[\s\S]*?\/\/ <\/dctbs2-profile-decoder>/,
       renderCubeProfileDecoder(preset));
 
@@ -304,10 +322,10 @@ void main() {
 function renderFragmentShader(preset) {
   const y16Scans = glslIntArray("SCAN_Y16", allScans(16, 16));
   const y8Scans = glslIntArray("SCAN_Y8", allScans(8, 8));
-  const chromaScans = glslIntArray("SCAN_C", allScans(8, 16));
+  const chroma422Scans = glslIntArray("SCAN_C422", allScans(8, 16));
   const y16SkipScans = glslIntArray("SKIP_SCAN_Y16", allSkipScans(16, 16));
   const y8SkipScans = glslIntArray("SKIP_SCAN_Y8", allSkipScans(8, 8));
-  const chromaSkipScans = glslIntArray("SKIP_SCAN_C", allSkipScans(8, 16));
+  const chroma422SkipScans = glslIntArray("SKIP_SCAN_C422", allSkipScans(8, 16));
   const lumaTable = glslIntArray("QUANT_Y", lumaQuantization);
   const chromaTable = glslIntArray("QUANT_C", chromaQuantization);
   return `#version 300 es
@@ -335,6 +353,7 @@ const uint EXPECTED_CR_BYTES = ${preset.cr}u;
 const bool ALLOW_SPLIT_LUMA = ${Number(preset.key) >= 3 ? "true" : "false"};
 const uint FLAG_SPLIT_LUMA = 2u;
 const uint FLAG_LIBRARY = 4u;
+const uint FLAG_CHROMA_420 = 8u;
 
 ${lumaTable}
 
@@ -344,13 +363,13 @@ ${y16Scans}
 
 ${y8Scans}
 
-${chromaScans}
+${chroma422Scans}
 
 ${y16SkipScans}
 
 ${y8SkipScans}
 
-${chromaSkipScans}
+${chroma422SkipScans}
 
 uint byteAt(int byteOffset) {
     int texelIndex = byteOffset >> 2;
@@ -439,7 +458,7 @@ int componentWidth(int kind) {
 }
 
 int componentHeight(int kind) {
-    return kind == 1 ? 8 : 16;
+    return kind == 1 || kind == 3 ? 8 : 16;
 }
 
 int scanLength(int kind) {
@@ -449,13 +468,15 @@ int scanLength(int kind) {
 int scanPosition(int kind, int profile, int index) {
     if (kind == 0) return SCAN_Y16[profile * 255 + index];
     if (kind == 1) return SCAN_Y8[profile * 63 + index];
-    return SCAN_C[profile * 127 + index];
+    if (kind == 3) return SCAN_Y8[profile * 63 + index];
+    return SCAN_C422[profile * 127 + index];
 }
 
 int skipScanPosition(int kind, int profile, int index) {
     if (kind == 0) return SKIP_SCAN_Y16[profile * 255 + index];
     if (kind == 1) return SKIP_SCAN_Y8[profile * 63 + index];
-    return SKIP_SCAN_C[profile * 127 + index];
+    if (kind == 3) return SKIP_SCAN_Y8[profile * 63 + index];
+    return SKIP_SCAN_C422[profile * 127 + index];
 }
 
 int groupCount(int coding) {
@@ -539,7 +560,7 @@ float quantizationStep(int position, int kind, int quality) {
     int tableY = min(7, int(floor(float(v * 7) / float(max(1, height - 1)) + 0.5)));
     float qualityScale = quality < 50 ? 50.0 / float(quality) : 2.0 - float(quality) * 0.02;
     float dimensionScale = sqrt(float(width * height) / 64.0);
-    int tableValue = kind == 2 ? QUANT_C[tableY * 8 + tableX] : QUANT_Y[tableY * 8 + tableX];
+    int tableValue = kind >= 2 ? QUANT_C[tableY * 8 + tableX] : QUANT_Y[tableY * 8 + tableX];
     return max(1.0, float(tableValue) * qualityScale * dimensionScale);
 }
 
@@ -702,12 +723,12 @@ float sampleRecord(
     int libraryVersion,
     int libraryIndex
 ) {
-    if (coding == 6 && kind == 1) {
+    if (coding == 6 && (kind == 1 || kind == 3)) {
         return libraryVersion == 0
             ? sampleMaskedTailRecord(recordOffset, recordBytes, localX, localY, quality)
             : 0.0;
     }
-    if (coding == 7 && kind == 1 && recordBytes == 48) {
+    if (coding == 7 && (kind == 1 || kind == 3) && recordBytes == 48) {
         return libraryVersion == 0
             ? sampleImplicit2MaskedTailRecord(
                 recordOffset, recordBytes, localX, localY, quality
@@ -824,6 +845,43 @@ float sampleWithPrototype(
     return centered + 128.0;
 }
 
+float sampleChroma420WithPrototype(
+    int recordOffset,
+    int recordBytes,
+    int prototypeBase,
+    int prototypeCount,
+    int sidecarIndex,
+    int localX,
+    int localY,
+    int quality,
+    int coding,
+    int libraryVersion
+) {
+    int floorX = (localX & 1) == 0 ? (localX >> 1) - 1 : localX >> 1;
+    int floorY = (localY & 1) == 0 ? (localY >> 1) - 1 : localY >> 1;
+    int x0 = clamp(floorX, 0, 7);
+    int y0 = clamp(floorY, 0, 7);
+    int x1 = clamp(floorX + 1, 0, 7);
+    int y1 = clamp(floorY + 1, 0, 7);
+    int fractionX = (localX & 1) == 0 ? 3 : 1;
+    int fractionY = (localY & 1) == 0 ? 3 : 1;
+    float top = float(4 - fractionX) * sampleWithPrototype(
+        recordOffset, recordBytes, prototypeBase, prototypeCount, sidecarIndex,
+        3, x0, y0, quality, coding, libraryVersion
+    ) + float(fractionX) * sampleWithPrototype(
+        recordOffset, recordBytes, prototypeBase, prototypeCount, sidecarIndex,
+        3, x1, y0, quality, coding, libraryVersion
+    );
+    float bottom = float(4 - fractionX) * sampleWithPrototype(
+        recordOffset, recordBytes, prototypeBase, prototypeCount, sidecarIndex,
+        3, x0, y1, quality, coding, libraryVersion
+    ) + float(fractionX) * sampleWithPrototype(
+        recordOffset, recordBytes, prototypeBase, prototypeCount, sidecarIndex,
+        3, x1, y1, quality, coding, libraryVersion
+    );
+    return (float(4 - fractionY) * top + float(fractionY) * bottom) / 16.0;
+}
+
 int readSidecarReference(int referenceBase, int referenceBits, int referenceIndex) {
     return referenceBits == 0 ? 0 : int(readSidecarBits(
         referenceBase, referenceIndex * referenceBits, referenceBits
@@ -857,7 +915,7 @@ bool validMainHeader(uint flags) {
         u32le(8) == 2u && u32le(12) == EXPECTED_MODE &&
         u32le(32) == EXPECTED_MCU_BYTES && u32le(36) == EXPECTED_Y_BYTES &&
         u32le(40) == EXPECTED_CB_BYTES && u32le(44) == EXPECTED_CR_BYTES &&
-        (flags & ~0x00000f07u) == 0u && ((flags >> 8u) & 15u) <= 7u &&
+        (flags & ~0x00000f0fu) == 0u && ((flags >> 8u) & 15u) <= 7u &&
         (((flags & FLAG_LIBRARY) == 0u) ||
             (((flags >> 8u) & 15u) != 6u && ((flags >> 8u) & 15u) != 7u)) &&
         (ALLOW_SPLIT_LUMA || (flags & FLAG_SPLIT_LUMA) == 0u);
@@ -880,6 +938,7 @@ void main() {
     int quality = int(u32le(48));
     int coding = int((flags >> 8u) & 15u);
     bool splitLuma = (flags & FLAG_SPLIT_LUMA) != 0u;
+    bool chroma420 = (flags & FLAG_CHROMA_420) != 0u;
 
     int libraryVersion = 0;
     int yPrototypeCount = 0;
@@ -951,12 +1010,20 @@ void main() {
         yRecordOffset, yRecordBytes, yPrototypeBase, yPrototypeCount, ySidecarIndex,
         yKind, yLocal.x, yLocal.y, quality, coding, libraryVersion
     );
-    float cb = sampleWithPrototype(
+    float cb = chroma420 ? sampleChroma420WithPrototype(
+        mcuOffset + int(EXPECTED_Y_BYTES), int(EXPECTED_CB_BYTES),
+        cbPrototypeBase, cbPrototypeCount, cbSidecarIndex,
+        local.x, local.y, quality, coding, libraryVersion
+    ) : sampleWithPrototype(
         mcuOffset + int(EXPECTED_Y_BYTES), int(EXPECTED_CB_BYTES),
         cbPrototypeBase, cbPrototypeCount, cbSidecarIndex,
         2, local.x >> 1, local.y, quality, coding, libraryVersion
     );
-    float cr = sampleWithPrototype(
+    float cr = chroma420 ? sampleChroma420WithPrototype(
+        mcuOffset + int(EXPECTED_Y_BYTES + EXPECTED_CB_BYTES), int(EXPECTED_CR_BYTES),
+        crPrototypeBase, crPrototypeCount, crSidecarIndex,
+        local.x, local.y, quality, coding, libraryVersion
+    ) : sampleWithPrototype(
         mcuOffset + int(EXPECTED_Y_BYTES + EXPECTED_CB_BYTES), int(EXPECTED_CR_BYTES),
         crPrototypeBase, crPrototypeCount, crSidecarIndex,
         2, local.x >> 1, local.y, quality, coding, libraryVersion

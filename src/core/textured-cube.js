@@ -719,10 +719,17 @@
       gl.uniform1i(this.locations.dctQuality, info.quality);
       gl.uniform1i(this.locations.dctDataTexWidth, info.dataAtlas.width);
       gl.uniform1i(this.locations.dctDecodeMode, info.decodeMode === "fast" ? 1 : 0);
+      gl.uniform1i(this.locations.dctChroma420, info.chroma420 ? 1 : 0);
       gl.uniform1i(
         this.locations.dctCacheMcusPerRow,
         info.decodeMode === "fast" ? info.dataAtlas.mcusPerRow : 1
       );
+      gl.uniform1i(
+        this.locations.dctCacheRecordTexels,
+        info.decodeMode === "fast" ? info.dataAtlas.recordTexels : 0
+      );
+      gl.uniform1i(this.locations.dctCacheCbOffset, info.componentCbOffset || 0);
+      gl.uniform1i(this.locations.dctCacheCrOffset, info.componentCrOffset || 0);
     }
 
     bindInstanceTextureResource(resource) {
@@ -1069,6 +1076,10 @@
       dctDataTexWidth: gl.getUniformLocation(program, "uDctDataTexWidth"),
       dctDecodeMode: gl.getUniformLocation(program, "uDctDecodeMode"),
       dctCacheMcusPerRow: gl.getUniformLocation(program, "uDctCacheMcusPerRow"),
+      dctCacheRecordTexels: gl.getUniformLocation(program, "uDctCacheRecordTexels"),
+      dctCacheCbOffset: gl.getUniformLocation(program, "uDctCacheCbOffset"),
+      dctCacheCrOffset: gl.getUniformLocation(program, "uDctCacheCrOffset"),
+      dctChroma420: gl.getUniformLocation(program, "uDctChroma420"),
       bpdhData: gl.getUniformLocation(program, "uBpdhData"),
       bpdhImageSize: gl.getUniformLocation(program, "uBpdhImageSize"),
       bpdhBlocksX: gl.getUniformLocation(program, "uBpdhBlocksX"),
@@ -1464,11 +1475,12 @@
       data.decodeMode === "low-memory" ||
       data.decodeMode === "fast"
     );
+    const expectedChromaSamples = data && data.chroma420 ? 64 : 128;
     const componentLayoutValid = !data || data.decodeMode !== "fast" || (
-      data.componentBytesPerMcu === 512 &&
+      data.componentBytesPerMcu === 256 + expectedChromaSamples * 2 &&
       data.componentYOffset === 0 &&
       data.componentCbOffset === 256 &&
-      data.componentCrOffset === 384
+      data.componentCrOffset === 256 + expectedChromaSamples
     );
 
     if (
@@ -1487,7 +1499,7 @@
       data.decodeMode === "fast" && (
         !Number.isInteger(data.dataAtlas.mcusPerRow) ||
         data.dataAtlas.mcusPerRow < 1 ||
-        data.dataAtlas.recordTexels !== 128
+        data.dataAtlas.recordTexels !== data.componentBytesPerMcu / 4
       )
     ) {
       throw new TypeError("DCTBS2 shader texture data is invalid");

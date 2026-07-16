@@ -79,12 +79,14 @@ function verifyLegacyHighRate() {
     preset: "6",
     quality: 72,
     splitLuma8x8: false,
+    chromaSubsampling: "4:2:2",
     coefficientCoding: "legacy",
   });
   const dctFile = path.join(temporary, "legacy-high-rate.dctbs2");
   const decodedPpm = path.join(temporary, "legacy-high-rate.ppm");
 
   assert.equal(inspectDctFile(encoded).splitLuma8x8, false);
+  assert.equal(inspectDctFile(encoded).chroma420, false);
   assert.equal(inspectDctFile(encoded).coefficientCodingKey, "legacy");
   fs.writeFileSync(dctFile, encoded);
   run(["decode", dctFile, decodedPpm]);
@@ -99,7 +101,7 @@ function verifyLegacyHighRate() {
   const match = /RGBA\(\d+,\d+\) = (\d+) (\d+) (\d+) (\d+)/.exec(output);
   assert.ok(match, `legacy high-rate pixel output: ${output}`);
   assert.deepEqual(match.slice(1).map(Number), [sampled.r, sampled.g, sampled.b, sampled.a]);
-  console.log("ok - legacy high-rate 16x16 luma decodes identically in CUDA and JavaScript");
+  console.log("ok - legacy 16x16 luma and 4:2:2 chroma decode identically in CUDA and JavaScript");
 }
 
 function verifyPrototypeLibrary() {
@@ -214,6 +216,7 @@ function verifyPreset(preset) {
   assert.equal(cudaInfo.key, preset);
   assert.equal(cudaInfo.quality, 72);
   assert.equal(cudaInfo.splitLuma8x8, Number(preset) >= 3);
+  assert.equal(cudaInfo.chroma420, true);
   const expectedCoding = {
     "0.75": "skip-rle-equal-2",
     "1": "dual-scale-skip-equal-2",
@@ -243,6 +246,7 @@ function verifyPreset(preset) {
 
   const javascriptEncoded = encodeDctFile(rgba, width, height, { preset, quality: 72 });
   assert.equal(inspectDctFile(javascriptEncoded).splitLuma8x8, Number(preset) >= 3);
+  assert.equal(inspectDctFile(javascriptEncoded).chroma420, true);
   fs.writeFileSync(jsFile, javascriptEncoded);
   const javascriptDecodedJs = decodeDctFile(javascriptEncoded);
   run(["decode", jsFile, jsPpm]);

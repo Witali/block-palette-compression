@@ -1,7 +1,7 @@
 /*
  * Purpose: Prepare a baseline DCTBS2 texture for WebGL2 rendering.
- * Fast mode stores one 512-byte Y/Cb/Cr sample record per MCU; low-memory mode
- * keeps the compressed file bytes for direct fragment-shader IDCT.
+ * Fast mode stores one compact Y/Cb/Cr sample record per MCU (384 bytes for
+ * 4:2:0 or 512 bytes for legacy 4:2:2); low-memory mode keeps compressed data.
  */
 (function (root, factory) {
   "use strict";
@@ -68,6 +68,8 @@
       height: info.height,
       mcuColumns: info.mcuColumns,
       quality: info.quality,
+      chroma420: info.chroma420,
+      chromaHeight: info.chromaHeight,
       bitsPerPixel: info.totalBpp,
       sourceBytes: bytes.length,
       gpuBytes: dataAtlas.data.byteLength,
@@ -183,9 +185,8 @@
       texture,
       recordOffset + texture.componentYOffset + localY * 16 + localX
     );
-    const chromaIndex = localY * 8 + Math.floor(localX / 2);
-    const cb = readAtlasByte(texture, recordOffset + texture.componentCbOffset + chromaIndex);
-    const cr = readAtlasByte(texture, recordOffset + texture.componentCrOffset + chromaIndex);
+    const cb = sampleCachedChroma(texture, recordOffset + texture.componentCbOffset, localX, localY);
+    const cr = sampleCachedChroma(texture, recordOffset + texture.componentCrOffset, localX, localY);
 
     return yCbCrToRgba(luma, cb, cr);
   }
@@ -199,6 +200,24 @@
 
   function readAtlasByte(texture, offset) {
     return texture.dataAtlas.data[offset];
+  }
+
+  function sampleCachedChroma(texture, offset, localX, localY) {
+    if (!texture.chroma420) {
+      return readAtlasByte(texture, offset + localY * 8 + Math.floor(localX / 2));
+    }
+    const floorX = localX % 2 === 0 ? Math.floor(localX / 2) - 1 : Math.floor(localX / 2);
+    const floorY = localY % 2 === 0 ? Math.floor(localY / 2) - 1 : Math.floor(localY / 2);
+    const x0 = clamp(floorX, 0, 7);
+    const y0 = clamp(floorY, 0, 7);
+    const x1 = clamp(floorX + 1, 0, 7);
+    const y1 = clamp(floorY + 1, 0, 7);
+    const fractionX = localX % 2 === 0 ? 3 : 1;
+    const fractionY = localY % 2 === 0 ? 3 : 1;
+    const sample = (x, y) => readAtlasByte(texture, offset + y * 8 + x);
+    const top = (4 - fractionX) * sample(x0, y0) + fractionX * sample(x1, y0);
+    const bottom = (4 - fractionX) * sample(x0, y1) + fractionX * sample(x1, y1);
+    return ((4 - fractionY) * top + fractionY * bottom) / 16;
   }
 
   function yCbCrToRgba(y, cb, cr) {
@@ -216,6 +235,10 @@
   function clampByte(value) {
     const rounded = value < 0 ? -Math.floor(-value + 0.5) : Math.floor(value + 0.5);
     return Math.max(0, Math.min(255, rounded));
+  }
+
+  function clamp(value, minimum, maximum) {
+    return Math.max(minimum, Math.min(maximum, value));
   }
 
   function asUint8Array(input) {

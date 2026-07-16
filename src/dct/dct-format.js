@@ -13,8 +13,8 @@
 
   // Adapted from the self-contained converter preserved at
   // docs/reference/dct-chat/dctbs_converter_with_edge_dictionary.html.
-  // The browser application keeps the same independent 16x16 YCbCr 4:2:2 MCU
-  // model while exposing a small, testable API for bounded pixel access.
+  // New files use independent 16x16 YCbCr 4:2:0 MCUs. A header flag
+  // distinguishes them from the still-readable earlier 4:2:2 layout.
 
   const MAGIC = Object.freeze([0x44, 0x43, 0x54, 0x42, 0x53, 0x32, 0x00, 0x00]);
   const VERSION = 2;
@@ -22,17 +22,16 @@
   const FLAG_AUTO_QUALITY = 1;
   const FLAG_SPLIT_LUMA_8X8 = 2;
   const FLAG_DCT_LIBRARY = 4;
+  const FLAG_CHROMA_420 = 8;
   const COEFFICIENT_CODING_SHIFT = 8;
   const COEFFICIENT_CODING_MASK = 15 << COEFFICIENT_CODING_SHIFT;
   const SUPPORTED_FLAGS = FLAG_AUTO_QUALITY | FLAG_SPLIT_LUMA_8X8 | FLAG_DCT_LIBRARY |
-    COEFFICIENT_CODING_MASK;
+    FLAG_CHROMA_420 | COEFFICIENT_CODING_MASK;
   const MCU_WIDTH = 16;
   const MCU_HEIGHT = 16;
   const CHROMA_WIDTH = 8;
-  const COMPONENT_CACHE_Y_OFFSET = 0;
-  const COMPONENT_CACHE_CB_OFFSET = MCU_WIDTH * MCU_HEIGHT;
-  const COMPONENT_CACHE_CR_OFFSET = COMPONENT_CACHE_CB_OFFSET + CHROMA_WIDTH * MCU_HEIGHT;
-  const COMPONENT_CACHE_BYTES_PER_MCU = COMPONENT_CACHE_CR_OFFSET + CHROMA_WIDTH * MCU_HEIGHT;
+  const CHROMA_HEIGHT_420 = 8;
+  const CHROMA_HEIGHT_422 = 16;
   const SCALE_MULTIPLIERS = Object.freeze([1, 2, 4, 8, 16, 32, 64, 128]);
   const PROFILE_NAMES = Object.freeze(["low frequency", "horizontal", "vertical", "diagonal"]);
   const SKIP_PROFILE_NAMES = Object.freeze([
@@ -93,7 +92,7 @@
     }),
   });
   // Higher-rate modes preserve the reference converter's four-luma-to-two-chroma
-  // byte ratio while DCTBS2 keeps its independently addressable 4:2:2 MCU layout.
+  // byte ratio. Chroma sampling is selected independently by the header flag.
   const PRESETS = Object.freeze({
     "9": freezePreset(9000, 9, 288, 192, 48, 48),
     "7.5": freezePreset(7500, 7.5, 240, 160, 40, 40),
@@ -219,6 +218,8 @@
     validatePixels(pixels, width, height);
     const quality = validateQuality(options.quality === undefined ? 72 : options.quality);
     const layout = getDctFileLayout(width, height, options.preset);
+    const chroma420 = resolveChroma420(options);
+    const chromaHeight = chroma420 ? CHROMA_HEIGHT_420 : CHROMA_HEIGHT_422;
 
     if (shouldAutoSelectMaskedTail(layout.key, options)) {
       return selectBetterHighRateEncoding(
@@ -241,6 +242,7 @@
         layout,
         quality,
         splitLuma8x8,
+        chroma420,
         coefficientCoding,
         options
       );
@@ -253,7 +255,7 @@
     for (let mcuIndex = 0; mcuIndex < layout.mcuCount; mcuIndex += 1) {
       const mcuX = mcuIndex % layout.mcuColumns;
       const mcuY = Math.floor(mcuIndex / layout.mcuColumns);
-      const planes = extractMcuPlanes(pixels, width, height, mcuX, mcuY);
+      const planes = extractMcuPlanes(pixels, width, height, mcuX, mcuY, chroma420);
       const byteOffset = HEADER_BYTES + mcuIndex * layout.bytesPerMcu;
 
       encodeLuma(
@@ -272,7 +274,7 @@
         layout.cbBytes,
         planes.cb,
         8,
-        16,
+        chromaHeight,
         quality,
         true,
         coefficientCoding,
@@ -284,7 +286,7 @@
         layout.crBytes,
         planes.cr,
         8,
-        16,
+        chromaHeight,
         quality,
         true,
         coefficientCoding,
@@ -303,9 +305,11 @@
     layout,
     quality,
     splitLuma8x8,
+    chroma420,
     coefficientCoding,
     options
   ) {
+    const chromaHeight = chroma420 ? CHROMA_HEIGHT_420 : CHROMA_HEIGHT_422;
     const requestedLibrarySize = validateLibrarySize(
       options.librarySize === undefined ? DEFAULT_LIBRARY_SIZE : options.librarySize,
       coefficientCoding
@@ -326,6 +330,7 @@
       height,
       layout,
       splitLuma8x8,
+      chroma420,
       reportProgress
     );
     const yRecordBytes = splitLuma8x8 ? layout.yBytes / 4 : layout.yBytes;
@@ -345,7 +350,7 @@
         source.cbVectors,
         libraryComponents.has("cb") ? requestedLibrarySize : 0,
         8,
-        16,
+        chromaHeight,
         layout.cbBytes,
         quality,
         true,
@@ -357,7 +362,7 @@
         source.crVectors,
         libraryComponents.has("cr") ? requestedLibrarySize : 0,
         8,
-        16,
+        chromaHeight,
         layout.crBytes,
         quality,
         true,
@@ -443,7 +448,7 @@
         layout.cbBytes,
         record.cb,
         8,
-        16,
+        chromaHeight,
         quality,
         true,
         coefficientCoding,
@@ -458,7 +463,7 @@
         layout.crBytes,
         record.cr,
         8,
-        16,
+        chromaHeight,
         quality,
         true,
         coefficientCoding,
@@ -478,6 +483,8 @@
     const source = prepareJpegDctSource(jpeg);
     const quality = validateQuality(options.quality === undefined ? 72 : options.quality);
     const layout = getDctFileLayout(source.width, source.height, options.preset);
+    const chroma420 = resolveChroma420(options);
+    const chromaHeight = chroma420 ? CHROMA_HEIGHT_420 : CHROMA_HEIGHT_422;
 
     if (shouldAutoSelectMaskedTail(layout.key, options) && options.referencePixels) {
       validatePixels(options.referencePixels, source.width, source.height);
@@ -499,7 +506,7 @@
     for (let mcuIndex = 0; mcuIndex < layout.mcuCount; mcuIndex += 1) {
       const mcuX = mcuIndex % layout.mcuColumns;
       const mcuY = Math.floor(mcuIndex / layout.mcuColumns);
-      const planes = extractJpegMcuPlanes(source, mcuX, mcuY);
+      const planes = extractJpegMcuPlanes(source, mcuX, mcuY, chroma420);
       const byteOffset = HEADER_BYTES + mcuIndex * layout.bytesPerMcu;
 
       encodeLuma(
@@ -518,7 +525,7 @@
         layout.cbBytes,
         planes.cb,
         8,
-        16,
+        chromaHeight,
         quality,
         true,
         coefficientCoding,
@@ -530,7 +537,7 @@
         layout.crBytes,
         planes.cr,
         8,
-        16,
+        chromaHeight,
         quality,
         true,
         coefficientCoding,
@@ -610,6 +617,7 @@
       (options.autoQuality ? FLAG_AUTO_QUALITY : 0) |
         (splitLuma8x8 ? FLAG_SPLIT_LUMA_8X8 : 0) |
         (libraryBytes > 0 ? FLAG_DCT_LIBRARY : 0) |
+        (resolveChroma420(options) ? FLAG_CHROMA_420 : 0) |
         (COEFFICIENT_CODINGS.indexOf(coefficientCoding) << COEFFICIENT_CODING_SHIFT)
     );
     writeUint32(view, 56, layout.payloadBytes);
@@ -622,14 +630,27 @@
     return layout.bpp >= 3 && options.splitLuma8x8 !== false;
   }
 
+  function resolveChroma420(options = {}) {
+    const value = options.chromaSubsampling;
+    if (value === undefined) {
+      return options.chroma420 !== false;
+    }
+    const normalized = String(value).replaceAll(":", "");
+    if (normalized === "420") return true;
+    if (normalized === "422") return false;
+    throw new RangeError(`Unsupported DCT chroma subsampling: ${value}`);
+  }
+
   function collectDctLibrarySource(
     pixels,
     width,
     height,
     layout,
     splitLuma8x8,
+    chroma420,
     onMcu = () => {}
   ) {
+    const chromaHeight = chroma420 ? CHROMA_HEIGHT_420 : CHROMA_HEIGHT_422;
     const mcus = [];
     const yVectors = [];
     const cbVectors = [];
@@ -638,12 +659,12 @@
     for (let mcuIndex = 0; mcuIndex < layout.mcuCount; mcuIndex += 1) {
       const mcuX = mcuIndex % layout.mcuColumns;
       const mcuY = Math.floor(mcuIndex / layout.mcuColumns);
-      const planes = extractMcuPlanes(pixels, width, height, mcuX, mcuY);
+      const planes = extractMcuPlanes(pixels, width, height, mcuX, mcuY, chroma420);
       const y = splitLuma8x8
         ? splitLumaSamples(planes.y).map((samples) => forwardDct(samples, 8, 8))
         : [forwardDct(planes.y, 16, 16)];
-      const cb = forwardDct(planes.cb, 8, 16);
-      const cr = forwardDct(planes.cr, 8, 16);
+      const cb = forwardDct(planes.cb, 8, chromaHeight);
+      const cr = forwardDct(planes.cr, 8, chromaHeight);
 
       yVectors.push(...y);
       cbVectors.push(cb);
@@ -1001,8 +1022,8 @@
       const mcuY = Math.floor(mcuIndex / info.mcuColumns);
       const components = decodeMcuComponents(bytes, info, mcuIndex);
       const yPlane = reconstructLumaPlane(components.y);
-      const cbPlane = inverseDct(components.cb.coefficients, 8, 16);
-      const crPlane = inverseDct(components.cr.coefficients, 8, 16);
+      const cbPlane = inverseDct(components.cb.coefficients, CHROMA_WIDTH, info.chromaHeight);
+      const crPlane = inverseDct(components.cr.coefficients, CHROMA_WIDTH, info.chromaHeight);
 
       for (let localY = 0; localY < MCU_HEIGHT; localY += 1) {
         const y = mcuY * MCU_HEIGHT + localY;
@@ -1018,11 +1039,10 @@
             break;
           }
 
-          const chromaIndex = localY * CHROMA_WIDTH + Math.floor(localX / 2);
           const rgba = yCbCrToRgba(
             yPlane[localY * MCU_WIDTH + localX] + 128,
-            cbPlane[chromaIndex] + 128,
-            crPlane[chromaIndex] + 128
+            sampleChromaPlane(cbPlane, localX, localY, info.chroma420) + 128,
+            sampleChromaPlane(crPlane, localX, localY, info.chroma420) + 128
           );
           writeRgba(pixels, (y * info.width + x) * 4, rgba);
         }
@@ -1035,36 +1055,42 @@
   function decodeDctComponentSamples(input) {
     const bytes = asUint8Array(input);
     const info = inspectDctFile(bytes);
-    const samples = new Uint8Array(info.mcuCount * COMPONENT_CACHE_BYTES_PER_MCU);
+    const yOffset = 0;
+    const cbOffset = MCU_WIDTH * MCU_HEIGHT;
+    const crOffset = cbOffset + CHROMA_WIDTH * info.chromaHeight;
+    const bytesPerMcu = crOffset + CHROMA_WIDTH * info.chromaHeight;
+    const samples = new Uint8Array(info.mcuCount * bytesPerMcu);
 
     for (let mcuIndex = 0; mcuIndex < info.mcuCount; mcuIndex += 1) {
       const components = decodeMcuComponents(bytes, info, mcuIndex);
-      const recordOffset = mcuIndex * COMPONENT_CACHE_BYTES_PER_MCU;
+      const recordOffset = mcuIndex * bytesPerMcu;
 
       writeCenteredComponentSamples(
         samples,
-        recordOffset + COMPONENT_CACHE_Y_OFFSET,
+        recordOffset + yOffset,
         reconstructLumaPlane(components.y)
       );
       writeCenteredComponentSamples(
         samples,
-        recordOffset + COMPONENT_CACHE_CB_OFFSET,
-        inverseDct(components.cb.coefficients, CHROMA_WIDTH, MCU_HEIGHT)
+        recordOffset + cbOffset,
+        inverseDct(components.cb.coefficients, CHROMA_WIDTH, info.chromaHeight)
       );
       writeCenteredComponentSamples(
         samples,
-        recordOffset + COMPONENT_CACHE_CR_OFFSET,
-        inverseDct(components.cr.coefficients, CHROMA_WIDTH, MCU_HEIGHT)
+        recordOffset + crOffset,
+        inverseDct(components.cr.coefficients, CHROMA_WIDTH, info.chromaHeight)
       );
     }
 
     return {
       ...info,
       componentCache: Object.freeze({
-        bytesPerMcu: COMPONENT_CACHE_BYTES_PER_MCU,
-        yOffset: COMPONENT_CACHE_Y_OFFSET,
-        cbOffset: COMPONENT_CACHE_CB_OFFSET,
-        crOffset: COMPONENT_CACHE_CR_OFFSET,
+        bytesPerMcu,
+        yOffset,
+        cbOffset,
+        crOffset,
+        chromaHeight: info.chromaHeight,
+        chroma420: info.chroma420,
         samples,
       }),
     };
@@ -1108,7 +1134,7 @@
       recordOffset + info.yBytes,
       info.cbBytes,
       8,
-      16,
+      info.chromaHeight,
       info.quality,
       true,
       info.coefficientCoding,
@@ -1119,15 +1145,18 @@
       recordOffset + info.yBytes + info.cbBytes,
       info.crBytes,
       8,
-      16,
+      info.chromaHeight,
       info.quality,
       true,
       info.coefficientCoding,
       createDctLibraryContext(bytes, info, "cr", mcuIndex)
     );
-    const chromaX = Math.floor(localX / 2);
-    const cb = sampleInverseDct(cbComponent.coefficients, 8, 16, chromaX, localY) + 128;
-    const cr = sampleInverseDct(crComponent.coefficients, 8, 16, chromaX, localY) + 128;
+    const cb = sampleChromaCoefficients(
+      cbComponent.coefficients, localX, localY, info.chroma420
+    ) + 128;
+    const cr = sampleChromaCoefficients(
+      crComponent.coefficients, localX, localY, info.chroma420
+    ) + 128;
 
     return yCbCrToRgba(luma, cb, cr);
   }
@@ -1158,6 +1187,7 @@
     const payloadBytes = readUint32(view, 56);
     const metadata = readUint32(view, 60);
     const libraryEnabled = (flags & FLAG_DCT_LIBRARY) !== 0;
+    const chroma420 = (flags & FLAG_CHROMA_420) !== 0;
     const libraryBytes = libraryEnabled ? metadata : 0;
 
     if (
@@ -1188,6 +1218,10 @@
       quality,
       autoQuality: (flags & FLAG_AUTO_QUALITY) !== 0,
       splitLuma8x8,
+      chroma420,
+      chromaSubsampling: chroma420 ? "4:2:0" : "4:2:2",
+      chromaWidth: CHROMA_WIDTH,
+      chromaHeight: chroma420 ? CHROMA_HEIGHT_420 : CHROMA_HEIGHT_422,
       libraryEnabled,
       libraryBytes,
       library,
@@ -1306,6 +1340,7 @@
   function findBestDctQuality(pixels, width, height, options = {}) {
     validatePixels(pixels, width, height);
     const preset = getDctPreset(options.preset);
+    const chroma420 = resolveChroma420(options);
     const coefficientCoding = resolveCoefficientCoding(options.coefficientCoding, preset.key, options);
     const autoSelectMaskedTail = shouldAutoSelectMaskedTail(preset.key, options);
     const sampleCodings = autoSelectMaskedTail
@@ -1335,7 +1370,8 @@
           layout,
           quality,
           sampleIndices,
-          coding
+          coding,
+          chroma420
         ))),
       });
       completed += 1;
@@ -1361,7 +1397,8 @@
             layout,
             quality,
             sampleIndices,
-            coding
+            coding,
+            chroma420
           ))),
         });
       }
@@ -1386,6 +1423,7 @@
         libraryFrequencySplit: options.libraryFrequencySplit,
         libraryClusterSamples: options.libraryClusterSamples,
         libraryCandidateCount: options.libraryCandidateCount,
+        chromaSubsampling: chroma420 ? "4:2:0" : "4:2:2",
         ...(autoSelectMaskedTail ? {} : { coefficientCoding: coefficientCoding.key }),
         searchCandidateCount: sampleResults.length + finalists.length,
         onProgress(progress) {
@@ -2663,7 +2701,7 @@
         offset + info.yBytes,
         info.cbBytes,
         8,
-        16,
+        info.chromaHeight,
         info.quality,
         true,
         info.coefficientCoding,
@@ -2674,7 +2712,7 @@
         offset + info.yBytes + info.cbBytes,
         info.crBytes,
         8,
-        16,
+        info.chromaHeight,
         info.quality,
         true,
         info.coefficientCoding,
@@ -2819,34 +2857,47 @@
     };
   }
 
-  function extractMcuPlanes(pixels, width, height, mcuX, mcuY) {
+  function extractMcuPlanes(pixels, width, height, mcuX, mcuY, chroma420 = true) {
+    const chromaHeight = chroma420 ? CHROMA_HEIGHT_420 : CHROMA_HEIGHT_422;
     const yPlane = new Float64Array(16 * 16);
-    const cbPlane = new Float64Array(8 * 16);
-    const crPlane = new Float64Array(8 * 16);
+    const cbPlane = new Float64Array(CHROMA_WIDTH * chromaHeight);
+    const crPlane = new Float64Array(CHROMA_WIDTH * chromaHeight);
 
     for (let localY = 0; localY < 16; localY += 1) {
       const y = Math.min(height - 1, mcuY * 16 + localY);
 
-      for (let chromaX = 0; chromaX < 8; chromaX += 1) {
+      for (let localX = 0; localX < 16; localX += 1) {
+        const x = Math.min(width - 1, mcuX * 16 + localX);
+        const pixelOffset = (y * width + x) * 4;
+        const converted = rgbToYCbCr(
+          pixels[pixelOffset], pixels[pixelOffset + 1], pixels[pixelOffset + 2]
+        );
+        yPlane[localY * 16 + localX] = converted.y - 128;
+      }
+    }
+
+    const verticalSamples = chroma420 ? 2 : 1;
+    for (let chromaY = 0; chromaY < chromaHeight; chromaY += 1) {
+      for (let chromaX = 0; chromaX < CHROMA_WIDTH; chromaX += 1) {
         let cbSum = 0;
         let crSum = 0;
-
-        for (let pairX = 0; pairX < 2; pairX += 1) {
-          const localX = chromaX * 2 + pairX;
-          const x = Math.min(width - 1, mcuX * 16 + localX);
-          const pixelOffset = (y * width + x) * 4;
-          const red = pixels[pixelOffset];
-          const green = pixels[pixelOffset + 1];
-          const blue = pixels[pixelOffset + 2];
-          const converted = rgbToYCbCr(red, green, blue);
-
-          yPlane[localY * 16 + localX] = converted.y - 128;
-          cbSum += converted.cb;
-          crSum += converted.cr;
+        for (let sampleY = 0; sampleY < verticalSamples; sampleY += 1) {
+          const localY = chromaY * verticalSamples + sampleY;
+          const y = Math.min(height - 1, mcuY * 16 + localY);
+          for (let sampleX = 0; sampleX < 2; sampleX += 1) {
+            const localX = chromaX * 2 + sampleX;
+            const x = Math.min(width - 1, mcuX * 16 + localX);
+            const pixelOffset = (y * width + x) * 4;
+            const converted = rgbToYCbCr(
+              pixels[pixelOffset], pixels[pixelOffset + 1], pixels[pixelOffset + 2]
+            );
+            cbSum += converted.cb;
+            crSum += converted.cr;
+          }
         }
-
-        cbPlane[localY * 8 + chromaX] = cbSum / 2 - 128;
-        crPlane[localY * 8 + chromaX] = crSum / 2 - 128;
+        const divisor = verticalSamples * 2;
+        cbPlane[chromaY * CHROMA_WIDTH + chromaX] = cbSum / divisor - 128;
+        crPlane[chromaY * CHROMA_WIDTH + chromaX] = crSum / divisor - 128;
       }
     }
 
@@ -2961,33 +3012,38 @@
     };
   }
 
-  function extractJpegMcuPlanes(source, mcuX, mcuY) {
+  function extractJpegMcuPlanes(source, mcuX, mcuY, chroma420 = true) {
+    const chromaHeight = chroma420 ? CHROMA_HEIGHT_420 : CHROMA_HEIGHT_422;
     const yPlane = new Float64Array(16 * 16);
-    const cbPlane = new Float64Array(8 * 16);
-    const crPlane = new Float64Array(8 * 16);
+    const cbPlane = new Float64Array(CHROMA_WIDTH * chromaHeight);
+    const crPlane = new Float64Array(CHROMA_WIDTH * chromaHeight);
 
     for (let localY = 0; localY < 16; localY += 1) {
       const y = Math.min(source.height - 1, mcuY * 16 + localY);
 
-      for (let chromaX = 0; chromaX < 8; chromaX += 1) {
-        for (let pairX = 0; pairX < 2; pairX += 1) {
-          const localX = chromaX * 2 + pairX;
-          const x = Math.min(source.width - 1, mcuX * 16 + localX);
+      for (let localX = 0; localX < 16; localX += 1) {
+        const x = Math.min(source.width - 1, mcuX * 16 + localX);
+        yPlane[localY * 16 + localX] = sampleJpegComponent(source, 0, x, y) - 128;
+      }
+    }
 
-          yPlane[localY * 16 + localX] = sampleJpegComponent(source, 0, x, y) - 128;
-        }
-
-        if (source.components.length === 3) {
-          const firstX = Math.min(source.width - 1, mcuX * 16 + chromaX * 2);
-          const secondX = Math.min(source.width - 1, firstX + 1);
-          cbPlane[localY * 8 + chromaX] = (
-            sampleJpegComponent(source, 1, firstX, y) +
-            sampleJpegComponent(source, 1, secondX, y)
-          ) / 2 - 128;
-          crPlane[localY * 8 + chromaX] = (
-            sampleJpegComponent(source, 2, firstX, y) +
-            sampleJpegComponent(source, 2, secondX, y)
-          ) / 2 - 128;
+    if (source.components.length === 3) {
+      const verticalSamples = chroma420 ? 2 : 1;
+      for (let chromaY = 0; chromaY < chromaHeight; chromaY += 1) {
+        for (let chromaX = 0; chromaX < CHROMA_WIDTH; chromaX += 1) {
+          let cbSum = 0;
+          let crSum = 0;
+          for (let sampleY = 0; sampleY < verticalSamples; sampleY += 1) {
+            const y = Math.min(source.height - 1, mcuY * 16 + chromaY * verticalSamples + sampleY);
+            for (let sampleX = 0; sampleX < 2; sampleX += 1) {
+              const x = Math.min(source.width - 1, mcuX * 16 + chromaX * 2 + sampleX);
+              cbSum += sampleJpegComponent(source, 1, x, y);
+              crSum += sampleJpegComponent(source, 2, x, y);
+            }
+          }
+          const divisor = verticalSamples * 2;
+          cbPlane[chromaY * CHROMA_WIDTH + chromaX] = cbSum / divisor - 128;
+          crPlane[chromaY * CHROMA_WIDTH + chromaX] = crSum / divisor - 128;
         }
       }
     }
@@ -3119,6 +3175,48 @@
     return output;
   }
 
+  function sampleChromaPlane(samples, localX, localY, chroma420) {
+    if (!chroma420) {
+      return samples[localY * CHROMA_WIDTH + Math.floor(localX / 2)];
+    }
+    return sampleChroma420(
+      (x, y) => samples[y * CHROMA_WIDTH + x],
+      localX,
+      localY
+    );
+  }
+
+  function sampleChromaCoefficients(coefficients, localX, localY, chroma420) {
+    if (!chroma420) {
+      return sampleInverseDct(
+        coefficients,
+        CHROMA_WIDTH,
+        CHROMA_HEIGHT_422,
+        Math.floor(localX / 2),
+        localY
+      );
+    }
+    return sampleChroma420(
+      (x, y) => sampleInverseDct(coefficients, CHROMA_WIDTH, CHROMA_HEIGHT_420, x, y),
+      localX,
+      localY
+    );
+  }
+
+  function sampleChroma420(sample, localX, localY) {
+    const floorX = localX % 2 === 0 ? Math.floor(localX / 2) - 1 : Math.floor(localX / 2);
+    const floorY = localY % 2 === 0 ? Math.floor(localY / 2) - 1 : Math.floor(localY / 2);
+    const x0 = clamp(floorX, 0, CHROMA_WIDTH - 1);
+    const y0 = clamp(floorY, 0, CHROMA_HEIGHT_420 - 1);
+    const x1 = clamp(floorX + 1, 0, CHROMA_WIDTH - 1);
+    const y1 = clamp(floorY + 1, 0, CHROMA_HEIGHT_420 - 1);
+    const fractionX = localX % 2 === 0 ? 3 : 1;
+    const fractionY = localY % 2 === 0 ? 3 : 1;
+    const top = (4 - fractionX) * sample(x0, y0) + fractionX * sample(x1, y0);
+    const bottom = (4 - fractionX) * sample(x0, y1) + fractionX * sample(x1, y1);
+    return ((4 - fractionY) * top + fractionY * bottom) / 16;
+  }
+
   function getBasis(size) {
     if (!basisCache.has(size)) {
       const basis = new Float64Array(size * size);
@@ -3242,13 +3340,23 @@
     return Math.max(1, table[tableY * 8 + tableX] * qualityScale * dimensionScale);
   }
 
-  function measureSampleError(pixels, width, height, layout, quality, mcuIndices, coding) {
+  function measureSampleError(
+    pixels,
+    width,
+    height,
+    layout,
+    quality,
+    mcuIndices,
+    coding,
+    chroma420 = true
+  ) {
+    const chromaHeight = chroma420 ? CHROMA_HEIGHT_420 : CHROMA_HEIGHT_422;
     let squaredError = 0;
 
     for (const mcuIndex of mcuIndices) {
       const mcuX = mcuIndex % layout.mcuColumns;
       const mcuY = Math.floor(mcuIndex / layout.mcuColumns);
-      const planes = extractMcuPlanes(pixels, width, height, mcuX, mcuY);
+      const planes = extractMcuPlanes(pixels, width, height, mcuX, mcuY, chroma420);
       const record = new Uint8Array(layout.bytesPerMcu);
 
       const splitLuma8x8 = layout.bpp >= 3;
@@ -3259,7 +3367,7 @@
         layout.cbBytes,
         planes.cb,
         8,
-        16,
+        chromaHeight,
         quality,
         true,
         coding,
@@ -3271,7 +3379,7 @@
         layout.crBytes,
         planes.cr,
         8,
-        16,
+        chromaHeight,
         quality,
         true,
         coding,
@@ -3284,7 +3392,7 @@
         layout.yBytes,
         layout.cbBytes,
         8,
-        16,
+        chromaHeight,
         quality,
         true,
         coding
@@ -3294,14 +3402,14 @@
         layout.yBytes + layout.cbBytes,
         layout.crBytes,
         8,
-        16,
+        chromaHeight,
         quality,
         true,
         coding
       );
       const yPlane = reconstructLumaPlane(yComponent);
-      const cbPlane = inverseDct(cbComponent.coefficients, 8, 16);
-      const crPlane = inverseDct(crComponent.coefficients, 8, 16);
+      const cbPlane = inverseDct(cbComponent.coefficients, 8, chromaHeight);
+      const crPlane = inverseDct(crComponent.coefficients, 8, chromaHeight);
 
       for (let localY = 0; localY < 16; localY += 1) {
         const y = mcuY * 16 + localY;
@@ -3318,11 +3426,10 @@
           }
 
           const sourceOffset = (y * width + x) * 4;
-          const chromaIndex = localY * 8 + Math.floor(localX / 2);
           const rgba = yCbCrToRgba(
             yPlane[localY * 16 + localX] + 128,
-            cbPlane[chromaIndex] + 128,
-            crPlane[chromaIndex] + 128
+            sampleChromaPlane(cbPlane, localX, localY, chroma420) + 128,
+            sampleChromaPlane(crPlane, localX, localY, chroma420) + 128
           );
 
           squaredError += (pixels[sourceOffset] - rgba.r) ** 2 +

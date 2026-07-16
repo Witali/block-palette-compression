@@ -62,7 +62,7 @@ test("keeps shader coefficient scans, grouped exponents, and libraries bounded",
   assert.match(source, /bool skipRecord = coding >= 3 && coding <= 5/);
   assert.match(source, /float sampleMaskedTailRecord/);
   assert.match(source, /float sampleImplicit2MaskedTailRecord/);
-  assert.match(source, /if \(coding == 7 && kind == 1 && recordBytes == 48\)/);
+  assert.match(source, /if \(coding == 7 && \(kind == 1 \|\| kind == 3\) && recordBytes == 48\)/);
   assert.match(source, /int explicitCount = bitCount\(maskLow\) \+ bitCount\(maskHigh\)/);
   assert.match(source, /position >= tailStart/);
   assert.match(source, /int tokenCount = skipTokenCount/);
@@ -70,6 +70,9 @@ test("keeps shader coefficient scans, grouped exponents, and libraries bounded",
   assert.match(source, /int resolveLibraryIndex/);
   assert.match(source, /int prototypeOffset = prototypeBase \+ \(libraryIndex - 1\) \* recordBytes/);
   assert.match(source, /yReferenceOrdinal = mcuIndex \* 4 \+ block/);
+  assert.match(source, /const uint FLAG_CHROMA_420 = 8u/);
+  assert.match(source, /float sampleChroma420WithPrototype/);
+  assert.match(source, /kind == 1 \|\| kind == 3 \? 8 : 16/);
 });
 
 test("generates unrolled baseline Cube shaders for the supported payload profiles", () => {
@@ -93,8 +96,10 @@ test("generates unrolled baseline Cube shaders for the supported payload profile
     );
     assert.equal(
       (decoder[1].match(/int position = DCT_SCAN_C/g) || []).length,
-      expectedChromaCount
+      expectedChromaCount * 2
     );
+    assert.match(source, /sampleDctChroma420Record/);
+    assert.match(source, /sampleDctChroma422Record/);
   }
 });
 

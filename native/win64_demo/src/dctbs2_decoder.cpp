@@ -11,8 +11,10 @@ namespace {
 constexpr std::size_t kHeaderBytes = 64;
 constexpr std::uint32_t kFlagSplitLuma = 2;
 constexpr std::uint32_t kFlagLibrary = 4;
+constexpr std::uint32_t kFlagChroma420 = 8;
 constexpr std::uint32_t kCodingMask = 15u << 8u;
-constexpr std::uint32_t kSupportedFlags = 1u | kFlagSplitLuma | kFlagLibrary | kCodingMask;
+constexpr std::uint32_t kSupportedFlags =
+    1u | kFlagSplitLuma | kFlagLibrary | kFlagChroma420 | kCodingMask;
 constexpr std::array<int, 8> kScales = {1, 2, 4, 8, 16, 32, 64, 128};
 constexpr std::array<int, 64> kLumaQuantization = {
     16, 11, 10, 16, 24, 40, 51, 61,
@@ -382,6 +384,31 @@ bool DecodeLuma(
     return true;
 }
 
+double SampleChroma(
+    const std::vector<double>& plane,
+    int local_x,
+    int local_y,
+    bool chroma420
+) {
+    if (!chroma420) {
+        return plane[static_cast<std::size_t>(local_y) * 8u + local_x / 2];
+    }
+    const int floor_x = local_x % 2 == 0 ? local_x / 2 - 1 : local_x / 2;
+    const int floor_y = local_y % 2 == 0 ? local_y / 2 - 1 : local_y / 2;
+    const int x0 = std::clamp(floor_x, 0, 7);
+    const int y0 = std::clamp(floor_y, 0, 7);
+    const int x1 = std::clamp(floor_x + 1, 0, 7);
+    const int y1 = std::clamp(floor_y + 1, 0, 7);
+    const int fraction_x = local_x % 2 == 0 ? 3 : 1;
+    const int fraction_y = local_y % 2 == 0 ? 3 : 1;
+    const auto sample = [&plane](int x, int y) {
+        return plane[static_cast<std::size_t>(y) * 8u + x];
+    };
+    const double top = (4 - fraction_x) * sample(x0, y0) + fraction_x * sample(x1, y0);
+    const double bottom = (4 - fraction_x) * sample(x0, y1) + fraction_x * sample(x1, y1);
+    return ((4 - fraction_y) * top + fraction_y * bottom) / 16.0;
+}
+
 }  // namespace
 
 bool DecodeDctbs2(
@@ -432,6 +459,8 @@ bool DecodeDctbs2(
         return false;
     }
     const bool split = (flags & kFlagSplitLuma) != 0;
+    const bool chroma420 = (flags & kFlagChroma420) != 0;
+    const int chroma_height = chroma420 ? 8 : 16;
     if (split && preset.bits_per_pixel < 3.0) {
         error = L"Invalid DCTBS2 split-luma mode";
         return false;
@@ -453,7 +482,7 @@ bool DecodeDctbs2(
                 record + preset.y_bytes,
                 preset.cb_bytes,
                 8,
-                16,
+                chroma_height,
                 quality,
                 true,
                 coding,
@@ -463,7 +492,7 @@ bool DecodeDctbs2(
                 record + preset.y_bytes + preset.cb_bytes,
                 preset.cr_bytes,
                 8,
-                16,
+                chroma_height,
                 quality,
                 true,
                 coding,
@@ -471,8 +500,8 @@ bool DecodeDctbs2(
                 error)) {
             return false;
         }
-        const auto cb_plane = InverseDct(cb_coefficients, 8, 16);
-        const auto cr_plane = InverseDct(cr_coefficients, 8, 16);
+        const auto cb_plane = InverseDct(cb_coefficients, 8, chroma_height);
+        const auto cr_plane = InverseDct(cr_coefficients, 8, chroma_height);
         const std::uint32_t mcu_x = mcu % columns;
         const std::uint32_t mcu_y = mcu / columns;
         for (std::uint32_t local_y = 0; local_y < 16; ++local_y) {
@@ -481,10 +510,13 @@ bool DecodeDctbs2(
             for (std::uint32_t local_x = 0; local_x < 16; ++local_x) {
                 const std::uint32_t x = mcu_x * 16u + local_x;
                 if (x >= width) break;
-                const std::size_t chroma = static_cast<std::size_t>(local_y) * 8u + local_x / 2u;
                 const double yy = y_plane[static_cast<std::size_t>(local_y) * 16u + local_x] + 128.0;
-                const double cb = cb_plane[chroma];
-                const double cr = cr_plane[chroma];
+                const double cb = SampleChroma(
+                    cb_plane, static_cast<int>(local_x), static_cast<int>(local_y), chroma420
+                );
+                const double cr = SampleChroma(
+                    cr_plane, static_cast<int>(local_x), static_cast<int>(local_y), chroma420
+                );
                 const std::size_t out = (static_cast<std::size_t>(y) * width + x) * 4u;
                 level.rgba[out] = ClampByte(yy + 1.402 * cr);
                 level.rgba[out + 1] = ClampByte(yy - 0.344136 * cb - 0.714136 * cr);

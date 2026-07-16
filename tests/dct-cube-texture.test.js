@@ -120,6 +120,29 @@ test("builds the minimal cached 4:2:2 component layout for fast sampling", () =>
   }
 });
 
+test("builds the 384-byte 4:2:0 component cache used by new files", () => {
+  const source = makePixels(32, 32);
+  const encoded = DctImageFormat.encodeDctFile(source, 32, 32, {
+    preset: "1.5",
+    quality: 82,
+    coefficientCoding: "grouped-5-front",
+  });
+  const shaderData = Dctbs2TextureDecoder.createShaderTextureData(encoded, 4096, {
+    decodeMode: "fast",
+  });
+
+  assert.equal(shaderData.chroma420, true);
+  assert.equal(shaderData.chromaHeight, 8);
+  assert.equal(shaderData.componentBytesPerMcu, 384);
+  assert.equal(shaderData.componentCbOffset, 256);
+  assert.equal(shaderData.componentCrOffset, 320);
+  assert.equal(shaderData.dataAtlas.recordTexels, 96);
+  for (const [x, y] of [[0, 0], [1, 1], [15, 15], [31, 31]]) {
+    const pixel = Dctbs2TextureDecoder.sampleShaderTexturePixel(shaderData, x, y);
+    assert.ok([pixel.r, pixel.g, pixel.b].every((channel) => channel >= 0 && channel <= 255));
+  }
+});
+
 test("switches Demo Cube between fast and low-memory DCTBS2 sampling", () => {
   assert.match(cubeHtml, /<select id="texture-format">/);
   assert.match(cubeHtml, /<option value="dct"[^>]*>DCTBS2 · 1\.5 bpp<\/option>/);
@@ -137,9 +160,11 @@ test("switches Demo Cube between fast and low-memory DCTBS2 sampling", () => {
   assert.match(shaderSource, /uniform highp usampler2D uDctData/);
   assert.match(shaderSource, /uniform highp int uDctDecodeMode/);
   assert.match(shaderSource, /sampleDctLumaRecord\(/);
-  assert.match(shaderSource, /sampleDctChromaRecord\(/);
+  assert.match(shaderSource, /sampleDctChroma420Record\(/);
+  assert.match(shaderSource, /sampleDctChroma422Record\(/);
   assert.match(shaderSource, /fetchCachedDctColor\(/);
-  assert.match(shaderSource, /DCT_CACHE_MCU_BYTES = 512/);
+  assert.match(shaderSource, /uDctCacheRecordTexels/);
+  assert.match(shaderSource, /uDctChroma420/);
   assert.match(shaderSource, /fetchDctColor\(/);
   assert.match(shaderSource, /uUseDctTexture > 0\.5/);
   assert.match(compactRendererSource, /cube-webgl2-dctbs2-1_5bpp\.frag\.glsl/);
@@ -159,24 +184,44 @@ test("uses an unrolled 1.5 bpp decoder with rolling 32-bit words", () => {
   assert.match(decoder[1], /uint currentWord = headerWord/);
   assert.match(decoder[1], /currentWord = nextWord/);
   assert.equal((decoder[1].match(/int position = DCT_SCAN_Y/g) || []).length, 33);
-  assert.equal((decoder[1].match(/int position = DCT_SCAN_C/g) || []).length, 13);
+  assert.equal((decoder[1].match(/int position = DCT_SCAN_C/g) || []).length, 26);
 });
 
 test("keeps the cube shader significance scans synchronized with DCTBS2", () => {
   const yScan = parseShaderArray("DCT_SCAN_Y");
-  const chromaScan = parseShaderArray("DCT_SCAN_C");
+  const chroma422Scan = parseShaderArray("DCT_SCAN_C422");
+  const chroma420Scan = parseShaderArray("DCT_SCAN_C420");
   const expectedY = Array.from(
     { length: 4 },
     (_, profile) => buildScan(profile, 16, 16).slice(0, 33)
   ).flat();
-  const expectedChroma = Array.from(
+  const expectedChroma422 = Array.from(
     { length: 4 },
     (_, profile) => buildScan(profile, 8, 16).slice(0, 13)
   ).flat();
+  const expectedChroma420 = Array.from(
+    { length: 4 },
+    (_, profile) => buildScan(profile, 8, 8).slice(0, 13)
+  ).flat();
 
   assert.deepEqual(yScan, expectedY);
-  assert.deepEqual(chromaScan, expectedChroma);
+  assert.deepEqual(chroma422Scan, expectedChroma422);
+  assert.deepEqual(chroma420Scan, expectedChroma420);
 });
+
+function makePixels(width, height) {
+  const pixels = new Uint8ClampedArray(width * height * 4);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const offset = (y * width + x) * 4;
+      pixels[offset] = (x * 17 + y * 3) & 255;
+      pixels[offset + 1] = (x * 5 + y * 19) & 255;
+      pixels[offset + 2] = (x * 11 + y * 13) & 255;
+      pixels[offset + 3] = 255;
+    }
+  }
+  return pixels;
+}
 
 function parseShaderArray(name) {
   const match = shaderSource.match(new RegExp(
