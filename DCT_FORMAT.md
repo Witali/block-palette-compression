@@ -97,9 +97,38 @@ The encoder evaluates the grouped and skip candidates and writes the skip form
 only when it reduces coefficient error. Defaults follow the final fixed-rate
 experiments: skip-RLE at 0.75 bpp; dual-scale skip at 1, 1.5, and 2 bpp; and
 dual-scale skip for the 16- and 24-byte high-rate component records (3 and 4.5
-bpp). The 32-, 40-, and 48-byte high-rate records at 6, 7.5, and 9 bpp keep
-grouped coding. Low-rate chroma keeps grouped coding; high-rate split-luma
-files may use adaptive skip for both luma and chroma records.
+bpp). At 6, 7.5, and 9 bpp the encoder evaluates both grouped coding and the
+masked-tail coding described below, reconstructs both complete RGB images, and
+writes the lower-error file. A tie keeps grouped coding. This file-level guard
+prevents the masked representation from reducing RGB PSNR. Low-rate chroma
+keeps grouped coding; high-rate split-luma files may use adaptive skip for both
+luma and chroma records.
+
+Masked-tail 8x8 records begin with a 64-bit little-endian word. Bits 0 through
+61 are an explicit AC mask: bit 0 selects `DCT[1]` (the first AC coefficient),
+bit 61 selects `DCT[62]`, and DC never has a mask bit. Bits 62 and 63 select the
+shared multiplier 1, 2, 4, or 8. The value stream after the mask is packed
+least-significant bit first and starts with a separately stored signed DC.
+
+If the mask contains `M` set bits and the record has an AC capacity of `N`, the
+remaining `N - M` slots are an implicit contiguous tail at
+`DCT[64 - (N - M)] ... DCT[63]`. Explicit mask positions must precede that tail,
+so a record can never store the same coefficient twice. Explicit values are
+written in increasing coefficient-position order, followed by the tail values.
+The fixed layouts are:
+
+| Record bytes | DC bits | AC bits | AC capacity |
+| ---: | ---: | ---: | ---: |
+| 16 | 10 | 6 | 9 |
+| 24 | 9 | 7 | 17 |
+| 32 | 8 | 8 | 23 |
+| 40 | 8 | 8 | 31 |
+| 48 | 10 | 8 | 38 |
+
+Coding ID 6 uses masked-tail records for eligible 8x8 components and the
+ordinary three-group signed-5 representation for other component dimensions.
+Prototype libraries deliberately fall back to coding ID 2 because their
+references occupy fields that masked-tail records do not expose.
 
 Coefficient coding identifiers are:
 
@@ -111,6 +140,7 @@ Coefficient coding identifiers are:
 | 3 | grouped ID 1 plus adaptive skip-RLE |
 | 4 | grouped ID 1 plus adaptive dual-scale skip |
 | 5 | grouped ID 2 plus adaptive dual-scale skip |
+| 6 | 8x8 explicit AC mask plus implicit high-frequency tail; ID 2 fallback for other dimensions |
 
 ## Optional DCT prototype library
 

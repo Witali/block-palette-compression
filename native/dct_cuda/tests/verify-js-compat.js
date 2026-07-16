@@ -38,6 +38,7 @@ try {
     verifyPreset(preset);
   }
   verifyJpegDctImport();
+  verifyMaskedTailCoding();
   verifyLegacyHighRate();
   verifyPrototypeLibrary();
   verifySidecarPrototypeLibraries();
@@ -224,10 +225,14 @@ function verifyPreset(preset) {
     "7.5": "grouped-5-front",
     "9": "grouped-5-front",
   };
-  assert.equal(
-    cudaInfo.coefficientCodingKey,
-    expectedCoding[preset]
-  );
+  if (Number(preset) >= 6) {
+    assert.ok(
+      ["grouped-5-front", "masked-tail-8x8"].includes(cudaInfo.coefficientCodingKey),
+      `automatic high-rate coding ${preset}`
+    );
+  } else {
+    assert.equal(cudaInfo.coefficientCodingKey, expectedCoding[preset]);
+  }
 
   const javascriptDecodedCuda = decodeDctFile(cudaEncoded);
   run(["decode", cudaFile, cudaPpm]);
@@ -250,6 +255,42 @@ function verifyPreset(preset) {
 
   const actualBpp = cudaEncoded.length * 8 / (width * height);
   console.log(`ok - preset ${preset}: ${cudaEncoded.length} bytes, ${actualBpp.toFixed(3)} actual bpp`);
+}
+
+function verifyMaskedTailCoding() {
+  for (const preset of ["6", "7.5", "9"]) {
+    const groupedFile = path.join(temporary, `grouped-${preset}.dctbs2`);
+    const maskedFile = path.join(temporary, `masked-${preset}.dctbs2`);
+    const automaticFile = path.join(temporary, `automatic-${preset}.dctbs2`);
+    run(["encode", inputPpm, groupedFile, "--preset", preset, "--quality", "97",
+      "--coefficient-coding", "grouped-5-front"]);
+    run(["encode", inputPpm, maskedFile, "--preset", preset, "--quality", "97",
+      "--coefficient-coding", "masked-tail-8x8"]);
+    run(["encode", inputPpm, automaticFile, "--preset", preset, "--quality", "97"]);
+
+    const grouped = fs.readFileSync(groupedFile);
+    const masked = fs.readFileSync(maskedFile);
+    const automatic = fs.readFileSync(automaticFile);
+    assert.equal(inspectDctFile(masked).coefficientCodingKey, "masked-tail-8x8");
+    const groupedError = rgbError(rgba, decodeDctFile(grouped).pixels);
+    const maskedError = rgbError(rgba, decodeDctFile(masked).pixels);
+    const automaticError = rgbError(rgba, decodeDctFile(automatic).pixels);
+    assert.ok(automaticError <= groupedError && automaticError <= maskedError);
+
+    const jsMasked = encodeDctFile(rgba, width, height, {
+      preset,
+      quality: 97,
+      coefficientCoding: "masked-tail-8x8",
+    });
+    const jsFile = path.join(temporary, `js-masked-${preset}.dctbs2`);
+    const jsPpm = path.join(temporary, `js-masked-${preset}.ppm`);
+    fs.writeFileSync(jsFile, jsMasked);
+    run(["decode", jsFile, jsPpm]);
+    assertRgbMatchesRgba(
+      readPpm(jsPpm), decodeDctFile(jsMasked).pixels, `masked-tail ${preset}`
+    );
+  }
+  console.log("ok - masked-tail packing and automatic RGB quality guard are compatible");
 }
 
 function run(arguments_) {
@@ -314,4 +355,14 @@ function assertRgbMatchesRgba(rgb, expected, label) {
     }
   }
   assert.ok(maximumDifference <= 1, `${label} maximum channel difference is ${maximumDifference}`);
+}
+
+function rgbError(left, right) {
+  let error = 0;
+  for (let offset = 0; offset < left.length; offset += 4) {
+    error += (left[offset] - right[offset]) ** 2;
+    error += (left[offset + 1] - right[offset + 1]) ** 2;
+    error += (left[offset + 2] - right[offset + 2]) ** 2;
+  }
+  return error;
 }

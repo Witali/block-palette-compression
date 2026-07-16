@@ -44,6 +44,7 @@ constexpr int COEFFICIENT_CODING_GROUPED_FRONT = 2;
 constexpr int COEFFICIENT_CODING_SKIP_RLE_EQUAL_2 = 3;
 constexpr int COEFFICIENT_CODING_DUAL_SKIP_EQUAL_2 = 4;
 constexpr int COEFFICIENT_CODING_DUAL_SKIP_FRONT = 5;
+constexpr int COEFFICIENT_CODING_MASKED_TAIL_8X8 = 6;
 constexpr size_t HEADER_BYTES = 64u;
 constexpr size_t LIBRARY_HEADER_BYTES = 32u;
 constexpr uint32_t LIBRARY_VERSION_TAIL_REFERENCE = 1u;
@@ -624,6 +625,88 @@ __device__ int grouped_count(int coefficient_coding) {
         coefficient_coding == COEFFICIENT_CODING_DUAL_SKIP_EQUAL_2 ? 2 : 3;
 }
 
+__device__ void write_signed_bits_lsb(
+    uint8_t *record,
+    int *bit_offset,
+    int value,
+    int bit_count
+) {
+    const uint32_t encoded = value < 0
+        ? static_cast<uint32_t>(value + (1 << bit_count))
+        : static_cast<uint32_t>(value);
+    for (int bit = 0; bit < bit_count; ++bit) {
+        const int absolute_bit = *bit_offset + bit;
+        record[absolute_bit >> 3] |= static_cast<uint8_t>(
+            ((encoded >> bit) & 1u) << (absolute_bit & 7)
+        );
+    }
+    *bit_offset += bit_count;
+}
+
+__device__ int read_signed_bits_lsb(
+    const uint8_t *record,
+    int *bit_offset,
+    int bit_count
+) {
+    uint32_t value = 0u;
+    for (int bit = 0; bit < bit_count; ++bit) {
+        const int absolute_bit = *bit_offset + bit;
+        value |= static_cast<uint32_t>(
+            (record[absolute_bit >> 3] >> (absolute_bit & 7)) & 1u
+        ) << bit;
+    }
+    *bit_offset += bit_count;
+    const uint32_t sign_bit = 1u << (bit_count - 1);
+    return (value & sign_bit) != 0u
+        ? static_cast<int>(value) - (1 << bit_count)
+        : static_cast<int>(value);
+}
+
+__device__ bool masked_tail_config(
+    int byte_count,
+    int *dc_bits,
+    int *ac_bits,
+    int *max_ac
+) {
+    if (byte_count == 16) {
+        *dc_bits = 10; *ac_bits = 6; *max_ac = 9; return true;
+    }
+    if (byte_count == 24) {
+        *dc_bits = 9; *ac_bits = 7; *max_ac = 17; return true;
+    }
+    if (byte_count == 32) {
+        *dc_bits = 8; *ac_bits = 8; *max_ac = 23; return true;
+    }
+    if (byte_count == 40) {
+        *dc_bits = 8; *ac_bits = 8; *max_ac = 31; return true;
+    }
+    if (byte_count == 48) {
+        *dc_bits = 10; *ac_bits = 8; *max_ac = 38; return true;
+    }
+    return false;
+}
+
+__device__ uint32_t read_u32_little_device(const uint8_t *record) {
+    return static_cast<uint32_t>(record[0]) |
+        static_cast<uint32_t>(record[1]) << 8u |
+        static_cast<uint32_t>(record[2]) << 16u |
+        static_cast<uint32_t>(record[3]) << 24u;
+}
+
+__device__ void write_u32_little_device(uint8_t *record, uint32_t value) {
+    record[0] = static_cast<uint8_t>(value);
+    record[1] = static_cast<uint8_t>(value >> 8u);
+    record[2] = static_cast<uint8_t>(value >> 16u);
+    record[3] = static_cast<uint8_t>(value >> 24u);
+}
+
+__device__ bool masked_tail_has_position(uint32_t low, uint32_t high, int position) {
+    const int bit = position - 1;
+    return bit < 32
+        ? ((low >> bit) & 1u) != 0u
+        : ((high >> (bit - 32)) & 1u) != 0u;
+}
+
 __device__ int grouped_end(int coefficient_coding, int group, int ac_count) {
     if (coefficient_coding == COEFFICIENT_CODING_GROUPED_EQUAL_2 ||
         coefficient_coding == COEFFICIENT_CODING_SKIP_RLE_EQUAL_2 ||
@@ -951,6 +1034,142 @@ __device__ void encode_skip_component_record(
 }
 
 template <int WIDTH, int HEIGHT, bool CHROMA>
+__device__ bool encode_masked_tail_component_record(
+    const double *coefficients,
+    uint8_t *record,
+    int byte_count,
+    int quality
+) {
+    if (WIDTH != 8 || HEIGHT != 8) return false;
+    int dc_bits = 0;
+    int ac_bits = 0;
+    int max_ac = 0;
+    if (!masked_tail_config(byte_count, &dc_bits, &ac_bits, &max_ac)) return false;
+
+    double base_error = 0.0;
+    for (int position = 0; position < 64; ++position) {
+        base_error = rn_add(base_error, rn_square(coefficients[position]));
+    }
+
+    double best_error = DBL_MAX;
+    int best_scale_index = 0;
+    int best_dc = 0;
+    int best_tail_start = 64;
+    uint32_t best_mask_low = 0u;
+    uint32_t best_mask_high = 0u;
+
+    for (int scale_index = 0; scale_index < 4; ++scale_index) {
+        const int scale = 1 << scale_index;
+        const int dc_minimum = -(1 << (dc_bits - 1));
+        const int dc_maximum = (1 << (dc_bits - 1)) - 1;
+        const int ac_minimum = -(1 << (ac_bits - 1));
+        const int ac_maximum = (1 << (ac_bits - 1)) - 1;
+        const double dc_step = quantization_step(0, 0, 8, 8, quality, CHROMA) * scale;
+        const int dc = clamp_int(round_signed(coefficients[0] / dc_step), dc_minimum, dc_maximum);
+        const double restored_dc = static_cast<double>(dc) * dc_step;
+        const double dc_error = rn_add(
+            rn_add(base_error, rn_square(coefficients[0] - restored_dc)),
+            -rn_square(coefficients[0])
+        );
+        double benefits[64];
+        for (int position = 1; position < 64; ++position) {
+            const int u = position & 7;
+            const int v = position >> 3;
+            const double step = quantization_step(u, v, 8, 8, quality, CHROMA) * scale;
+            const int stored = clamp_int(
+                round_signed(coefficients[position] / step), ac_minimum, ac_maximum
+            );
+            const double keep_error = rn_square(
+                coefficients[position] - static_cast<double>(stored) * step
+            );
+            const double drop_error = rn_square(coefficients[position]);
+            benefits[position] = keep_error < drop_error
+                ? rn_add(drop_error, -keep_error) : 0.0;
+        }
+
+        bool selected[64] = {};
+        uint32_t mask_low = 0u;
+        uint32_t mask_high = 0u;
+        double explicit_benefit = 0.0;
+        double tail_benefit = 0.0;
+        for (int position = 64 - max_ac; position < 64; ++position) {
+            tail_benefit = rn_add(tail_benefit, benefits[position]);
+        }
+
+        for (int explicit_count = 0; explicit_count <= max_ac; ++explicit_count) {
+            const int tail_start = 64 - max_ac + explicit_count;
+            const double error = rn_add(
+                rn_add(dc_error, -explicit_benefit), -tail_benefit
+            );
+            if (error < best_error) {
+                best_error = error;
+                best_scale_index = scale_index;
+                best_dc = dc;
+                best_tail_start = tail_start;
+                best_mask_low = mask_low;
+                best_mask_high = mask_high;
+            }
+
+            if (explicit_count == max_ac) break;
+            tail_benefit = rn_add(tail_benefit, -benefits[tail_start]);
+            int best_position = -1;
+            for (int position = 1; position <= min(62, tail_start); ++position) {
+                if (selected[position]) continue;
+                if (best_position < 0 || benefits[position] > benefits[best_position] ||
+                    (benefits[position] == benefits[best_position] &&
+                        position < best_position)) {
+                    best_position = position;
+                }
+            }
+            selected[best_position] = true;
+            explicit_benefit = rn_add(explicit_benefit, benefits[best_position]);
+            const int mask_bit = best_position - 1;
+            if (mask_bit < 32) mask_low |= 1u << mask_bit;
+            else mask_high |= 1u << (mask_bit - 32);
+        }
+    }
+
+    write_u32_little_device(record, best_mask_low);
+    write_u32_little_device(
+        record + 4,
+        (best_mask_high & 0x3fffffffu) | (static_cast<uint32_t>(best_scale_index) << 30u)
+    );
+    int bit_offset = 0;
+    write_signed_bits_lsb(record + 8, &bit_offset, best_dc, dc_bits);
+    const int scale = 1 << best_scale_index;
+    const int ac_minimum = -(1 << (ac_bits - 1));
+    const int ac_maximum = (1 << (ac_bits - 1)) - 1;
+    for (int position = 1; position < best_tail_start && position <= 62; ++position) {
+        if (!masked_tail_has_position(best_mask_low, best_mask_high, position)) continue;
+        const double step = quantization_step(
+            position & 7, position >> 3, 8, 8, quality, CHROMA
+        ) * scale;
+        int stored = clamp_int(
+            round_signed(coefficients[position] / step), ac_minimum, ac_maximum
+        );
+        const double keep_error = rn_square(
+            coefficients[position] - static_cast<double>(stored) * step
+        );
+        if (keep_error >= rn_square(coefficients[position])) stored = 0;
+        write_signed_bits_lsb(record + 8, &bit_offset, stored, ac_bits);
+    }
+    for (int position = best_tail_start; position < 64; ++position) {
+        const double step = quantization_step(
+            position & 7, position >> 3, 8, 8, quality, CHROMA
+        ) * scale;
+        int stored = clamp_int(
+            round_signed(coefficients[position] / step), ac_minimum, ac_maximum
+        );
+        const double keep_error = rn_square(
+            coefficients[position] - static_cast<double>(stored) * step
+        );
+        if (keep_error >= rn_square(coefficients[position])) stored = 0;
+        write_signed_bits_lsb(record + 8, &bit_offset, stored, ac_bits);
+    }
+    return true;
+}
+
+template <int WIDTH, int HEIGHT, bool CHROMA>
 __device__ void encode_component_record(
     const double *coefficients,
     uint8_t *record,
@@ -963,11 +1182,17 @@ __device__ void encode_component_record(
         encode_legacy_component_record<WIDTH, HEIGHT, CHROMA>(
             coefficients, record, byte_count, quality
         );
+    } else if (coefficient_coding == COEFFICIENT_CODING_MASKED_TAIL_8X8 &&
+        encode_masked_tail_component_record<WIDTH, HEIGHT, CHROMA>(
+            coefficients, record, byte_count, quality
+        )) {
+        return;
     } else {
         const double baseline_error = encode_grouped_component_record<WIDTH, HEIGHT, CHROMA>(
             coefficients, record, byte_count, quality, coefficient_coding
         );
-        if (allow_skip && coefficient_coding >= COEFFICIENT_CODING_SKIP_RLE_EQUAL_2) {
+        if (allow_skip && coefficient_coding >= COEFFICIENT_CODING_SKIP_RLE_EQUAL_2 &&
+            coefficient_coding <= COEFFICIENT_CODING_DUAL_SKIP_FRONT) {
             encode_skip_component_record<WIDTH, HEIGHT, CHROMA>(
                 coefficients, record, byte_count, quality, coefficient_coding, baseline_error
             );
@@ -1159,6 +1384,54 @@ __device__ int read_sidecar_reference(
 }
 
 template <int WIDTH, int HEIGHT, bool CHROMA>
+__device__ bool decode_masked_tail_component_record(
+    const uint8_t *record,
+    int byte_count,
+    int quality,
+    int library_version,
+    double *coefficients
+) {
+    if (WIDTH != 8 || HEIGHT != 8 || library_version != 0) return false;
+    int dc_bits = 0;
+    int ac_bits = 0;
+    int max_ac = 0;
+    if (!masked_tail_config(byte_count, &dc_bits, &ac_bits, &max_ac)) return false;
+    for (int position = 0; position < 64; ++position) coefficients[position] = 0.0;
+
+    const uint32_t mask_low = read_u32_little_device(record);
+    const uint32_t raw_mask_high = read_u32_little_device(record + 4);
+    const uint32_t mask_high = raw_mask_high & 0x3fffffffu;
+    const int scale_index = static_cast<int>(raw_mask_high >> 30u);
+    const int explicit_count = __popc(mask_low) + __popc(mask_high);
+    if (explicit_count > max_ac) return false;
+    const int tail_count = max_ac - explicit_count;
+    const int tail_start = 64 - tail_count;
+    for (int position = max(1, tail_start); position <= 62; ++position) {
+        if (masked_tail_has_position(mask_low, mask_high, position)) return false;
+    }
+
+    const int scale = 1 << scale_index;
+    int bit_offset = 0;
+    const int dc = read_signed_bits_lsb(record + 8, &bit_offset, dc_bits);
+    coefficients[0] = static_cast<double>(dc) *
+        quantization_step(0, 0, 8, 8, quality, CHROMA) * scale;
+    for (int position = 1; position < tail_start && position <= 62; ++position) {
+        if (!masked_tail_has_position(mask_low, mask_high, position)) continue;
+        const int stored = read_signed_bits_lsb(record + 8, &bit_offset, ac_bits);
+        coefficients[position] = static_cast<double>(stored) * quantization_step(
+            position & 7, position >> 3, 8, 8, quality, CHROMA
+        ) * scale;
+    }
+    for (int position = tail_start; position < 64; ++position) {
+        const int stored = read_signed_bits_lsb(record + 8, &bit_offset, ac_bits);
+        coefficients[position] = static_cast<double>(stored) * quantization_step(
+            position & 7, position >> 3, 8, 8, quality, CHROMA
+        ) * scale;
+    }
+    return true;
+}
+
+template <int WIDTH, int HEIGHT, bool CHROMA>
 __device__ bool decode_legacy_component_record(
     const uint8_t *record,
     int byte_count,
@@ -1234,6 +1507,7 @@ __device__ bool decode_grouped_component_record(
     const bool header_reference = is_header_library_version(library_version);
     const int packed_scale = static_cast<int>(header & 15u);
     const bool skip_record = coefficient_coding >= COEFFICIENT_CODING_SKIP_RLE_EQUAL_2 &&
+        coefficient_coding <= COEFFICIENT_CODING_DUAL_SKIP_FRONT &&
         (packed_scale & 8) != 0;
     const int profile = skip_record ? packed_profile :
         header_reference ? packed_profile & 3 : packed_profile;
@@ -1327,7 +1601,12 @@ __device__ bool decode_component_record(
 ) {
     int library_index = 0;
     bool valid;
-    if (coefficient_coding == COEFFICIENT_CODING_LEGACY) {
+    if (coefficient_coding == COEFFICIENT_CODING_MASKED_TAIL_8X8 &&
+        WIDTH == 8 && HEIGHT == 8) {
+        valid = decode_masked_tail_component_record<WIDTH, HEIGHT, CHROMA>(
+            record, byte_count, quality, library_version, coefficients
+        );
+    } else if (coefficient_coding == COEFFICIENT_CODING_LEGACY) {
         valid = decode_legacy_component_record<WIDTH, HEIGHT, CHROMA>(
             record, byte_count, quality, library_version, external_library_index,
             coefficients, &library_index, false
@@ -1351,7 +1630,9 @@ __device__ bool decode_component_record(
     int ignored_index = 0;
     const uint8_t *prototype_record = library + library_offset +
         static_cast<size_t>(library_index - 1) * static_cast<size_t>(library_record_bytes);
-    if (coefficient_coding == COEFFICIENT_CODING_LEGACY) {
+    if (coefficient_coding == COEFFICIENT_CODING_MASKED_TAIL_8X8) {
+        return false;
+    } else if (coefficient_coding == COEFFICIENT_CODING_LEGACY) {
         valid = decode_legacy_component_record<WIDTH, HEIGHT, CHROMA>(
             prototype_record, library_record_bytes, quality, 0, 0,
             coefficients, &ignored_index, true
@@ -1746,7 +2027,9 @@ DctInfo inspect_header(const uint8_t *bytes, uint64_t file_size) {
 
     if (info.width == 0u || info.height == 0u || info.quality < 1u || info.quality > 100u ||
         (flags & ~SUPPORTED_FLAGS) != 0u || info.mcu_columns != (info.width + 15u) / 16u ||
-        info.coefficient_coding > COEFFICIENT_CODING_DUAL_SKIP_FRONT ||
+        info.coefficient_coding > COEFFICIENT_CODING_MASKED_TAIL_8X8 ||
+        (info.library_enabled &&
+            info.coefficient_coding == COEFFICIENT_CODING_MASKED_TAIL_8X8) ||
         info.mcu_rows != (info.height + 15u) / 16u ||
         (info.split_luma_8x8 && preset.nominal_bpp < 3.0) ||
         read_u32(bytes, 32u) != preset.bytes_per_mcu ||
@@ -1863,10 +2146,10 @@ GpuResult encode_gpu(
     const Preset &preset,
     uint32_t quality,
     bool auto_quality,
-    uint32_t candidate_count
+    uint32_t candidate_count,
+    int coefficient_coding
 ) {
     const bool split_luma_8x8 = preset.nominal_bpp >= 3.0;
-    const int coefficient_coding = default_coefficient_coding(preset);
     std::vector<uint8_t> header = make_header(
         width,
         height,
@@ -2094,6 +2377,67 @@ double psnr_from_error(uint64_t error, uint64_t sample_count) {
     return 10.0 * std::log10((255.0 * 255.0) / mse);
 }
 
+const char *coefficient_coding_name(int coding) {
+    if (coding == COEFFICIENT_CODING_GROUPED_FRONT) return "grouped-5-front";
+    if (coding == COEFFICIENT_CODING_MASKED_TAIL_8X8) return "masked-tail-8x8";
+    if (coding == COEFFICIENT_CODING_DUAL_SKIP_FRONT) return "dual-scale-skip-front";
+    if (coding == COEFFICIENT_CODING_DUAL_SKIP_EQUAL_2) return "dual-scale-skip-equal-2";
+    if (coding == COEFFICIENT_CODING_SKIP_RLE_EQUAL_2) return "skip-rle-equal-2";
+    if (coding == COEFFICIENT_CODING_GROUPED_EQUAL_2) return "grouped-5-equal-2";
+    return "legacy";
+}
+
+int parse_coefficient_coding(const std::string &name) {
+    if (name == "auto") return -1;
+    if (name == "grouped-5-front") return COEFFICIENT_CODING_GROUPED_FRONT;
+    if (name == "masked-tail-8x8") return COEFFICIENT_CODING_MASKED_TAIL_8X8;
+    throw std::runtime_error(
+        "Coefficient coding must be auto, grouped-5-front, or masked-tail-8x8"
+    );
+}
+
+struct RatedEncoding {
+    GpuResult encoded;
+    GpuResult decoded;
+    uint64_t error = UINT64_MAX;
+    int coefficient_coding = COEFFICIENT_CODING_LEGACY;
+};
+
+RatedEncoding encode_best_coding(
+    const std::vector<uint8_t> &rgb,
+    uint32_t width,
+    uint32_t height,
+    const Preset &preset,
+    uint32_t quality,
+    bool auto_quality,
+    uint32_t candidate_count,
+    int requested_coding
+) {
+    const int first_coding = requested_coding >= 0
+        ? requested_coding : default_coefficient_coding(preset);
+    const bool compare_masked = requested_coding < 0 && preset.nominal_bpp >= 6.0;
+    const int coding_count = compare_masked ? 2 : 1;
+    RatedEncoding best;
+
+    for (int coding_index = 0; coding_index < coding_count; ++coding_index) {
+        const int coding = coding_index == 0
+            ? first_coding : COEFFICIENT_CODING_MASKED_TAIL_8X8;
+        GpuResult encoded = encode_gpu(
+            rgb, width, height, preset, quality, auto_quality, candidate_count, coding
+        );
+        const DctInfo info = inspect_file(encoded.bytes);
+        GpuResult decoded = decode_gpu(encoded.bytes, info);
+        const uint64_t error = squared_error(rgb, decoded.bytes);
+        if (error < best.error) {
+            best.encoded = std::move(encoded);
+            best.decoded = std::move(decoded);
+            best.error = error;
+            best.coefficient_coding = coding;
+        }
+    }
+    return best;
+}
+
 uint32_t parse_u32(const std::string &text, const char *label) {
     size_t parsed = 0u;
     unsigned long value = 0u;
@@ -2145,6 +2489,7 @@ void print_usage(const char *program) {
         "  --quality N        Quantization quality 1..100 (default 72)\n"
         "  --find-quality     Search CUDA candidates and maximize RGB PSNR\n"
         "  --find-settings    Alias for --find-quality\n"
+        "  --coefficient-coding NAME  auto, grouped-5-front, or masked-tail-8x8\n"
         "  --device N         CUDA device ordinal (default 0)\n\n"
         "Images: JPEG, PNG, TGA, BMP, PSD, GIF, HDR, PIC, and binary PNM.\n"
         "Decode output is binary PPM P6. The pixel command uploads only one MCU record.\n",
@@ -2194,6 +2539,7 @@ int command_encode(int argc, char **argv) {
     make_balanced_preset(12u, &preset);
     uint32_t quality = 72u;
     bool find_quality = false;
+    int requested_coding = -1;
     int device = 0;
     for (int index = 4; index < argc; ++index) {
         const std::string option = argv[index];
@@ -2208,6 +2554,8 @@ int command_encode(int argc, char **argv) {
             }
         } else if (option == "--find-quality" || option == "--find-settings") {
             find_quality = true;
+        } else if (option == "--coefficient-coding" && index + 1 < argc) {
+            requested_coding = parse_coefficient_coding(argv[++index]);
         } else if (option == "--device" && index + 1 < argc) {
             device = parse_device(argv[++index]);
         } else {
@@ -2230,10 +2578,10 @@ int command_encode(int argc, char **argv) {
         uint32_t coarse_best = quality;
         uint64_t coarse_error = UINT64_MAX;
         for (uint32_t candidate = 20u; candidate <= 95u; candidate += 5u) {
-            GpuResult encoded = encode_gpu(rgb, width, height, preset, candidate, true, 0u);
-            const DctInfo info = inspect_file(encoded.bytes);
-            GpuResult decoded = decode_gpu(encoded.bytes, info);
-            const uint64_t error = squared_error(rgb, decoded.bytes);
+            RatedEncoding rated = encode_best_coding(
+                rgb, width, height, preset, candidate, true, 0u, requested_coding
+            );
+            const uint64_t error = rated.error;
             const double psnr = psnr_from_error(error, static_cast<uint64_t>(width) * height * 3u);
             std::cerr << "  quality " << candidate << ": PSNR " << std::fixed
                       << std::setprecision(4) << psnr << " dB\n";
@@ -2253,10 +2601,10 @@ int command_encode(int argc, char **argv) {
             if (std::find(tested.begin(), tested.end(), candidate) != tested.end()) {
                 continue;
             }
-            GpuResult encoded = encode_gpu(rgb, width, height, preset, candidate, true, 0u);
-            const DctInfo info = inspect_file(encoded.bytes);
-            GpuResult decoded = decode_gpu(encoded.bytes, info);
-            const uint64_t error = squared_error(rgb, decoded.bytes);
+            RatedEncoding rated = encode_best_coding(
+                rgb, width, height, preset, candidate, true, 0u, requested_coding
+            );
+            const uint64_t error = rated.error;
             const double psnr = psnr_from_error(error, static_cast<uint64_t>(width) * height * 3u);
             std::cerr << "  quality " << candidate << ": PSNR " << std::fixed
                       << std::setprecision(4) << psnr << " dB\n";
@@ -2267,15 +2615,19 @@ int command_encode(int argc, char **argv) {
             }
         }
         candidate_count = static_cast<uint32_t>(tested.size());
-        selected = encode_gpu(rgb, width, height, preset, quality, true, candidate_count);
-        const DctInfo info = inspect_file(selected.bytes);
-        selected_decoded = decode_gpu(selected.bytes, info);
-        selected_error = squared_error(rgb, selected_decoded.bytes);
+        RatedEncoding rated = encode_best_coding(
+            rgb, width, height, preset, quality, true, candidate_count, requested_coding
+        );
+        selected = std::move(rated.encoded);
+        selected_decoded = std::move(rated.decoded);
+        selected_error = rated.error;
     } else {
-        selected = encode_gpu(rgb, width, height, preset, quality, false, 0u);
-        const DctInfo info = inspect_file(selected.bytes);
-        selected_decoded = decode_gpu(selected.bytes, info);
-        selected_error = squared_error(rgb, selected_decoded.bytes);
+        RatedEncoding rated = encode_best_coding(
+            rgb, width, height, preset, quality, false, 0u, requested_coding
+        );
+        selected = std::move(rated.encoded);
+        selected_decoded = std::move(rated.decoded);
+        selected_error = rated.error;
     }
 
     write_binary_file(argv[3], selected.bytes);
@@ -2290,7 +2642,9 @@ int command_encode(int argc, char **argv) {
     if (find_quality) {
         std::cout << " (auto, " << candidate_count << " candidates)";
     }
-    std::cout << ", " << selected.bytes.size() << " bytes, " << std::fixed
+    const DctInfo selected_info = inspect_file(selected.bytes);
+    std::cout << ", " << coefficient_coding_name(selected_info.coefficient_coding)
+              << ", " << selected.bytes.size() << " bytes, " << std::fixed
               << std::setprecision(3) << actual_bpp << " actual bpp, PSNR "
               << std::setprecision(4) << psnr << " dB\n"
               << "CUDA encode kernels " << std::setprecision(3) << selected.kernel_ms
@@ -2385,7 +2739,7 @@ int command_info(int argc, char **argv) {
               << ", " << info.mcu_columns << 'x' << info.mcu_rows << " MCUs, "
               << info.preset.bytes_per_mcu << " bytes/MCU, " << file.size()
               << " bytes, " << std::fixed << std::setprecision(3) << actual_bpp
-              << " actual bpp";
+              << " actual bpp, " << coefficient_coding_name(info.coefficient_coding);
     if (info.auto_quality) {
         std::cout << ", auto quality (" << info.search_candidate_count << " candidates)";
     }

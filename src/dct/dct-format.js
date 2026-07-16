@@ -66,7 +66,15 @@
     freezeCoefficientCoding("skip-rle-equal-2", 5, 2, "equal", "single"),
     freezeCoefficientCoding("dual-scale-skip-equal-2", 5, 2, "equal", "dual"),
     freezeCoefficientCoding("dual-scale-skip-front", 5, 3, "front", "dual"),
+    freezeCoefficientCoding("masked-tail-8x8", 5, 3, "front", null, true),
   ]);
+  const MASKED_TAIL_CONFIGS = Object.freeze({
+    16: Object.freeze({ dcBits: 10, acBits: 6, maxAc: 9 }),
+    24: Object.freeze({ dcBits: 9, acBits: 7, maxAc: 17 }),
+    32: Object.freeze({ dcBits: 8, acBits: 8, maxAc: 23 }),
+    40: Object.freeze({ dcBits: 8, acBits: 8, maxAc: 31 }),
+    48: Object.freeze({ dcBits: 10, acBits: 8, maxAc: 38 }),
+  });
   // Higher-rate modes preserve the reference converter's four-luma-to-two-chroma
   // byte ratio while DCTBS2 keeps its independently addressable 4:2:2 MCU layout.
   const PRESETS = Object.freeze({
@@ -111,8 +119,15 @@
     return Object.freeze({ modeCode, bpp, bytesPerMcu, yBytes, cbBytes, crBytes });
   }
 
-  function freezeCoefficientCoding(key, mantissaBits, groupCount, grouping, skipMode = null) {
-    return Object.freeze({ key, mantissaBits, groupCount, grouping, skipMode });
+  function freezeCoefficientCoding(
+    key,
+    mantissaBits,
+    groupCount,
+    grouping,
+    skipMode = null,
+    maskedTail = false
+  ) {
+    return Object.freeze({ key, mantissaBits, groupCount, grouping, skipMode, maskedTail });
   }
 
   function getCoefficientCoding(key, presetKey) {
@@ -131,6 +146,13 @@
     }
 
     return coding;
+  }
+
+  function resolveCoefficientCoding(key, presetKey, options = {}) {
+    const coding = getCoefficientCoding(key, presetKey);
+    return options.dctLibrary && coding.maskedTail
+      ? getCoefficientCoding("grouped-5-front", presetKey)
+      : coding;
   }
 
   function getDctPreset(key) {
@@ -171,7 +193,18 @@
     validatePixels(pixels, width, height);
     const quality = validateQuality(options.quality === undefined ? 72 : options.quality);
     const layout = getDctFileLayout(width, height, options.preset);
-    const coefficientCoding = getCoefficientCoding(options.coefficientCoding, layout.key);
+
+    if (shouldAutoSelectMaskedTail(layout.key, options)) {
+      return selectBetterHighRateEncoding(
+        pixels,
+        width,
+        height,
+        options,
+        (candidateOptions) => encodeDctFile(pixels, width, height, candidateOptions)
+      );
+    }
+
+    const coefficientCoding = resolveCoefficientCoding(options.coefficientCoding, layout.key, options);
     const splitLuma8x8 = shouldSplitLuma(layout, options);
 
     if (options.dctLibrary) {
@@ -419,7 +452,19 @@
     const source = prepareJpegDctSource(jpeg);
     const quality = validateQuality(options.quality === undefined ? 72 : options.quality);
     const layout = getDctFileLayout(source.width, source.height, options.preset);
-    const coefficientCoding = getCoefficientCoding(options.coefficientCoding, layout.key);
+
+    if (shouldAutoSelectMaskedTail(layout.key, options) && options.referencePixels) {
+      validatePixels(options.referencePixels, source.width, source.height);
+      return selectBetterHighRateEncoding(
+        options.referencePixels,
+        source.width,
+        source.height,
+        options,
+        (candidateOptions) => importJpegDctFile(jpeg, candidateOptions)
+      );
+    }
+
+    const coefficientCoding = resolveCoefficientCoding(options.coefficientCoding, layout.key, options);
     const splitLuma8x8 = shouldSplitLuma(layout, options);
     const output = createDctOutput(layout, quality, options, splitLuma8x8, coefficientCoding);
     const reportProgress = createDctProgressReporter(options, layout.mcuCount, quality);
@@ -469,6 +514,31 @@
     }
 
     return output;
+  }
+
+  function shouldAutoSelectMaskedTail(presetKey, options) {
+    return options.coefficientCoding === undefined && !options.dctLibrary && Number(presetKey) >= 6;
+  }
+
+  function selectBetterHighRateEncoding(pixels, width, height, options, encodeCandidate) {
+    const onProgress = typeof options.onProgress === "function" ? options.onProgress : null;
+    const encodePhase = (coefficientCoding, phase) => encodeCandidate({
+      ...options,
+      coefficientCoding,
+      onProgress: onProgress ? (progress) => {
+        onProgress({
+          ...progress,
+          completed: phase * progress.total + progress.completed,
+          total: progress.total * 2,
+        });
+      } : undefined,
+    });
+    const grouped = encodePhase("grouped-5-front", 0);
+    const masked = encodePhase("masked-tail-8x8", 1);
+    const groupedError = calculateSquaredError(pixels, decodeDctFile(grouped).pixels);
+    const maskedError = calculateSquaredError(pixels, decodeDctFile(masked).pixels);
+
+    return maskedError < groupedError ? masked : grouped;
   }
 
   function createDctOutput(
@@ -1062,6 +1132,7 @@
       quality < 1 || quality > 100 ||
       !coefficientCoding ||
       (flags & ~SUPPORTED_FLAGS) !== 0 ||
+      (libraryEnabled && coefficientCoding.maskedTail) ||
       ((flags & FLAG_SPLIT_LUMA_8X8) !== 0 && layout.bpp < 3)
     ) {
       throw new RangeError("Invalid DCTBS2 layout");
@@ -1195,7 +1266,11 @@
   function findBestDctQuality(pixels, width, height, options = {}) {
     validatePixels(pixels, width, height);
     const preset = getDctPreset(options.preset);
-    const coefficientCoding = getCoefficientCoding(options.coefficientCoding, preset.key);
+    const coefficientCoding = resolveCoefficientCoding(options.coefficientCoding, preset.key, options);
+    const autoSelectMaskedTail = shouldAutoSelectMaskedTail(preset.key, options);
+    const sampleCodings = autoSelectMaskedTail
+      ? [getCoefficientCoding("grouped-5-front"), getCoefficientCoding("masked-tail-8x8")]
+      : [coefficientCoding];
     const layout = getDctFileLayout(width, height, preset.key);
     const onProgress = typeof options.onProgress === "function" ? options.onProgress : () => {};
     const finalistCount = normalizeFinalistCount(options.finalistCount);
@@ -1213,15 +1288,15 @@
     for (const quality of coarse) {
       sampleResults.push({
         quality,
-        error: measureSampleError(
+        error: Math.min(...sampleCodings.map((coding) => measureSampleError(
           pixels,
           width,
           height,
           layout,
           quality,
           sampleIndices,
-          coefficientCoding
-        ),
+          coding
+        ))),
       });
       completed += 1;
       onProgress({ stage: "sample", completed, total: estimatedTotal, quality });
@@ -1239,15 +1314,15 @@
       if (!sampleResults.some((result) => result.quality === quality)) {
         sampleResults.push({
           quality,
-          error: measureSampleError(
+          error: Math.min(...sampleCodings.map((coding) => measureSampleError(
             pixels,
             width,
             height,
             layout,
             quality,
             sampleIndices,
-            coefficientCoding
-          ),
+            coding
+          ))),
         });
       }
       completed += 1;
@@ -1271,7 +1346,7 @@
         libraryFrequencySplit: options.libraryFrequencySplit,
         libraryClusterSamples: options.libraryClusterSamples,
         libraryCandidateCount: options.libraryCandidateCount,
-        coefficientCoding: coefficientCoding.key,
+        ...(autoSelectMaskedTail ? {} : { coefficientCoding: coefficientCoding.key }),
         searchCandidateCount: sampleResults.length + finalists.length,
         onProgress(progress) {
           const fraction = progress.total > 0 ? progress.completed / progress.total : 0;
@@ -1489,6 +1564,11 @@
     libraryIndex,
     referenceCoding = null
   ) {
+    if (candidate.encodingMode === "masked-tail") {
+      writeMaskedTailComponentCandidate(output, offset, byteCount, candidate);
+      return;
+    }
+
     const writer = new BitWriter(output, offset, byteCount);
     const headerProfile = referenceCoding === "header"
       ? candidate.profile | libraryIndex << 2
@@ -1569,7 +1649,16 @@
   ) {
     let baseline;
 
-    if (coding.groupCount > 0) {
+    if (isMaskedTailRecord(coding, width, height, byteCount)) {
+      baseline = chooseMaskedTailComponentEncoding(
+        coefficients,
+        width,
+        height,
+        byteCount,
+        quality,
+        chroma
+      );
+    } else if (coding.groupCount > 0) {
       baseline = chooseGroupedComponentEncoding(
         coefficients,
         width,
@@ -1608,6 +1697,128 @@
       coding
     );
     return skip && skip.error < baseline.error ? skip : baseline;
+  }
+
+  function isMaskedTailRecord(coding, width, height, byteCount) {
+    return Boolean(coding.maskedTail && width === 8 && height === 8 && MASKED_TAIL_CONFIGS[byteCount]);
+  }
+
+  function chooseMaskedTailComponentEncoding(
+    coefficients,
+    width,
+    height,
+    byteCount,
+    quality,
+    chroma
+  ) {
+    const config = MASKED_TAIL_CONFIGS[byteCount];
+    const dcMinimum = -(2 ** (config.dcBits - 1));
+    const dcMaximum = 2 ** (config.dcBits - 1) - 1;
+    const acMinimum = -(2 ** (config.acBits - 1));
+    const acMaximum = 2 ** (config.acBits - 1) - 1;
+    const baseError = squaredNorm(coefficients);
+    let best = null;
+
+    for (let scaleIndex = 0; scaleIndex < 4; scaleIndex += 1) {
+      const scale = SCALE_MULTIPLIERS[scaleIndex];
+      const dcStep = quantizationStep(0, 0, width, height, quality, chroma) * scale;
+      const dc = clamp(roundSigned(coefficients[0] / dcStep), dcMinimum, dcMaximum);
+      const restoredDc = dc * dcStep;
+      const errorAfterDc = baseError +
+        (coefficients[0] - restoredDc) ** 2 - coefficients[0] ** 2;
+      const coding = new Array(64);
+
+      for (let position = 1; position < 64; position += 1) {
+        const u = position % width;
+        const v = Math.floor(position / width);
+        const step = quantizationStep(u, v, width, height, quality, chroma) * scale;
+        let stored = clamp(roundSigned(coefficients[position] / step), acMinimum, acMaximum);
+        const restored = stored * step;
+        const dropError = coefficients[position] ** 2;
+        const keepError = (coefficients[position] - restored) ** 2;
+
+        if (keepError >= dropError) {
+          stored = 0;
+        }
+        coding[position] = {
+          position,
+          stored,
+          benefit: stored === 0 ? 0 : dropError - keepError,
+        };
+      }
+
+      const selected = new Uint8Array(64);
+      let explicitBenefit = 0;
+      let tailBenefit = coding.slice(64 - config.maxAc).reduce(
+        (total, entry) => total + entry.benefit,
+        0
+      );
+
+      for (let explicitCount = 0; explicitCount <= config.maxAc; explicitCount += 1) {
+        const tailStart = 64 - config.maxAc + explicitCount;
+        const error = errorAfterDc - explicitBenefit - tailBenefit;
+
+        if (!best || error < best.error) {
+          best = {
+            profile: null,
+            scaleIndex,
+            dc,
+            groupScaleIndices: [scaleIndex],
+            explicitEntries: coding.slice(1, tailStart)
+              .filter((entry) => selected[entry.position] !== 0),
+            tailEntries: coding.slice(tailStart, 64),
+            tailStart,
+            maxAc: config.maxAc,
+            error,
+            encodingMode: "masked-tail",
+          };
+        }
+
+        if (explicitCount === config.maxAc) break;
+        tailBenefit -= coding[tailStart].benefit;
+        let bestPosition = -1;
+        for (let position = 1; position <= Math.min(62, tailStart); position += 1) {
+          if (selected[position] !== 0) continue;
+          if (bestPosition < 0 || coding[position].benefit > coding[bestPosition].benefit ||
+              coding[position].benefit === coding[bestPosition].benefit && position < bestPosition) {
+            bestPosition = position;
+          }
+        }
+        selected[bestPosition] = 1;
+        explicitBenefit += coding[bestPosition].benefit;
+      }
+    }
+
+    return best;
+  }
+
+  function writeMaskedTailComponentCandidate(output, offset, byteCount, candidate) {
+    const config = MASKED_TAIL_CONFIGS[byteCount];
+    let maskLow = 0;
+    let maskHigh = 0;
+
+    output.fill(0, offset, offset + byteCount);
+    for (const entry of candidate.explicitEntries) {
+      const maskBit = entry.position - 1;
+      if (maskBit < 32) {
+        maskLow = (maskLow | (1 << maskBit)) >>> 0;
+      } else {
+        maskHigh = (maskHigh | (1 << (maskBit - 32))) >>> 0;
+      }
+    }
+    maskHigh = ((maskHigh & 0x3fffffff) | (candidate.scaleIndex << 30)) >>> 0;
+
+    const view = new DataView(output.buffer, output.byteOffset + offset, byteCount);
+    view.setUint32(0, maskLow, true);
+    view.setUint32(4, maskHigh, true);
+
+    let bitOffset = 0;
+    writeLittleEndianSignedBits(output, offset + 8, bitOffset, candidate.dc, config.dcBits);
+    bitOffset += config.dcBits;
+    for (const entry of [...candidate.explicitEntries, ...candidate.tailEntries]) {
+      writeLittleEndianSignedBits(output, offset + 8, bitOffset, entry.stored, config.acBits);
+      bitOffset += config.acBits;
+    }
   }
 
   function chooseLegacyComponentEncoding(
@@ -2017,6 +2228,103 @@
     return { acCount, groupEnds };
   }
 
+  function writeLittleEndianSignedBits(bytes, byteOffset, bitOffset, value, bitCount) {
+    const encoded = value < 0 ? value + 2 ** bitCount : value;
+    for (let bit = 0; bit < bitCount; bit += 1) {
+      if ((encoded >> bit & 1) !== 0) {
+        const absoluteBit = bitOffset + bit;
+        bytes[byteOffset + (absoluteBit >> 3)] |= 1 << (absoluteBit & 7);
+      }
+    }
+  }
+
+  function readLittleEndianSignedBits(bytes, byteOffset, bitOffset, bitCount) {
+    let value = 0;
+    for (let bit = 0; bit < bitCount; bit += 1) {
+      const absoluteBit = bitOffset + bit;
+      value |= (bytes[byteOffset + (absoluteBit >> 3)] >> (absoluteBit & 7) & 1) << bit;
+    }
+    const signBit = 2 ** (bitCount - 1);
+    return value >= signBit ? value - 2 ** bitCount : value;
+  }
+
+  function countSetBits32(value) {
+    let remaining = value >>> 0;
+    let count = 0;
+    while (remaining !== 0) {
+      remaining = (remaining & (remaining - 1)) >>> 0;
+      count += 1;
+    }
+    return count;
+  }
+
+  function maskedTailHasPosition(maskLow, maskHigh, position) {
+    const maskBit = position - 1;
+    return maskBit < 32
+      ? (maskLow >>> maskBit & 1) !== 0
+      : (maskHigh >>> (maskBit - 32) & 1) !== 0;
+  }
+
+  function decodeMaskedTailComponent(bytes, offset, byteCount, quality, chroma) {
+    const config = MASKED_TAIL_CONFIGS[byteCount];
+    const view = new DataView(bytes.buffer, bytes.byteOffset + offset, byteCount);
+    const maskLow = view.getUint32(0, true);
+    const rawMaskHigh = view.getUint32(4, true);
+    const maskHigh = rawMaskHigh & 0x3fffffff;
+    const scaleIndex = rawMaskHigh >>> 30;
+    const scale = SCALE_MULTIPLIERS[scaleIndex];
+    const explicitAcCount = countSetBits32(maskLow) + countSetBits32(maskHigh);
+
+    if (explicitAcCount > config.maxAc) {
+      throw new RangeError("Invalid DCT masked-tail AC count");
+    }
+
+    const tailAcCount = config.maxAc - explicitAcCount;
+    const tailStart = 64 - tailAcCount;
+    for (let position = Math.max(1, tailStart); position <= 62; position += 1) {
+      if (maskedTailHasPosition(maskLow, maskHigh, position)) {
+        throw new RangeError("DCT masked AC overlaps the implicit tail");
+      }
+    }
+
+    const coefficients = new Float64Array(64);
+    let bitOffset = 0;
+    const dc = readLittleEndianSignedBits(bytes, offset + 8, bitOffset, config.dcBits);
+    bitOffset += config.dcBits;
+    coefficients[0] = dc * quantizationStep(0, 0, 8, 8, quality, chroma) * scale;
+    let storedCoefficientCount = dc === 0 ? 0 : 1;
+
+    for (let position = 1; position < tailStart && position <= 62; position += 1) {
+      if (!maskedTailHasPosition(maskLow, maskHigh, position)) continue;
+      const stored = readLittleEndianSignedBits(bytes, offset + 8, bitOffset, config.acBits);
+      bitOffset += config.acBits;
+      coefficients[position] = stored *
+        quantizationStep(position % 8, Math.floor(position / 8), 8, 8, quality, chroma) * scale;
+      storedCoefficientCount += stored === 0 ? 0 : 1;
+    }
+    for (let position = tailStart; position <= 63; position += 1) {
+      const stored = readLittleEndianSignedBits(bytes, offset + 8, bitOffset, config.acBits);
+      bitOffset += config.acBits;
+      coefficients[position] = stored *
+        quantizationStep(position % 8, Math.floor(position / 8), 8, 8, quality, chroma) * scale;
+      storedCoefficientCount += stored === 0 ? 0 : 1;
+    }
+
+    return {
+      coefficients,
+      profile: null,
+      scaleIndex,
+      groupScaleIndices: [scaleIndex],
+      coefficientCount: config.maxAc + 1,
+      storedCoefficientCount,
+      explicitAcCount,
+      tailAcCount,
+      tailStart,
+      libraryIndex: 0,
+      encodingMode: "masked-tail",
+    };
+  }
+
   function decodeComponent(
     bytes,
     offset,
@@ -2028,6 +2336,13 @@
     coding,
     libraryContext = null
   ) {
+    if (isMaskedTailRecord(coding, width, height, byteCount)) {
+      if (libraryContext) {
+        throw new RangeError("DCT masked-tail records do not support prototype libraries");
+      }
+      return decodeMaskedTailComponent(bytes, offset, byteCount, quality, chroma);
+    }
+
     const reader = new BitReader(bytes, offset, byteCount);
     const header = reader.read(8);
     const packedProfile = header >> 4;
@@ -2350,8 +2665,10 @@
     if (!component.blocks) {
       return {
         profile: component.profile,
-        profileName: component.encodingMode === "skip-rle" || component.encodingMode === "dual-scale-skip"
-          ? SKIP_PROFILE_NAMES[component.profile] : PROFILE_NAMES[component.profile],
+        profileName: component.encodingMode === "masked-tail"
+          ? "masked AC + implicit high-frequency tail"
+          : component.encodingMode === "skip-rle" || component.encodingMode === "dual-scale-skip"
+            ? SKIP_PROFILE_NAMES[component.profile] : PROFILE_NAMES[component.profile],
         scaleIndex: component.scaleIndex,
         scale: SCALE_MULTIPLIERS[component.scaleIndex],
         groupScaleIndices: component.groupScaleIndices,
@@ -2360,6 +2677,9 @@
         storedCoefficientCount: component.storedCoefficientCount,
         libraryIndex: component.libraryIndex,
         encodingMode: component.encodingMode,
+        explicitAcCount: component.explicitAcCount,
+        tailAcCount: component.tailAcCount,
+        tailStart: component.tailStart,
       };
     }
 

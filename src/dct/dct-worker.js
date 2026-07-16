@@ -1,6 +1,6 @@
 "use strict";
 
-importScripts("../decoders/gpu-jpeg.js", "./dct-format.js?v=dct-page-15");
+importScripts("../decoders/gpu-jpeg.js", "./dct-format.js?v=dct-page-16");
 
 self.addEventListener("message", ({ data }) => {
   if (!data || data.type !== "encode") {
@@ -22,6 +22,7 @@ self.addEventListener("message", ({ data }) => {
       libraryFrequencySplit: data.libraryFrequencySplit,
       libraryClusterSamples: data.libraryClusterSamples,
       libraryCandidateCount: data.libraryCandidateCount,
+      referencePixels: data.jpegImport ? pixels : undefined,
       onProgress: postProgress,
     };
     let encoded;

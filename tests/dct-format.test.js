@@ -75,23 +75,70 @@ test("covers every rate from the preserved reference converter", () => {
   });
 });
 
-test("caps 48-byte 8x8 records at the 63 available AC coefficients", () => {
-  const encoded = encodeDctFile(makePixels(16, 16), 16, 16, { preset: "9", quality: 97 });
+test("keeps DC outside the AC mask and maps mask bit zero to AC1", () => {
+  const constant = encodeDctFile(makeConstantPixels(16, 16, 192), 16, 16, {
+    preset: "6",
+    quality: 97,
+    coefficientCoding: "masked-tail-8x8",
+  });
+  const constantView = new DataView(constant.buffer, constant.byteOffset + HEADER_BYTES);
+  const constantBlock = inspectDctMcu(constant, 0).components.y.blocks[0];
+
+  assert.equal(constantView.getUint32(0, true), 0, "DC must not consume mask bit zero");
+  assert.equal(constantView.getUint32(4, true) & 0x3fffffff, 0);
+  assert.equal(constantBlock.encodingMode, "masked-tail");
+  assert.equal(constantBlock.explicitAcCount, 0);
+  assert.equal(constantBlock.tailAcCount, 23);
+  assert.equal(constantBlock.tailStart, 41);
+  assert.equal(constantBlock.coefficientCount, 24);
+
+  const ac1 = encodeDctFile(makeHorizontalAc1Pixels(16, 16), 16, 16, {
+    preset: "6",
+    quality: 97,
+    coefficientCoding: "masked-tail-8x8",
+  });
+  const ac1View = new DataView(ac1.buffer, ac1.byteOffset + HEADER_BYTES);
+  assert.equal(ac1View.getUint32(0, true) & 1, 1, "mask bit zero must select DCT[1] / AC1");
+});
+
+test("fills masked records with a non-overlapping implicit AC tail", () => {
+  const encoded = encodeDctFile(makePixels(16, 16), 16, 16, {
+    preset: "9",
+    quality: 97,
+    coefficientCoding: "masked-tail-8x8",
+  });
   const mcu = inspectDctMcu(encoded, 0);
 
   assert.equal(mcu.components.y.blocks.length, 4);
   for (const block of mcu.components.y.blocks) {
-    assert.equal(block.coefficientCount, 64);
+    assert.equal(block.encodingMode, "masked-tail");
+    assert.equal(block.coefficientCount, 39);
+    assert.equal(block.explicitAcCount + block.tailAcCount, 38);
+    assert.equal(block.tailStart, 64 - block.tailAcCount);
   }
+  assert.equal(encoded[HEADER_BYTES + 47] & 0xfc, 0, "48-byte reserve bits must stay zero");
+
+  const invalidOverlap = encodeDctFile(makeConstantPixels(16, 16, 192), 16, 16, {
+    preset: "6",
+    quality: 97,
+    coefficientCoding: "masked-tail-8x8",
+  }).slice();
+  invalidOverlap[HEADER_BYTES + 7] |= 1 << 5;
+  assert.throws(() => inspectDctMcu(invalidOverlap, 0), /overlaps the implicit tail/);
 });
 
 test("uses four independent luma blocks at high rates and reads legacy files", () => {
   const source = makePixels(16, 16);
-  const split = encodeDctFile(source, 16, 16, { preset: "6", quality: 97 });
+  const split = encodeDctFile(source, 16, 16, {
+    preset: "6",
+    quality: 97,
+    coefficientCoding: "grouped-5-front",
+  });
   const legacy = encodeDctFile(source, 16, 16, {
     preset: "6",
     quality: 97,
     splitLuma8x8: false,
+    coefficientCoding: "grouped-5-front",
   });
   const splitInfo = inspectDctFile(split);
   const legacyInfo = inspectDctFile(legacy);
@@ -199,7 +246,6 @@ test("uses adaptive skip coding by default while preserving grouped and legacy f
     "2": "dual-scale-skip-equal-2",
     "3": "dual-scale-skip-front",
     "4.5": "dual-scale-skip-front",
-    "6": "grouped-5-front",
   };
 
   for (const [preset, coefficientCodingKey] of Object.entries(expected)) {
@@ -211,8 +257,6 @@ test("uses adaptive skip coding by default while preserving grouped and legacy f
     assert.equal(info.coefficientCodingKey, coefficientCodingKey);
     if (preset === "0.75") {
       assert.ok(lumaRecords.every((record) => record.encodingMode === "skip-rle"));
-    } else if (preset === "6") {
-      assert.ok(lumaRecords.every((record) => record.encodingMode === "grouped"));
     } else {
       assert.ok(lumaRecords.every((record) => record.encodingMode === "dual-scale-skip"));
     }
@@ -233,6 +277,47 @@ test("uses adaptive skip coding by default while preserving grouped and legacy f
   });
   assert.equal(inspectDctFile(legacy).coefficientCodingKey, "legacy");
   assert.equal(inspectDctMcu(legacy, 0).components.y.groupScaleIndices.length, 1);
+
+  const library = encodeDctFile(source, 16, 16, {
+    preset: "6",
+    quality: 92,
+    dctLibrary: true,
+    librarySize: 1,
+  });
+  assert.equal(inspectDctFile(library).coefficientCodingKey, "grouped-5-front");
+});
+
+test("selects the lower-error high-rate coding without regressing RGB quality", () => {
+  const source = makePixels(16, 16);
+
+  for (const preset of ["6", "7.5", "9"]) {
+    const grouped = encodeDctFile(source, 16, 16, {
+      preset,
+      quality: 97,
+      coefficientCoding: "grouped-5-front",
+    });
+    const masked = encodeDctFile(source, 16, 16, {
+      preset,
+      quality: 97,
+      coefficientCoding: "masked-tail-8x8",
+    });
+    const automatic = encodeDctFile(source, 16, 16, { preset, quality: 97 });
+    const groupedError = calculateRgbError(source, decodeDctFile(grouped).pixels);
+    const maskedError = calculateRgbError(source, decodeDctFile(masked).pixels);
+    const automaticError = calculateRgbError(source, decodeDctFile(automatic).pixels);
+
+    assert.equal(automaticError, Math.min(groupedError, maskedError));
+    assert.equal(
+      inspectDctFile(automatic).coefficientCodingKey,
+      maskedError < groupedError ? "masked-tail-8x8" : "grouped-5-front"
+    );
+  }
+
+  const tied = encodeDctFile(makeConstantPixels(16, 16, 128), 16, 16, {
+    preset: "9",
+    quality: 97,
+  });
+  assert.equal(inspectDctFile(tied).coefficientCodingKey, "grouped-5-front");
 });
 
 test("keeps the grouped fallback when skip coding does not reduce block error", () => {
@@ -438,6 +523,11 @@ test("rejects truncated files, invalid modes, and invalid coordinates", () => {
   const unsupportedFlags = encoded.slice();
   const invalidCoefficientCoding = encoded.slice();
   const splitLowRate = encoded.slice();
+  const maskedLibrary = encodeDctFile(source, 16, 16, {
+    preset: "6",
+    quality: 75,
+    coefficientCoding: "masked-tail-8x8",
+  }).slice();
 
   invalidMode[12] = 0;
   invalidMode[13] = 0;
@@ -446,12 +536,14 @@ test("rejects truncated files, invalid modes, and invalid coordinates", () => {
   unsupportedFlags[52] |= 8;
   invalidCoefficientCoding[53] = 15;
   splitLowRate[52] |= 2;
+  maskedLibrary[52] |= 4;
 
   assert.throws(() => inspectDctFile(encoded.slice(0, -1)), /Invalid DCTBS2 layout/);
   assert.throws(() => inspectDctFile(invalidMode), /Unsupported DCTBS2/);
   assert.throws(() => inspectDctFile(unsupportedFlags), /Invalid DCTBS2 layout/);
   assert.throws(() => inspectDctFile(invalidCoefficientCoding), /Invalid DCTBS2 layout/);
   assert.throws(() => inspectDctFile(splitLowRate), /Invalid DCTBS2 layout/);
+  assert.throws(() => inspectDctFile(maskedLibrary), /Invalid DCTBS2 layout/);
   assert.throws(() => sampleDctFilePixel(encoded, 16, 0), /coordinate is out of range/);
   assert.throws(() => encodeDctFile(source, 16, 16, { preset: "4" }), /Unsupported DCT preset/);
 });
@@ -488,6 +580,42 @@ function makeAlternatingPixels(width, height) {
   }
 
   return pixels;
+}
+
+function makeConstantPixels(width, height, value) {
+  const pixels = new Uint8ClampedArray(width * height * 4);
+  for (let offset = 0; offset < pixels.length; offset += 4) {
+    pixels[offset] = value;
+    pixels[offset + 1] = value;
+    pixels[offset + 2] = value;
+    pixels[offset + 3] = 255;
+  }
+  return pixels;
+}
+
+function makeHorizontalAc1Pixels(width, height) {
+  const pixels = new Uint8ClampedArray(width * height * 4);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const value = Math.round(128 + 96 * Math.cos(Math.PI * (2 * (x & 7) + 1) / 16));
+      const offset = (y * width + x) * 4;
+      pixels[offset] = value;
+      pixels[offset + 1] = value;
+      pixels[offset + 2] = value;
+      pixels[offset + 3] = 255;
+    }
+  }
+  return pixels;
+}
+
+function calculateRgbError(left, right) {
+  let total = 0;
+  for (let offset = 0; offset < left.length; offset += 4) {
+    total += (left[offset] - right[offset]) ** 2;
+    total += (left[offset + 1] - right[offset + 1]) ** 2;
+    total += (left[offset + 2] - right[offset + 2]) ** 2;
+  }
+  return total;
 }
 
 function test(name, callback) {

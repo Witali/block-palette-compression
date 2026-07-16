@@ -25,10 +25,14 @@ coding. Grouped records store one three-bit exponent per group and five-bit
 signed mantissas; the DC term keeps its own exponent and ten-bit signed value.
 Skip-RLE stores signed-6 values with a two-bit forward skip. Dual-scale skip
 adds a signed-4 fine group with multiplier 1 or 2. The default is skip-RLE at
-0.75 bpp, dual-scale skip at 1, 1.5, and 2 bpp, dual-scale skip for the 16- and
-24-byte high-rate records, and grouped coding for 32-, 40-, and 48-byte
-records. A record falls back to grouped coding whenever skip does not reduce
-coefficient error. The decoder still accepts older grouped and legacy records.
+0.75 bpp, dual-scale skip at 1, 1.5, and 2 bpp, and dual-scale skip for the
+16- and 24-byte high-rate records. The 16/24/32/40/48-byte 8x8 layouts also
+support an explicit AC mask whose bit zero selects AC1 (DC is separate) and
+whose unused value slots form an implicit contiguous high-frequency tail. At
+6, 7.5, and 9 bpp the default `auto` mode encodes this `masked-tail-8x8`
+layout and the earlier `grouped-5-front` layout, measures exact RGB error, and
+keeps the higher-quality result; a tie keeps grouped coding. The decoder still
+accepts older grouped and legacy records.
 
 The encoder runs RGB-to-YCbCr conversion, 4:2:2 downsampling, separable DCT,
 profile selection, grouped/skip candidate evaluation, quantization, and packing
@@ -76,6 +80,10 @@ dimensions that are not multiples of 16. List all layouts with:
 ```powershell
 .\.tmp\dctcuda-build\dctcuda.exe presets
 ```
+
+Use `--coefficient-coding masked-tail-8x8` or
+`--coefficient-coding grouped-5-front` to force one high-rate representation.
+The default `--coefficient-coding auto` keeps the lower-error RGB result.
 
 Search all CUDA quality candidates and keep the one with the best full-image
 RGB PSNR:

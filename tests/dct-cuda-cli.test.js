@@ -18,6 +18,14 @@ test("provides CUDA encode, decode, settings search, and pixel commands", () => 
   assert.match(source, /command == "presets"/);
   assert.match(source, /command == "pixel"/);
   assert.match(source, /preset\.bytes_per_mcu/);
+  assert.match(source, /--coefficient-coding/);
+  assert.match(source, /COEFFICIENT_CODING_MASKED_TAIL_8X8 = 6/);
+  assert.match(source, /mask_bit = best_position - 1/);
+  assert.match(source, /const int tail_start = 64 - tail_count/);
+  assert.match(source, /encode_best_coding/);
+  assert.match(source, /if \(error < best\.error\)/);
+  assert.match(readme, /bit zero selects AC1 \(DC is separate\)/);
+  assert.match(readme, /tie keeps grouped coding/);
 });
 
 test("keeps random pixel access bounded to one fixed MCU record and its prototype library", () => {

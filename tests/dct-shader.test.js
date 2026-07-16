@@ -59,7 +59,10 @@ test("keeps shader coefficient scans, grouped exponents, and libraries bounded",
   assert.match(source, /uint readSidecarBits/);
   assert.match(source, /int groupedScaleIndex/);
   assert.match(source, /int skipScanPosition/);
-  assert.match(source, /bool skipRecord = coding >= 3/);
+  assert.match(source, /bool skipRecord = coding >= 3 && coding <= 5/);
+  assert.match(source, /float sampleMaskedTailRecord/);
+  assert.match(source, /int explicitCount = bitCount\(maskLow\) \+ bitCount\(maskHigh\)/);
+  assert.match(source, /position >= tailStart/);
   assert.match(source, /int tokenCount = skipTokenCount/);
   assert.match(source, /bool sidecarReferenceVersion/);
   assert.match(source, /int resolveLibraryIndex/);
