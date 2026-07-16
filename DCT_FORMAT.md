@@ -12,19 +12,19 @@ without decoding the rest of the image or following an entropy stream.
 Each MCU contains luma and two chroma components:
 
 - Y at 0.75–2 bpp: one orthonormal 16×16 DCT;
-- Y at 3–6 bpp: four independent orthonormal 8×8 DCTs;
+- Y at 3–9 bpp: four independent orthonormal 8×8 DCTs;
 - Cb: one orthonormal 8×16 DCT;
 - Cr: one orthonormal 8×16 DCT.
 
 Cb and Cr use horizontal 4:2:2 subsampling. Source pixels outside a partial
 edge MCU are extended by repeating the nearest valid pixel.
 
-The supported rates include the four MCU modes and all three higher-rate
-16/24/32-byte modes from the preserved reference converter. The high-rate
+The supported rates include the four MCU modes and all five higher-rate
+16/24/32/40/48-byte modes from the preserved reference converter. The high-rate
 modes divide their Y allocation equally between four 8×8 records. This
 localizes ringing from strong edges without changing the fixed MCU size or
-the 4:2:2 random-access layout. Each high-rate Y block receives 16, 24, or 32
-bytes at 3, 4.5, or 6 bpp respectively.
+the 4:2:2 random-access layout. Each high-rate Y block receives 16, 24, 32, 40,
+or 48 bytes at 3, 4.5, 6, 7.5, or 9 bpp respectively.
 
 | Preset | Bytes/MCU | Y | Cb | Cr |
 | ---: | ---: | ---: | ---: | ---: |
@@ -35,6 +35,8 @@ bytes at 3, 4.5, or 6 bpp respectively.
 | 3 bpp | 96 | 64 | 16 | 16 |
 | 4.5 bpp | 144 | 96 | 24 | 24 |
 | 6 bpp | 192 | 128 | 32 | 32 |
+| 7.5 bpp | 240 | 160 | 40 | 40 |
+| 9 bpp | 288 | 192 | 48 | 48 |
 
 The actual whole-file bpp can be slightly higher for non-multiple-of-16 image
 dimensions because the edge MCUs are stored at their complete fixed size.
@@ -95,9 +97,9 @@ The encoder evaluates the grouped and skip candidates and writes the skip form
 only when it reduces coefficient error. Defaults follow the final fixed-rate
 experiments: skip-RLE at 0.75 bpp; dual-scale skip at 1, 1.5, and 2 bpp; and
 dual-scale skip for the 16- and 24-byte high-rate component records (3 and 4.5
-bpp). The 32-byte high-rate records at 6 bpp keep grouped coding. Low-rate
-chroma keeps grouped coding; high-rate split-luma files may use adaptive skip
-for both luma and chroma records.
+bpp). The 32-, 40-, and 48-byte high-rate records at 6, 7.5, and 9 bpp keep
+grouped coding. Low-rate chroma keeps grouped coding; high-rate split-luma
+files may use adaptive skip for both luma and chroma records.
 
 Coefficient coding identifiers are:
 

@@ -440,15 +440,16 @@ int mantissaBits(int coding) {
     return coding == 0 ? 6 : 5;
 }
 
-int acCount(int recordBytes, int coding, bool tailReference) {
+int acCount(int recordBytes, int kind, int coding, bool tailReference) {
     int groups = groupCount(coding);
     int count = (recordBytes * 8 - 18 - groups * 3) / mantissaBits(coding);
-    return max(0, count - (tailReference ? 1 : 0));
+    return min(scanLength(kind), max(0, count - (tailReference ? 1 : 0)));
 }
 
 int resolveLibraryIndex(
     int recordOffset,
     int recordBytes,
+    int kind,
     int coding,
     int libraryVersion,
     int sidecarIndex
@@ -457,7 +458,7 @@ int resolveLibraryIndex(
     if (headerReferenceVersion(libraryVersion)) return packedProfile >> 2;
     if (sidecarReferenceVersion(libraryVersion)) return sidecarIndex;
     if (libraryVersion == 1) {
-        int count = acCount(recordBytes, coding, true);
+        int count = acCount(recordBytes, kind, coding, true);
         int referenceBit = 18 + groupCount(coding) * 3 + count * mantissaBits(coding);
         return int(readComponentBits(recordOffset, referenceBit, mantissaBits(coding)));
     }
@@ -546,7 +547,7 @@ float sampleRecord(
     int width = componentWidth(kind);
     int height = componentHeight(kind);
     bool tailReference = libraryVersion == 1;
-    int count = acCount(recordBytes, coding, tailReference);
+    int count = acCount(recordBytes, kind, coding, tailReference);
     int groups = groupCount(coding);
     int valueBits = mantissaBits(coding);
     int valuesStart = 18 + groups * 3;
@@ -627,7 +628,7 @@ float sampleWithPrototype(
     int libraryVersion
 ) {
     int libraryIndex = resolveLibraryIndex(
-        recordOffset, recordBytes, coding, libraryVersion, sidecarIndex
+        recordOffset, recordBytes, kind, coding, libraryVersion, sidecarIndex
     );
     if (libraryIndex < 0 || libraryIndex > prototypeCount) return 128.0;
     float centered = sampleRecord(

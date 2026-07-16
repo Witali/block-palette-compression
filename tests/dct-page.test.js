@@ -18,15 +18,18 @@ test("links the DCT compressor from the project home page", () => {
 });
 
 test("offers every fixed MCU rate from the preserved converter", () => {
-  for (const preset of ["6", "4.5", "3", "2", "1.5", "1", "0.75"]) {
+  for (const preset of ["9", "7.5", "6", "4.5", "3", "2", "1.5", "1", "0.75"]) {
     assert.match(page, new RegExp(`<option value="${preset.replace(".", "\\.")}"`));
   }
 
-  assert.equal(Object.keys(PRESETS).length, 7);
-  assert.equal(PRESETS["6"].bytesPerMcu, 192);
+  assert.equal(Object.keys(PRESETS).length, 9);
+  assert.equal(PRESETS["9"].bytesPerMcu, 288);
   assert.match(pageScript, /Object\.entries\(codec\.PRESETS\)/);
   assert.match(pageScript, /presetSelect\.replaceChildren/);
+  assert.match(pageScript, /preset\.yBytes \/ 4.*B\/DCT/);
   assert.match(page, /2 bpp · 64 B\/MCU/);
+  assert.match(page, /9 bpp · 48 B\/DCT · 288 B\/MCU/);
+  assert.match(page, /7\.5 bpp · 40 B\/DCT · 240 B\/MCU/);
   assert.match(page, /0\.75 bpp · 24 B\/MCU/);
   assert.match(page, /dctbs_converter_with_edge_dictionary\.html/);
   assert.match(page, /four 8×8 luma transforms at high rates/);
@@ -72,7 +75,7 @@ test("zooms both previews around the pointer with Ctrl and the mouse wheel", () 
 
 test("runs DCT encoding and automatic quality search in a worker", () => {
   assert.match(pageScript, /new Worker\("\.\/src\/dct\/dct-worker\.js/);
-  assert.match(worker, /dct-format\.js\?v=dct-page-14/);
+  assert.match(worker, /dct-format\.js\?v=dct-page-15/);
   assert.match(worker, /findBestDctQuality/);
   assert.match(worker, /encodeDctFile/);
   assert.match(worker, /decodedPixels: decoded\.pixels\.buffer/);

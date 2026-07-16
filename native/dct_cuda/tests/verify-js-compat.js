@@ -29,7 +29,7 @@ const rgba = makePixels(width, height);
 const inputPpm = path.join(temporary, "input.ppm");
 writePpm(inputPpm, rgba, width, height);
 const representativePresets = [
-  "0.75", "1", "1.5", "2", "3", "4.5", "6",
+  "0.75", "1", "1.5", "2", "3", "4.5", "6", "7.5", "9",
 ];
 
 try {
@@ -221,6 +221,8 @@ function verifyPreset(preset) {
     "3": "dual-scale-skip-front",
     "4.5": "dual-scale-skip-front",
     "6": "grouped-5-front",
+    "7.5": "grouped-5-front",
+    "9": "grouped-5-front",
   };
   assert.equal(
     cudaInfo.coefficientCodingKey,

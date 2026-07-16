@@ -169,7 +169,9 @@ function populatePresetOptions() {
   const options = Object.entries(codec.PRESETS)
     .sort((left, right) => right[1].bpp - left[1].bpp)
     .map(([key, preset]) => new Option(
-      `${key} bpp · ${preset.bytesPerMcu} B/MCU`,
+      preset.bpp >= 7.5
+        ? `${key} bpp · ${preset.yBytes / 4} B/DCT · ${preset.bytesPerMcu} B/MCU`
+        : `${key} bpp · ${preset.bytesPerMcu} B/MCU`,
       key,
       false,
       key === selected
@@ -406,7 +408,7 @@ function processImage() {
   const source = state.sourceImageData;
   const jpegImport = jpegImportInput.checked && Boolean(state.sourceJpegBytes);
   const autoQuality = !jpegImport && autoQualityInput.checked;
-  const worker = new Worker("./src/dct/dct-worker.js?v=dct-page-14");
+  const worker = new Worker("./src/dct/dct-worker.js?v=dct-page-15");
   const pixels = source.data.slice();
   const jpegBytes = jpegImport ? state.sourceJpegBytes.slice() : null;
 

@@ -70,6 +70,8 @@
   // Higher-rate modes preserve the reference converter's four-luma-to-two-chroma
   // byte ratio while DCTBS2 keeps its independently addressable 4:2:2 MCU layout.
   const PRESETS = Object.freeze({
+    "9": freezePreset(9000, 9, 288, 192, 48, 48),
+    "7.5": freezePreset(7500, 7.5, 240, 160, 40, 40),
     "6": freezePreset(6000, 6, 192, 128, 32, 32),
     "4.5": freezePreset(4500, 4.5, 144, 96, 24, 24),
     "3": freezePreset(3000, 3, 96, 64, 16, 16),
@@ -1896,7 +1898,12 @@
     reservedAcCount = 0,
     libraryFrequencySplit = 0
   ) {
-    const layout = getGroupedAcLayout(byteCount, coding, reservedAcCount);
+    const layout = getGroupedAcLayout(
+      byteCount,
+      coding,
+      reservedAcCount,
+      width * height - 1
+    );
     let best = null;
 
     for (let profile = 0; profile < PROFILE_NAMES.length; profile += 1) {
@@ -1987,10 +1994,14 @@
     return best;
   }
 
-  function getGroupedAcLayout(byteCount, coding, reservedAcCount = 0) {
-    const acCount = Math.max(
-      0,
-      Math.floor((byteCount * 8 - 18 - coding.groupCount * 3) / coding.mantissaBits) - reservedAcCount
+  function getGroupedAcLayout(byteCount, coding, reservedAcCount = 0, maximumAcCount = Infinity) {
+    const acCount = Math.min(
+      maximumAcCount,
+      Math.max(
+        0,
+        Math.floor((byteCount * 8 - 18 - coding.groupCount * 3) / coding.mantissaBits) -
+          reservedAcCount
+      )
     );
     let groupEnds;
 
@@ -2078,7 +2089,7 @@
     }
 
     const groupedLayout = coding.groupCount > 0
-      ? getGroupedAcLayout(byteCount, coding, reservedAcCount)
+      ? getGroupedAcLayout(byteCount, coding, reservedAcCount, width * height - 1)
       : null;
     const acCount = groupedLayout
       ? groupedLayout.acCount

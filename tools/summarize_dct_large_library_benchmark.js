@@ -8,7 +8,7 @@ const args = parseArgs(process.argv.slice(2));
 const recordFiles = String(args.records).split(",").map((file) => path.resolve(file.trim()));
 const records = recordFiles.flatMap(readJsonLines);
 const groups = aggregate(records);
-const presets = ["0.75", "1", "1.5", "2", "3", "4.5", "6"];
+const presets = ["0.75", "1", "1.5", "2", "3", "4.5", "6", "7.5", "9"];
 const modes = ["baseline", "header3", "sidecar32", "sidecar32q"];
 const rows = [];
 
@@ -130,7 +130,7 @@ function renderMarkdown(summary) {
     "| Payload bpp | Selected library mode | PSNR delta | Referenced Y blocks |",
     "| ---: | :--- | ---: | ---: |"
   );
-  for (const preset of ["0.75", "1", "1.5", "2", "3", "4.5", "6"]) {
+  for (const preset of ["0.75", "1", "1.5", "2", "3", "4.5", "6", "7.5", "9"]) {
     const candidates = summary.rows.filter((row) => row.preset === preset &&
       ["sidecar32", "sidecar32q"].includes(row.mode));
     candidates.sort((left, right) => right.psnr - left.psnr);

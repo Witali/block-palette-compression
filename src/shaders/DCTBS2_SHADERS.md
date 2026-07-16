@@ -19,6 +19,8 @@ Each rate has a separately validated fragment shader:
 | 3 bpp | `dctbs2-3bpp.frag.glsl` |
 | 4.5 bpp | `dctbs2-4_5bpp.frag.glsl` |
 | 6 bpp | `dctbs2-6bpp.frag.glsl` |
+| 7.5 bpp | `dctbs2-7_5bpp.frag.glsl` |
+| 9 bpp | `dctbs2-9bpp.frag.glsl` |
 
 Use `dctbs2-fullscreen.vert.glsl` for a full-screen draw. The fragment shaders
 support legacy, grouped-exponent, skip-RLE, and dual-scale skip coefficient
@@ -96,17 +98,18 @@ from two rolling 32-bit words with shifts and masks instead of reading one bit
 at a time. Only those two words are live while a component is evaluated, which
 limits register pressure without adding a second GPU texture.
 
-The generator also emits an equivalent Cube program for every payload profile:
+The generator also emits equivalent Cube programs for the seven profiles up to
+6 bpp:
 `cube-webgl2-dctbs2-{0_75,1,1_5,2,3,4_5,6}bpp.frag.glsl`. The renderer factory
 selects one with its `dctProfile` option and defaults to `1.5`. The current Cube
 page and texture adapter intentionally accept only the baseline 1.5 bpp asset;
 the other generated programs make profile specialization explicit and ready
-for future Cube assets. The seven standalone `dctbs2-*.frag.glsl` shaders remain
+for future Cube assets. The nine standalone `dctbs2-*.frag.glsl` shaders remain
 the complete format decoders.
 
 ## Regeneration
 
-The coefficient scans, seven complete fragment shaders, and seven specialized
+The coefficient scans, nine complete fragment shaders, and seven specialized
 Cube shaders are generated deterministically from
 `tools/generate-dctbs2-shaders.js`:
 

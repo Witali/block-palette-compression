@@ -3,7 +3,7 @@
 `dctcuda` is a CUDA encoder and decoder for the same independently addressable
 DCTBS2 v2 files used by `src/dct/dct-format.js`. The file remains a 64-byte
 header followed by fixed 16x16 MCU records. Low-rate files use one 16x16 Y
-transform; the 3, 4.5, and 6 bpp modes use four independent 8x8 Y transforms
+transform; the 3 through 9 bpp modes use four independent 8x8 Y transforms
 to localize ringing around strong edges. Every MCU contains independent Y, Cb,
 and Cr coefficients, so decoding a pixel requires its own record only and
 never a full-image reconstruction.
@@ -26,15 +26,15 @@ signed mantissas; the DC term keeps its own exponent and ten-bit signed value.
 Skip-RLE stores signed-6 values with a two-bit forward skip. Dual-scale skip
 adds a signed-4 fine group with multiplier 1 or 2. The default is skip-RLE at
 0.75 bpp, dual-scale skip at 1, 1.5, and 2 bpp, dual-scale skip for the 16- and
-24-byte high-rate records, and grouped coding for 32-byte records. A record
-falls back to grouped coding whenever skip does not reduce coefficient error.
-The decoder still accepts older grouped and legacy records.
+24-byte high-rate records, and grouped coding for 32-, 40-, and 48-byte
+records. A record falls back to grouped coding whenever skip does not reduce
+coefficient error. The decoder still accepts older grouped and legacy records.
 
 The encoder runs RGB-to-YCbCr conversion, 4:2:2 downsampling, separable DCT,
 profile selection, grouped/skip candidate evaluation, quantization, and packing
 on the GPU. Both full-image decoding and single-pixel reconstruction use CUDA
 kernels. The `pixel` command reads one
-24-192 byte MCU record and, when present, the small prototype library. It does
+24-288 byte MCU record and, when present, the small prototype library. It does
 not upload the other MCU records. For a split-luma record, the kernel
 reconstructs only the selected 8x8 Y block.
 
@@ -68,10 +68,10 @@ Encode an image at a fixed record size and quality:
   --preset 1 --quality 72
 ```
 
-Supported presets are `0.75`, `1`, `1.5`, `2`, `3`, `4.5`, and `6` nominal
-bpp. This includes all higher-rate 16/24/32-byte modes from the preserved
-reference converter. Edge padding can make actual bpp higher for dimensions
-that are not multiples of 16. List all layouts with:
+Supported presets are `0.75`, `1`, `1.5`, `2`, `3`, `4.5`, `6`, `7.5`, and `9`
+nominal bpp. This includes all higher-rate 16/24/32/40/48-byte modes from the
+preserved reference converter. Edge padding can make actual bpp higher for
+dimensions that are not multiples of 16. List all layouts with:
 
 ```powershell
 .\.tmp\dctcuda-build\dctcuda.exe presets
@@ -105,7 +105,7 @@ node native\dct_cuda\tests\verify-js-compat.js `
   .\.tmp\dctcuda-build\dctcuda.exe
 ```
 
-The test compares the complete seven-layout list and exercises every preset
+The test compares the complete nine-layout list and exercises every preset
 in both directions. It encodes on CUDA and decodes in JavaScript, encodes in
 JavaScript and decodes on CUDA, and compares CUDA single-pixel results with
 `sampleDctFilePixel`. It also imports a real JPEG into a high-rate split-luma

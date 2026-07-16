@@ -9,6 +9,7 @@ const { PRESETS } = require(path.join(root, "src", "dct", "dct-format.js"));
 const {
   buildScan,
   buildSkipScan,
+  cubePresets,
   cubeShaderFile,
   generatedFiles,
   presets,
@@ -19,7 +20,7 @@ test("ships one current-format WebGL2 DCTBS2 shader for every payload rate", () 
     presets.map((preset) => preset.key),
     Object.keys(PRESETS).sort((left, right) => Number(left) - Number(right))
   );
-  assert.equal(generatedFiles().size, 15);
+  assert.equal(generatedFiles().size, 17);
 
   for (const [file, expected] of generatedFiles()) {
     const actual = fs.readFileSync(path.join(root, "src", "shaders", file), "utf8")
@@ -66,8 +67,8 @@ test("keeps shader coefficient scans, grouped exponents, and libraries bounded",
   assert.match(source, /yReferenceOrdinal = mcuIndex \* 4 \+ block/);
 });
 
-test("generates one unrolled baseline Cube shader for every payload profile", () => {
-  for (const preset of presets) {
+test("generates unrolled baseline Cube shaders for the supported payload profiles", () => {
+  for (const preset of cubePresets) {
     const source = generatedFiles().get(cubeShaderFile(preset));
     const decoder = source.match(
       /\/\/ <dctbs2-profile-decoder>([\s\S]*?)\/\/ <\/dctbs2-profile-decoder>/

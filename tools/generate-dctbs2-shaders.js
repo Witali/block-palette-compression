@@ -15,7 +15,10 @@ const presets = Object.freeze([
   { key: "3", file: "dctbs2-3bpp.frag.glsl", mode: 3000, mcu: 96, y: 64, cb: 16, cr: 16 },
   { key: "4.5", file: "dctbs2-4_5bpp.frag.glsl", mode: 4500, mcu: 144, y: 96, cb: 24, cr: 24 },
   { key: "6", file: "dctbs2-6bpp.frag.glsl", mode: 6000, mcu: 192, y: 128, cb: 32, cr: 32 },
+  { key: "7.5", file: "dctbs2-7_5bpp.frag.glsl", mode: 7500, mcu: 240, y: 160, cb: 40, cr: 40 },
+  { key: "9", file: "dctbs2-9bpp.frag.glsl", mode: 9000, mcu: 288, y: 192, cb: 48, cr: 48 },
 ]);
+const cubePresets = Object.freeze(presets.filter((preset) => Number(preset.key) <= 6));
 const lumaQuantization = Object.freeze([
   16, 11, 10, 16, 24, 40, 51, 61,
   12, 12, 14, 19, 26, 58, 60, 55,
@@ -464,15 +467,16 @@ int mantissaBits(int coding) {
     return coding == 0 ? 6 : 5;
 }
 
-int acCount(int recordBytes, int coding, bool tailReference) {
+int acCount(int recordBytes, int kind, int coding, bool tailReference) {
     int groups = groupCount(coding);
     int count = (recordBytes * 8 - 18 - groups * 3) / mantissaBits(coding);
-    return max(0, count - (tailReference ? 1 : 0));
+    return min(scanLength(kind), max(0, count - (tailReference ? 1 : 0)));
 }
 
 int resolveLibraryIndex(
     int recordOffset,
     int recordBytes,
+    int kind,
     int coding,
     int libraryVersion,
     int sidecarIndex
@@ -481,7 +485,7 @@ int resolveLibraryIndex(
     if (headerReferenceVersion(libraryVersion)) return packedProfile >> 2;
     if (sidecarReferenceVersion(libraryVersion)) return sidecarIndex;
     if (libraryVersion == 1) {
-        int count = acCount(recordBytes, coding, true);
+        int count = acCount(recordBytes, kind, coding, true);
         int referenceBit = 18 + groupCount(coding) * 3 + count * mantissaBits(coding);
         return int(readComponentBits(recordOffset, referenceBit, mantissaBits(coding)));
     }
@@ -570,7 +574,7 @@ float sampleRecord(
     int width = componentWidth(kind);
     int height = componentHeight(kind);
     bool tailReference = libraryVersion == 1;
-    int count = acCount(recordBytes, coding, tailReference);
+    int count = acCount(recordBytes, kind, coding, tailReference);
     int groups = groupCount(coding);
     int valueBits = mantissaBits(coding);
     int valuesStart = 18 + groups * 3;
@@ -651,7 +655,7 @@ float sampleWithPrototype(
     int libraryVersion
 ) {
     int libraryIndex = resolveLibraryIndex(
-        recordOffset, recordBytes, coding, libraryVersion, sidecarIndex
+        recordOffset, recordBytes, kind, coding, libraryVersion, sidecarIndex
     );
     if (libraryIndex < 0 || libraryIndex > prototypeCount) return 128.0;
     float centered = sampleRecord(
@@ -811,7 +815,7 @@ function generatedFiles() {
   return new Map([
     ["dctbs2-fullscreen.vert.glsl", renderVertexShader()],
     ...presets.map((preset) => [preset.file, renderFragmentShader(preset)]),
-    ...presets.map((preset) => [cubeShaderFile(preset), renderCubeFragmentShader(preset)]),
+    ...cubePresets.map((preset) => [cubeShaderFile(preset), renderCubeFragmentShader(preset)]),
   ]);
 }
 
@@ -830,6 +834,7 @@ if (require.main === module) {
 module.exports = {
   buildScan,
   buildSkipScan,
+  cubePresets,
   cubeShaderFile,
   generatedFiles,
   presets,

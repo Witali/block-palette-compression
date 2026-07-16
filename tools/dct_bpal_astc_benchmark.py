@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 BPAL_HEADER_BYTES = 14
 ASTC_HEADER_BYTES = 16
 DCT_HEADER_BYTES = 64
-DCT_MODES = ["0.75", "1", "1.5", "2", "3", "4.5", "6"]
+DCT_MODES = ["0.75", "1", "1.5", "2", "3", "4.5", "6", "7.5", "9"]
 DCT_CODING = {
     "0.75": "grouped-5-equal-2",
     "1": "grouped-5-equal-2",
@@ -32,6 +32,8 @@ DCT_CODING = {
     "3": "grouped-5-front",
     "4.5": "grouped-5-front",
     "6": "grouped-5-front",
+    "7.5": "grouped-5-front",
+    "9": "grouped-5-front",
 }
 BPAL_TARGETS = ["1.5", "2", "2.5", "3", "4", "5", "6", "8"]
 ASTC_BLOCKS = [(12, 12), (12, 10), (10, 10), (10, 8), (8, 8), (8, 6), (8, 5), (6, 5), (5, 5), (5, 4)]

@@ -58,7 +58,9 @@ constexpr uint32_t LIBRARY_VERSION_SIDECAR_SPECTRAL_FULL = 9u;
 constexpr int MCU_WIDTH = 16;
 constexpr int MCU_HEIGHT = 16;
 constexpr int CUDA_THREADS = 256;
-constexpr std::array<uint32_t, 7> PRESET_UNITS{{6u, 8u, 12u, 16u, 24u, 36u, 48u}};
+constexpr std::array<uint32_t, 9> PRESET_UNITS{{
+    6u, 8u, 12u, 16u, 24u, 36u, 48u, 60u, 72u
+}};
 constexpr std::array<uint8_t, 8> MAGIC{{0x44, 0x43, 0x54, 0x42, 0x53, 0x32, 0x00, 0x00}};
 constexpr std::array<uint8_t, 8> LIBRARY_MAGIC{{0x44, 0x43, 0x54, 0x4c, 0x49, 0x42, 0x31, 0x00}};
 
@@ -646,7 +648,10 @@ __device__ double encode_grouped_component_record(
     int coefficient_coding
 ) {
     const int group_count = grouped_count(coefficient_coding);
-    const int ac_count = (byte_count * 8 - 18 - group_count * 3) / 5;
+    const int ac_count = min(
+        WIDTH * HEIGHT - 1,
+        (byte_count * 8 - 18 - group_count * 3) / 5
+    );
     double base_error = 0.0;
     for (int position = 0; position < WIDTH * HEIGHT; ++position) {
         base_error = rn_add(base_error, rn_square(coefficients[position]));
@@ -1271,8 +1276,10 @@ __device__ bool decode_grouped_component_record(
 
     const int group_count = grouped_count(coefficient_coding);
     const bool tail_reference = library_version == static_cast<int>(LIBRARY_VERSION_TAIL_REFERENCE);
-    const int ac_count = (byte_count * 8 - 18 - group_count * 3) / 5 -
-        (tail_reference ? 1 : 0);
+    const int ac_count = min(
+        WIDTH * HEIGHT - 1,
+        (byte_count * 8 - 18 - group_count * 3) / 5 - (tail_reference ? 1 : 0)
+    );
     int resolved_library_index = header_reference ? packed_profile >> 2 :
         is_sidecar_library_version(library_version) ? external_library_index : 0;
     int group_scales[3] = {0, 0, 0};
@@ -2134,7 +2141,7 @@ void print_usage(const char *program) {
         "  %s presets\n"
         "  %s --version\n\n"
         "Encode options:\n"
-        "  --preset BPP       0.75, 1, 1.5, 2, 3, 4.5, or 6 (default 1.5)\n"
+        "  --preset BPP       0.75, 1, 1.5, 2, 3, 4.5, 6, 7.5, or 9 (default 1.5)\n"
         "  --quality N        Quantization quality 1..100 (default 72)\n"
         "  --find-quality     Search CUDA candidates and maximize RGB PSNR\n"
         "  --find-settings    Alias for --find-quality\n"
@@ -2192,7 +2199,7 @@ int command_encode(int argc, char **argv) {
         const std::string option = argv[index];
         if (option == "--preset" && index + 1 < argc) {
             if (!parse_preset_name(argv[++index], &preset)) {
-                throw std::runtime_error("Preset must be 0.75, 1, 1.5, 2, 3, 4.5, or 6");
+                throw std::runtime_error("Preset must be 0.75, 1, 1.5, 2, 3, 4.5, 6, 7.5, or 9");
             }
         } else if (option == "--quality" && index + 1 < argc) {
             quality = parse_u32(argv[++index], "quality");

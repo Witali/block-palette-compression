@@ -35,9 +35,9 @@ test("stores every DCT preset as fixed independently addressed MCU records", () 
 });
 
 test("covers every rate from the preserved reference converter", () => {
-  assert.equal(Object.keys(PRESETS).length, 7);
+  assert.equal(Object.keys(PRESETS).length, 9);
 
-  for (const preset of ["0.75", "1", "1.5", "2", "3", "4.5", "6"]) {
+  for (const preset of ["0.75", "1", "1.5", "2", "3", "4.5", "6", "7.5", "9"]) {
     assert.ok(PRESETS[preset], `missing ${preset} bpp`);
   }
 
@@ -57,6 +57,32 @@ test("covers every rate from the preserved reference converter", () => {
     cbBytes: 32,
     crBytes: 32,
   });
+  assert.deepEqual(PRESETS["7.5"], {
+    modeCode: 7500,
+    bpp: 7.5,
+    bytesPerMcu: 240,
+    yBytes: 160,
+    cbBytes: 40,
+    crBytes: 40,
+  });
+  assert.deepEqual(PRESETS["9"], {
+    modeCode: 9000,
+    bpp: 9,
+    bytesPerMcu: 288,
+    yBytes: 192,
+    cbBytes: 48,
+    crBytes: 48,
+  });
+});
+
+test("caps 48-byte 8x8 records at the 63 available AC coefficients", () => {
+  const encoded = encodeDctFile(makePixels(16, 16), 16, 16, { preset: "9", quality: 97 });
+  const mcu = inspectDctMcu(encoded, 0);
+
+  assert.equal(mcu.components.y.blocks.length, 4);
+  for (const block of mcu.components.y.blocks) {
+    assert.equal(block.coefficientCount, 64);
+  }
 });
 
 test("uses four independent luma blocks at high rates and reads legacy files", () => {

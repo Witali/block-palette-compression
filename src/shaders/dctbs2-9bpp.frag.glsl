@@ -15,12 +15,12 @@ out vec4 outColor;
 const float PI = 3.1415926535897932384626433832795;
 const int HEADER_SIZE = 64;
 const int LIBRARY_HEADER_SIZE = 32;
-const uint EXPECTED_MODE = 1500u;
-const uint EXPECTED_MCU_BYTES = 48u;
-const uint EXPECTED_Y_BYTES = 24u;
-const uint EXPECTED_CB_BYTES = 12u;
-const uint EXPECTED_CR_BYTES = 12u;
-const bool ALLOW_SPLIT_LUMA = false;
+const uint EXPECTED_MODE = 9000u;
+const uint EXPECTED_MCU_BYTES = 288u;
+const uint EXPECTED_Y_BYTES = 192u;
+const uint EXPECTED_CB_BYTES = 48u;
+const uint EXPECTED_CR_BYTES = 48u;
+const bool ALLOW_SPLIT_LUMA = true;
 const uint FLAG_SPLIT_LUMA = 2u;
 const uint FLAG_LIBRARY = 4u;
 

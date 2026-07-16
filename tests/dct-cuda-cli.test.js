@@ -14,7 +14,7 @@ test("provides CUDA encode, decode, settings search, and pixel commands", () => 
   assert.match(source, /__global__ void decode_image_kernel/);
   assert.match(source, /__global__ void sample_pixel_kernel/);
   assert.match(source, /--find-settings/);
-  assert.match(source, /0\.75, 1, 1\.5, 2, 3, 4\.5, or 6/);
+  assert.match(source, /0\.75, 1, 1\.5, 2, 3, 4\.5, 6, 7\.5, or 9/);
   assert.match(source, /command == "presets"/);
   assert.match(source, /command == "pixel"/);
   assert.match(source, /preset\.bytes_per_mcu/);
