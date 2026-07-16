@@ -9,7 +9,7 @@
     <link rel="icon" href="./assets/icons/app-icon.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="./assets/icons/app-icon-192.png">
     <link rel="stylesheet" href="./block-palette.css?v=hybrid-1">
-    <link rel="stylesheet" href="./bpdh.css?v=hybrid-2">
+    <link rel="stylesheet" href="./bpdh.css?v=hybrid-3">
     <link rel="stylesheet" href="./i18n.css">
   </head>
   <body>
@@ -143,11 +143,6 @@
 
       <section id="status" class="status" role="status" aria-live="polite" data-i18n="common.preparing">Preparing…</section>
 
-      <section class="progress-panel" aria-label="Compression progress" data-i18n-aria-label="hybrid.progress">
-        <progress id="progress-bar" max="100" value="0">0%</progress>
-        <output id="progress-label">0%</output>
-      </section>
-
       <section class="metrics hybrid-metrics" aria-label="Hybrid compression metrics" data-i18n-aria-label="hybrid.metrics">
         <div><span data-i18n="hybrid.dimensions">Dimensions</span><strong id="metric-dimensions">—</strong></div>
         <div><span data-i18n="hybrid.fileSize">BPDH file</span><strong id="metric-file-size">—</strong></div>
@@ -239,12 +234,40 @@
       </section>
     </main>
 
+    <dialog id="progress-dialog" class="progress-dialog" aria-labelledby="progress-title" aria-describedby="progress-stage progress-detail">
+      <div class="progress-heading">
+        <div>
+          <span class="progress-eyebrow" data-i18n="hybrid.progressEyebrow">BPDH encoder</span>
+          <h2 id="progress-title" data-i18n="hybrid.progress">Compression progress</h2>
+        </div>
+        <output id="progress-percent">0%</output>
+      </div>
+      <p id="progress-stage" class="progress-stage" data-i18n="block.progressStagePreparing">Preparing source data</p>
+      <progress id="progress-bar" max="100" value="0">0%</progress>
+      <p id="progress-detail" class="progress-detail" data-i18n="block.progressWaiting">Waiting for the encoder…</p>
+      <dl class="progress-statistics">
+        <div>
+          <dt data-i18n="block.progressStage">Stage</dt>
+          <dd id="progress-stage-count">1 / 5</dd>
+        </div>
+        <div>
+          <dt data-i18n="hybrid.progressItemsLabel">Items</dt>
+          <dd id="progress-item-count">—</dd>
+        </div>
+        <div>
+          <dt data-i18n="hybrid.progressQualityLabel">DCT quality</dt>
+          <dd id="progress-quality">—</dd>
+        </div>
+      </dl>
+      <button id="progress-cancel" type="button" data-i18n="common.cancel">Cancel</button>
+    </dialog>
+
     <script src="./src/hybrid/dct420.js?v=hybrid-1"></script>
     <script src="./src/hybrid/bpdh-format.js?v=hybrid-1"></script>
-    <script src="./src/i18n/en.js?v=hybrid-1"></script>
-    <script src="./src/i18n/ru.js?v=hybrid-1"></script>
+    <script src="./src/i18n/en.js?v=hybrid-2"></script>
+    <script src="./src/i18n/ru.js?v=hybrid-2"></script>
     <script src="./src/i18n/i18n.js"></script>
-    <script src="./src/pages/bpdh-page.js?v=hybrid-2"></script>
+    <script src="./src/pages/bpdh-page.js?v=hybrid-3"></script>
     <script src="./src/pwa/register-service-worker.js?v=1"></script>
   </body>
 </html>

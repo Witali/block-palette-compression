@@ -43,6 +43,22 @@ test("runs the hybrid encoder outside the UI thread", () => {
   assert.match(worker, /encodeBpdhFile/);
 });
 
+test("shows hybrid progress in the BPAL-style cancellable modal", () => {
+  assert.match(page, /<dialog id="progress-dialog" class="progress-dialog"/);
+  assert.match(page, /<progress id="progress-bar" max="100" value="0">/);
+  assert.match(page, /id="progress-stage-count"/);
+  assert.match(page, /id="progress-item-count"/);
+  assert.match(page, /id="progress-quality"/);
+  assert.doesNotMatch(page, /class="progress-panel"/);
+  assert.match(pageScript, /elements\.progressDialog\.showModal\(\)/);
+  assert.match(pageScript, /function cancelProcessing\(\)/);
+  assert.match(pageScript, /worker !== state\.worker/);
+  assert.match(worker, /type: "progress", progress/);
+  assert.match(worker, /normalizeCodecProgress\(progress, mode\)/);
+  assert.match(worker, /normalized\.progress = 0\.5/);
+  assert.match(sharedStyles, /\.progress-dialog::backdrop/);
+});
+
 test("links and caches the BPDH page", () => {
   assert.match(home, /href="\.\/bpdh\.html"/);
 

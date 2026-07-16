@@ -9,6 +9,7 @@
     sourceName: "image",
     uploadedUrl: null,
     worker: null,
+    progress: null,
     encoded: null,
     decoded: null,
     metrics: null,
@@ -29,6 +30,19 @@
   const VIEWPORT_PADDING = 28;
   const DRAG_THRESHOLD = 5;
   const DRAG_DELAY_MS = 140;
+  const PROGRESS_STAGE_COUNT = 5;
+  const BPAL_PROGRESS_STAGE_KEYS = {
+    "preparing": "block.progressStagePreparing",
+    "analyzing-blocks": "block.progressStageAnalyzing",
+    "clustering-blocks": "block.progressStageBlockClustering",
+    "building-palettes": "block.progressStagePalettes",
+    "assigning-pixels": "block.progressStageAssignments",
+    "building-block-palettes": "block.progressStageBlockPalettes",
+    "encoding-pixels": "block.progressStageEncoding",
+    "refining": "block.progressStageRefining",
+    "finalizing": "block.progressStageFinalizing",
+    "complete": "hybrid.progressStageBpalComplete",
+  };
 
   elements.controls.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -39,6 +53,11 @@
   elements.imageFile.addEventListener("change", handleUpload);
   elements.downloadFileButton.addEventListener("click", downloadBpdh);
   elements.downloadPngButton.addEventListener("click", downloadPng);
+  elements.progressCancelButton.addEventListener("click", cancelProcessing);
+  elements.progressDialog.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    cancelProcessing();
+  });
   elements.showModes.addEventListener("change", drawModeOverlay);
   elements.smoothScaling.addEventListener("change", updateCanvasImageRendering);
   elements.zoomOutButton.addEventListener("click", () => setZoom(state.zoom / ZOOM_FACTOR));
@@ -91,8 +110,15 @@
       clusteringMethod: byId("clustering-method"),
       refinementPasses: byId("refinement-passes"),
       status: byId("status"),
+      progressDialog: byId("progress-dialog"),
       progressBar: byId("progress-bar"),
-      progressLabel: byId("progress-label"),
+      progressPercent: byId("progress-percent"),
+      progressStage: byId("progress-stage"),
+      progressDetail: byId("progress-detail"),
+      progressStageCount: byId("progress-stage-count"),
+      progressItemCount: byId("progress-item-count"),
+      progressQuality: byId("progress-quality"),
+      progressCancelButton: byId("progress-cancel"),
       sourceViewport: byId("source-viewport"),
       resultViewport: byId("result-viewport"),
       sourceCanvas: byId("source-canvas"),
@@ -196,17 +222,21 @@
     state.metrics = null;
     elements.downloadFileButton.disabled = true;
     elements.downloadPngButton.disabled = true;
-    updateProgress({ stage: "preparing", progress: 0 });
+    startProgress({ stage: "preparing", progress: 0 });
     setBusy(true, t("hybrid.compressing"));
 
     const width = state.sourceImageData.width;
     const height = state.sourceImageData.height;
     const pixels = new Uint8ClampedArray(state.sourceImageData.data);
-    const worker = new Worker("./src/hybrid/bpdh-worker.js?v=hybrid-1");
+    const worker = new Worker("./src/hybrid/bpdh-worker.js?v=hybrid-2");
 
     state.worker = worker;
-    worker.addEventListener("message", handleWorkerMessage);
-    worker.addEventListener("error", (event) => showError(new Error(event.message || t("hybrid.workerError"))));
+    worker.addEventListener("message", (event) => handleWorkerMessage(worker, event));
+    worker.addEventListener("error", (event) => {
+      if (worker === state.worker) {
+        showError(new Error(event.message || t("hybrid.workerError")));
+      }
+    });
     worker.postMessage({
       width,
       height,
@@ -251,7 +281,11 @@
     return [Number(value)];
   }
 
-  function handleWorkerMessage(event) {
+  function handleWorkerMessage(worker, event) {
+    if (worker !== state.worker) {
+      return;
+    }
+
     const message = event.data || {};
 
     if (message.type === "progress") {
@@ -295,6 +329,7 @@
       showError(error);
     } finally {
       terminateWorker();
+      closeProgress();
     }
   }
 
@@ -458,6 +493,10 @@
   }
 
   function renderDynamicContent() {
+    if (state.progress) {
+      renderProgress(state.progress);
+    }
+
     if (state.decoded) {
       renderMetrics();
       renderInspector();
@@ -469,11 +508,126 @@
     }
   }
 
+  function startProgress(progress) {
+    updateProgress(progress);
+
+    if (elements.progressDialog.open) {
+      return;
+    }
+
+    if (typeof elements.progressDialog.showModal === "function") {
+      elements.progressDialog.showModal();
+    } else {
+      elements.progressDialog.setAttribute("open", "");
+    }
+  }
+
   function updateProgress(progress) {
+    state.progress = { ...progress };
+    renderProgress(state.progress);
+  }
+
+  function renderProgress(progress) {
     const value = clamp(Math.round(Number(progress.progress || 0) * 100), 0, 100);
+
     elements.progressBar.value = value;
     elements.progressBar.textContent = `${value}%`;
-    elements.progressLabel.value = `${value}%`;
+    elements.progressPercent.value = `${value}%`;
+    elements.progressStage.textContent = t(progressStageKey(progress.stage));
+    elements.progressStageCount.textContent = `${progressStageIndex(progress.stage)} / ${PROGRESS_STAGE_COUNT}`;
+    elements.progressItemCount.textContent = formatProgressCount(progress.completed, progress.total);
+    elements.progressQuality.textContent = Number.isFinite(progress.quality)
+      ? formatInteger(progress.quality)
+      : "—";
+
+    if (Number.isFinite(progress.quality) && Number.isFinite(progress.completed) && Number.isFinite(progress.total)) {
+      elements.progressDetail.textContent = t("hybrid.progressDctCandidate", {
+        quality: formatInteger(progress.quality),
+        completed: formatInteger(progress.completed),
+        total: formatInteger(progress.total),
+      });
+    } else if (Number.isFinite(progress.iteration) && Number.isFinite(progress.totalIterations)) {
+      elements.progressDetail.textContent = t("block.progressIteration", {
+        current: formatInteger(progress.iteration),
+        total: formatInteger(progress.totalIterations),
+      });
+    } else if (Number.isFinite(progress.completed) && Number.isFinite(progress.total)) {
+      elements.progressDetail.textContent = t("block.progressItems", {
+        completed: formatInteger(progress.completed),
+        total: formatInteger(progress.total),
+      });
+    } else {
+      elements.progressDetail.textContent = t("block.progressWaiting");
+    }
+  }
+
+  function progressStageKey(stage) {
+    if (typeof stage === "string" && stage.startsWith("bpal-")) {
+      return BPAL_PROGRESS_STAGE_KEYS[stage.slice(5)] || "hybrid.progressStageBpal";
+    }
+
+    if (stage === "transforming-dct") {
+      return "hybrid.progressStageDctTransform";
+    }
+
+    if (stage === "evaluating-dct") {
+      return "hybrid.progressStageDctEvaluate";
+    }
+
+    if (stage === "complete") {
+      return "block.progressStageComplete";
+    }
+
+    return "block.progressStagePreparing";
+  }
+
+  function progressStageIndex(stage) {
+    if (typeof stage === "string" && stage.startsWith("bpal-")) {
+      return 2;
+    }
+
+    if (stage === "transforming-dct") {
+      return 3;
+    }
+
+    if (stage === "evaluating-dct") {
+      return 4;
+    }
+
+    return stage === "complete" ? 5 : 1;
+  }
+
+  function formatProgressCount(value, total) {
+    if (!Number.isFinite(value)) {
+      return "—";
+    }
+
+    return Number.isFinite(total)
+      ? `${formatInteger(value)} / ${formatInteger(total)}`
+      : formatInteger(value);
+  }
+
+  function closeProgress() {
+    if (elements.progressDialog.open) {
+      if (typeof elements.progressDialog.close === "function") {
+        elements.progressDialog.close();
+      } else {
+        elements.progressDialog.removeAttribute("open");
+      }
+    }
+
+    state.progress = null;
+  }
+
+  function cancelProcessing() {
+    if (!state.worker) {
+      closeProgress();
+      return;
+    }
+
+    terminateWorker();
+    closeProgress();
+    setBusy(false, t("hybrid.progressCancelled"));
   }
 
   function setBusy(isBusy, message) {
@@ -485,6 +639,7 @@
 
   function showError(error) {
     terminateWorker();
+    closeProgress();
     elements.status.classList.remove("is-busy");
     elements.status.classList.add("is-error");
     elements.status.textContent = error && error.message ? error.message : String(error);
@@ -1012,6 +1167,10 @@
 
   function formatNumber(value, maximumFractionDigits) {
     return i18n.formatNumber(value, { maximumFractionDigits });
+  }
+
+  function formatInteger(value) {
+    return formatNumber(value, 0);
   }
 
   function fileStem(value) {

@@ -17,27 +17,6 @@
 
 .number-with-unit small { color: #8794a3; }
 
-.progress-panel {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 56px;
-  align-items: center;
-  gap: 12px;
-  margin: -4px 0 18px;
-  padding: 0 4px;
-}
-
-.progress-panel progress {
-  width: 100%;
-  height: 9px;
-  accent-color: #4d96ed;
-}
-
-.progress-panel output {
-  color: #83b8ff;
-  font: 700 12px/1 ui-monospace, Consolas, monospace;
-  text-align: right;
-}
-
 .hybrid-metrics { grid-template-columns: repeat(7, minmax(120px, 1fr)); }
 .hybrid-storage { display: flex; overflow-x: auto; }
 .hybrid-storage > div { flex: 1 0 145px; }
