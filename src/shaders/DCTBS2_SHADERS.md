@@ -24,7 +24,7 @@ Each rate has a separately validated fragment shader:
 
 Use `dctbs2-fullscreen.vert.glsl` for a full-screen draw. The fragment shaders
 support legacy, grouped-exponent, skip-RLE, and dual-scale skip coefficient
-codings, regular or split 8x8 luma, and DCT prototype-library versions 1
+codings, regular or split 8x8 luma, 4:2:0 or legacy 4:2:2 chroma, and DCT prototype-library versions 1
 through 9. This includes the three-entry header library, 16/32-entry sidecar
 libraries, and spectral-split sidecar libraries. The shader calculates the
 MCU, sidecar index, and prototype address directly; it never reads another
@@ -79,16 +79,17 @@ mode or fixed MCU layout.
 `cube.html` can switch its WebGL2 material source from BPAL/BPLM to the bundled
 `assets/dct/stone-texture-wic-1.5bpp.dctbs2` file. Its default **Fast** mode
 decodes every MCU once during texture loading and uploads a component-only
-`RGBA8UI` atlas containing 256 Y, 128 Cb, and 128 Cr bytes per MCU. The atlas
-uses 512 bytes per MCU (2 bytes per source pixel), keeps complete MCU records
+`RGBA8UI` atlas containing 256 Y, 64 Cb, and 64 Cr bytes per new 4:2:0 MCU.
+The atlas uses 384 bytes per MCU, keeps complete MCU records
 on atlas rows, and replaces per-fragment IDCT with three integer texture reads
-plus YCbCr-to-RGB conversion. The compressed stream is not duplicated on the
-GPU and no RGBA image is uploaded. Component samples are deterministically
+plus bilinear chroma upsampling and YCbCr-to-RGB conversion. Legacy 4:2:2
+assets retain their 512-byte (256 + 128 + 128) cache layout. The compressed
+stream is not duplicated on the GPU and no RGBA image is uploaded. Component samples are deterministically
 rounded and clamped to eight bits while building the cache; this can differ
 slightly from the floating-point direct-IDCT path at extreme values.
 
 The optional **Low memory** mode uploads the baseline 1.5 bpp stream directly
-and evaluates the requested 16x16 Y and 8x16 Cb/Cr inverse-DCT samples per
+and evaluates the requested 16x16 Y and 8x8 Cb/Cr inverse-DCT samples per
 fragment. Cube uses the generated
 `cube-webgl2-dctbs2-1_5bpp.frag.glsl` program. It is specialized for the
 grouped-5-front, unsplit, non-library layout: Y and chroma coefficient code is

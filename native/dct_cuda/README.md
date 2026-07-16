@@ -38,13 +38,14 @@ higher-quality result. A tie keeps grouped coding; a tie between the two
 masked variants keeps the earlier ID 6 layout.
 The decoder still accepts older grouped, masked-tail, and legacy records.
 
-The encoder runs RGB-to-YCbCr conversion, 4:2:2 downsampling, separable DCT,
+The encoder runs RGB-to-YCbCr conversion, 4:2:0 downsampling, separable DCT,
 profile selection, grouped/skip candidate evaluation, quantization, and packing
 on the GPU. Both full-image decoding and single-pixel reconstruction use CUDA
 kernels. The `pixel` command reads one
 24-288 byte MCU record and, when present, the small prototype library. It does
 not upload the other MCU records. For a split-luma record, the kernel
-reconstructs only the selected 8x8 Y block.
+reconstructs only the selected 8x8 Y block. The decoder keeps compatibility
+with earlier 4:2:2 files and selects their 8x16 chroma path from the header.
 
 ## Build on Windows
 
@@ -124,6 +125,6 @@ The test compares the complete nine-layout list and exercises every preset
 in both directions. It encodes on CUDA and decodes in JavaScript, encodes in
 JavaScript and decodes on CUDA, and compares CUDA single-pixel results with
 `sampleDctFilePixel`. It also imports a real JPEG into a high-rate split-luma
-file and verifies backward-compatible decoding of a legacy high-rate 16x16 Y
-file. It also checks regular 16-entry and spectral 32-entry sidecar libraries.
+file and verifies backward-compatible decoding of a legacy high-rate 16x16 Y,
+4:2:2 chroma file. It also checks regular 16-entry and spectral 32-entry sidecar libraries.
 CUDA full-image and single-pixel results must match JavaScript.

@@ -13,17 +13,20 @@ Each MCU contains luma and two chroma components:
 
 - Y at 0.75–2 bpp: one orthonormal 16×16 DCT;
 - Y at 3–9 bpp: four independent orthonormal 8×8 DCTs;
-- Cb: one orthonormal 8×16 DCT;
-- Cr: one orthonormal 8×16 DCT.
+- Cb: one orthonormal 8×8 DCT;
+- Cr: one orthonormal 8×8 DCT.
 
-Cb and Cr use horizontal 4:2:2 subsampling. Source pixels outside a partial
-edge MCU are extended by repeating the nearest valid pixel.
+New files use 4:2:0 chroma subsampling. Each chroma input sample is the average
+of a 2×2 source-pixel region. Decoding uses center-aligned bilinear upsampling
+inside the independently addressable MCU. Source pixels outside a partial edge
+MCU are extended by repeating the nearest valid pixel. The decoder also accepts
+the original 4:2:2 layout, whose Cb and Cr transforms are 8×16.
 
 The supported rates include the four MCU modes and all five higher-rate
 16/24/32/40/48-byte modes from the preserved reference converter. The high-rate
 modes divide their Y allocation equally between four 8×8 records. This
 localizes ringing from strong edges without changing the fixed MCU size or
-the 4:2:2 random-access layout. Each high-rate Y block receives 16, 24, 32, 40,
+the random-access layout. Each high-rate Y block receives 16, 24, 32, 40,
 or 48 bytes at 3, 4.5, 6, 7.5, or 9 bpp respectively.
 
 | Preset | Bytes/MCU | Y | Cb | Cr |
@@ -59,7 +62,7 @@ All multi-byte integers are unsigned little-endian values.
 | 40 | 4 | Cb bytes per MCU |
 | 44 | 4 | Cr bytes per MCU |
 | 48 | 4 | JPEG-style quality value (1–100) |
-| 52 | 4 | flags; bit 0 means quality was selected automatically; bit 1 selects four 8×8 Y records; bit 2 enables a DCT prototype library; bits 8–11 select coefficient coding |
+| 52 | 4 | flags; bit 0 means quality was selected automatically; bit 1 selects four 8×8 Y records; bit 2 enables a DCT prototype library; bit 3 selects 4:2:0 chroma (unset means legacy 4:2:2); bits 8–11 select coefficient coding |
 | 56 | 4 | payload bytes |
 | 60 | 4 | number of quality candidates, or prototype-library bytes when flag bit 2 is set |
 
@@ -230,9 +233,15 @@ The decoder reads this one MCU. In a split-luma file it selects and reconstructs
 only the Y record identified by `(x mod 16) / 8` and `(y mod 16) / 8`, then
 samples it at `(x mod 8, y mod 8)`. In a legacy or low-rate file it samples the
 single 16×16 Y record.
-Cb/Cr are sampled at `((x mod 16) / 2, y mod 16)`, after which the three
-samples are converted to RGB. All loops are bounded by 16×16, 8×8, and 8×16
-transform dimensions. A library file additionally reads at most one bounded
+For a new 4:2:0 file, Cb/Cr are reconstructed from the surrounding 8×8 chroma
+samples with center-aligned bilinear interpolation. Even output coordinates
+lie at fraction 3/4 between chroma positions `coordinate / 2 - 1` and
+`coordinate / 2`; odd coordinates lie at fraction 1/4 between positions
+`coordinate / 2` and `coordinate / 2 + 1`, with indices clamped at MCU edges.
+Legacy 4:2:2 files retain their original sample
+`((x mod 16) / 2, y mod 16)`. The three samples are then converted to RGB. All
+new-format transform loops are bounded by 16×16 and 8×8 dimensions; the legacy
+decoder additionally supports 8×16 chroma. A library file reads at most one bounded
 index and one bounded prototype record per component. The sidecar bit address
 is computed from the component block ordinal and fixed index width. There are
 no references to other MCUs, and the prototype address is computed directly
@@ -243,13 +252,17 @@ High-rate DCTBS2 v2 files written before the split-luma flag was introduced
 remain valid: an unset bit 1 always means one 16×16 Y record, including for a
 3, 4.5, or 6 bpp layout.
 
+DCTBS2 v2 files written before the 4:2:0 flag was introduced also remain valid:
+an unset bit 3 always means the original 8×16 4:2:2 chroma layout. New encoders
+set bit 3 and write 8×8 4:2:0 chroma without changing any preset's byte count.
+
 ## JPEG DCT import
 
 The browser page can transcode grayscale and three-component YCbCr JPEG files
 without using decoded RGB pixels as encoder input. The CPU parser decodes the
 baseline or progressive Huffman scans and dequantizes the source 8×8 DCT
 blocks. The importer deterministically reconstructs component samples, adapts
-JPEG subsampling to 4:2:2, and transforms those Y/Cb/Cr planes into the
+JPEG subsampling to 4:2:0, and transforms those Y/Cb/Cr planes into the
 selected 16×16 or split 8×8 fixed MCU layout. There is no RGB conversion in
 this path. The resulting file uses the same one-MCU coordinate lookup as a
 regular DCTBS2 encode. The page uses the selected quantization quality directly

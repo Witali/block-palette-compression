@@ -272,8 +272,8 @@ function renderDctLayoutDiagram() {
   }
   layoutSpatial.replaceChildren(
     luma,
-    createDctLayoutBlock("cb", "Cb 8×16"),
-    createDctLayoutBlock("cr", "Cr 8×16")
+    createDctLayoutBlock("cb", "Cb 8×8"),
+    createDctLayoutBlock("cr", "Cr 8×8")
   );
   layoutSpatial.setAttribute(
     "aria-label",
@@ -323,7 +323,7 @@ function getDctLayoutRecordShape(preset, component) {
       bytes: split ? preset.yBytes / 4 : preset.yBytes,
     };
   }
-  return { component, width: 8, height: 16, bytes: preset.cbBytes };
+  return { component, width: 8, height: 8, bytes: preset.cbBytes };
 }
 
 function getDctLayoutCodingProfile(presetKey) {
@@ -584,9 +584,9 @@ function addDctLayoutBitRanges(fields) {
 }
 
 function renderDctLayoutCoefficientMatrix(presetKey, shape) {
-  const masked = shape.component === "y" && Number(presetKey) >= 6;
+  const masked = shape.width === 8 && shape.height === 8 && Number(presetKey) >= 6;
   const implicit2 = masked && presetKey === "9";
-  const showZigzag = shape.width === 8 && shape.height === 16;
+  const showZigzag = shape.component !== "y";
   const capacity = presetKey === "6" ? 23 : presetKey === "7.5" ? 31 : implicit2 ? 37 : 38;
   const tailStart = 64 - capacity;
   const component = dctLayoutComponentName(shape.component);
@@ -603,8 +603,7 @@ function renderDctLayoutCoefficientMatrix(presetKey, shape) {
     packing,
   });
   layoutMatrixPlane.style.aspectRatio = `${shape.width} / ${shape.height}`;
-  layoutMatrixPlane.style.width = showZigzag
-    ? "min(50%, 170px)" : "min(100%, 340px)";
+  layoutMatrixPlane.style.width = "min(100%, 340px)";
   layoutCoefficients.style.gridTemplateColumns = `repeat(${shape.width}, minmax(0, 1fr))`;
   const matrixAria = t("dct.layoutMatrixAria", {
     component,
@@ -897,7 +896,7 @@ function processImage() {
   const source = state.sourceImageData;
   const jpegImport = jpegImportInput.checked && Boolean(state.sourceJpegBytes);
   const autoQuality = !jpegImport && autoQualityInput.checked;
-  const worker = new Worker("./src/dct/dct-worker.js?v=dct-page-17");
+  const worker = new Worker("./src/dct/dct-worker.js?v=dct-page-18");
   const pixels = source.data.slice();
   const jpegBytes = jpegImport ? state.sourceJpegBytes.slice() : null;
 

@@ -34,6 +34,7 @@ test("offers every fixed MCU rate from the preserved converter", () => {
   assert.match(page, /0\.75 bpp · 24 B\/MCU/);
   assert.match(page, /dctbs_converter_with_edge_dictionary\.html/);
   assert.match(page, /four 8×8 luma transforms at high rates/);
+  assert.match(page, /two 8×8 chroma transforms/);
 });
 
 test("embeds a DCTBS2 layout diagram synchronized with the target rate", () => {
@@ -46,6 +47,8 @@ test("embeds a DCTBS2 layout diagram synchronized with the target rate", () => {
   assert.match(pageScript, /profile\.bytesPerMcu \/ maxBytes \* 100/);
   assert.match(pageScript, /const splitLuma = selected\.bpp >= 3/);
   assert.match(pageScript, /createDctLayoutBlock\("y", `Y 8×8 · \$\{block\}`\)/);
+  assert.match(pageScript, /createDctLayoutBlock\("cb", "Cb 8×8"\)/);
+  assert.match(pageScript, /createDctLayoutBlock\("cr", "Cr 8×8"\)/);
 
   const presetHandler = pageScript.slice(
     pageScript.indexOf('presetSelect.addEventListener("change"'),
@@ -72,6 +75,8 @@ test("shows component record bits, DCT coefficient positions, and every packing 
   assert.match(pageScript, /function getDctLayoutZigzagPositions\(/);
   assert.match(pageScript, /diagonal % 2 === 0 \? v : u/);
   assert.match(pageScript, /marker-end="url\(#dct-layout-zigzag-arrowhead\)"/);
+  assert.match(pageScript, /const showZigzag = shape\.component !== "y"/);
+  assert.match(pageScript, /shape\.width === 8 && shape\.height === 8 && Number\(presetKey\) >= 6/);
   assert.match(pageStyles, /\.dct-layout-bit-strip/);
   assert.match(pageStyles, /\.dct-layout-coefficient\.is-mask-tail/);
   assert.match(pageStyles, /\.dct-layout-zigzag\.is-visible/);
@@ -100,7 +105,7 @@ test("zooms both previews around the pointer with Ctrl and the mouse wheel", () 
 
 test("runs DCT encoding and automatic quality search in a worker", () => {
   assert.match(pageScript, /new Worker\("\.\/src\/dct\/dct-worker\.js/);
-  assert.match(worker, /dct-format\.js\?v=dct-page-17/);
+  assert.match(worker, /dct-format\.js\?v=dct-page-18/);
   assert.match(worker, /findBestDctQuality/);
   assert.match(worker, /encodeDctFile/);
   assert.match(worker, /decodedPixels: decoded\.pixels\.buffer/);
