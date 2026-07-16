@@ -41,8 +41,13 @@ foreach ($Line in $EnvironmentLines) {
     if ($Separator -gt 0) {
         $Name = $Line.Substring(0, $Separator)
         $Value = $Line.Substring($Separator + 1)
+        # Some hosts expose both PATH and Path. Keep the vcvars value, which
+        # is the one that contains the selected MSVC compiler directory.
         if ($Name.Equals("PATH", [StringComparison]::OrdinalIgnoreCase)) {
-            $DeveloperPath = $Value
+            if (-not $DeveloperPath -or
+                $Value.IndexOf("\VC\Tools\MSVC\", [StringComparison]::OrdinalIgnoreCase) -ge 0) {
+                $DeveloperPath = $Value
+            }
         } elseif (-not $Name.Equals("Path", [StringComparison]::OrdinalIgnoreCase)) {
             Set-Item -Path ("Env:" + $Name) -Value $Value
         }

@@ -10,8 +10,12 @@ cbuffer SceneConstants : register(b0) {
 };
 
 cbuffer TextureConstants : register(b1) {
-  uint Meta[64];
+  uint4 PackedMeta[16];
 };
+
+uint Meta(uint index) {
+  return PackedMeta[index >> 2u][index & 3u];
+}
 
 struct VertexInput {
   float3 position : POSITION;
@@ -49,17 +53,17 @@ float3 UnpackRgba(uint rgba) {
 }
 
 float3 FetchBpalPixel(int2 coordinate, uint level) {
-  uint base = 8u + min(level, Meta[3] - 1u) * 12u;
-  uint width = Meta[base];
-  uint height = Meta[base + 1u];
-  uint blockSize = Meta[base + 2u];
-  uint blocksX = Meta[base + 3u];
-  uint selectorOffset = Meta[base + 4u];
-  uint blockOffset = Meta[base + 5u];
-  uint pixelOffset = Meta[base + 6u];
-  uint flags = Meta[base + 7u];
-  uint localCount = Meta[base + 8u];
-  uint globalCount = Meta[base + 9u];
+  uint base = 8u + min(level, Meta(3u) - 1u) * 12u;
+  uint width = Meta(base);
+  uint height = Meta(base + 1u);
+  uint blockSize = Meta(base + 2u);
+  uint blocksX = Meta(base + 3u);
+  uint selectorOffset = Meta(base + 4u);
+  uint blockOffset = Meta(base + 5u);
+  uint pixelOffset = Meta(base + 6u);
+  uint flags = Meta(base + 7u);
+  uint localCount = Meta(base + 8u);
+  uint globalCount = Meta(base + 9u);
   int2 pixel = clamp(coordinate, int2(0, 0), int2(width - 1u, height - 1u));
   uint pixelIndex = uint(pixel.y) * width + uint(pixel.x);
   uint flattened;
@@ -72,15 +76,15 @@ float3 FetchBpalPixel(int2 coordinate, uint level) {
     uint global = LoadU16(blockOffset + (block * localCount + localIndex) * 2u);
     flattened = selector * globalCount + global;
   }
-  return UnpackRgba(TextureData.Load(Meta[4] + flattened * 4u));
+  return UnpackRgba(TextureData.Load(Meta(4u) + flattened * 4u));
 }
 
 float3 SampleBpal(float2 uv) {
-  float footprint = max(length(ddx(uv) * float2(Meta[1], Meta[2])),
-                        length(ddy(uv) * float2(Meta[1], Meta[2])));
-  uint level = min((uint)max(0.0, floor(log2(max(1.0, footprint)) + 0.5)), Meta[3] - 1u);
+  float footprint = max(length(ddx(uv) * float2(Meta(1u), Meta(2u))),
+                        length(ddy(uv) * float2(Meta(1u), Meta(2u))));
+  uint level = min((uint)max(0.0, floor(log2(max(1.0, footprint)) + 0.5)), Meta(3u) - 1u);
   uint base = 8u + level * 12u;
-  float2 size = float2(Meta[base], Meta[base + 1u]);
+  float2 size = float2(Meta(base), Meta(base + 1u));
   float2 source = float2(uv.x, 1.0 - uv.y) * size - 0.5;
   int2 topLeft = int2(floor(source));
   float2 blend = frac(source);
@@ -116,22 +120,22 @@ int BpdhChroma(uint record, uint component, uint x, uint y) {
 }
 
 float3 FetchBpdhPixel(int2 coordinate) {
-  uint width = Meta[1];
-  uint height = Meta[2];
+  uint width = Meta(1u);
+  uint height = Meta(2u);
   int2 pixel = clamp(coordinate, int2(0, 0), int2(width - 1u, height - 1u));
   uint2 local = uint2(pixel) & 15u;
-  uint block = (uint(pixel.y) / 16u) * Meta[8] + uint(pixel.x) / 16u;
-  uint map = TextureData.Load(Meta[12] + block * 4u);
+  uint block = (uint(pixel.y) / 16u) * Meta(8u) + uint(pixel.x) / 16u;
+  uint map = TextureData.Load(Meta(12u) + block * 4u);
   uint mode = map & 255u;
   uint recordIndex = map >> 8u;
   if (mode == 0u) {
-    uint record = Meta[13] + recordIndex * Meta[14];
+    uint record = Meta(13u) + recordIndex * Meta(14u);
     uint selector = LoadByte(record);
-    uint localIndex = LoadByte(record + 1u + Meta[9] * 2u + local.y * 16u + local.x);
+    uint localIndex = LoadByte(record + 1u + Meta(9u) * 2u + local.y * 16u + local.x);
     uint global = LoadU16(record + 1u + localIndex * 2u);
-    return UnpackRgba(TextureData.Load(Meta[4] + (selector * Meta[10] + global) * 4u));
+    return UnpackRgba(TextureData.Load(Meta(4u) + (selector * Meta(10u) + global) * 4u));
   }
-  uint record = Meta[15] + recordIndex * Meta[16];
+  uint record = Meta(15u) + recordIndex * Meta(16u);
   uint component = (local.y / 8u) * 2u + local.x / 8u;
   int y = int(BpdhSample(record, component, local.x & 7u, local.y & 7u));
   int cb = BpdhChroma(record, 4u, local.x, local.y) - 128;
@@ -143,7 +147,7 @@ float3 FetchBpdhPixel(int2 coordinate) {
 }
 
 float3 SampleBpdh(float2 uv) {
-  int2 pixel = int2(floor(float2(uv.x, 1.0 - uv.y) * float2(Meta[1], Meta[2])));
+  int2 pixel = int2(floor(float2(uv.x, 1.0 - uv.y) * float2(Meta(1u), Meta(2u))));
   return FetchBpdhPixel(pixel);
 }
 
@@ -199,7 +203,7 @@ float QuantStep(int position, bool chroma) {
   int v = position / width;
   int tx = min(7, (u * 7 + (width - 1) / 2) / (width - 1));
   int ty = min(7, (v * 7 + 7) / 15);
-  int quality = int(Meta[14]);
+  int quality = int(Meta(14u));
   float scale = quality < 50 ? 50.0 / quality : 2.0 - quality * 0.02;
   float dimension = sqrt(width * 16.0 / 64.0);
   return max(1.0, (chroma ? QuantC[ty * 8 + tx] : QuantY[ty * 8 + tx]) * scale * dimension);
@@ -232,22 +236,20 @@ float SampleDctRecord(uint record, int x, int y, bool chroma) {
 }
 
 float3 SampleDct(float2 uv) {
-  int2 pixel = clamp(int2(floor(float2(uv.x, 1.0 - uv.y) * float2(Meta[1], Meta[2]))),
-                     int2(0, 0), int2(Meta[1] - 1u, Meta[2] - 1u));
-  uint mcu = (uint(pixel.y) / 16u) * Meta[8] + uint(pixel.x) / 16u;
-  uint record = 64u + mcu * Meta[10];
+  int2 pixel = clamp(int2(floor(float2(uv.x, 1.0 - uv.y) * float2(Meta(1u), Meta(2u)))),
+                     int2(0, 0), int2(Meta(1u) - 1u, Meta(2u) - 1u));
+  uint mcu = (uint(pixel.y) / 16u) * Meta(8u) + uint(pixel.x) / 16u;
+  uint record = 64u + mcu * Meta(10u);
   int2 local = pixel & 15;
   float y = SampleDctRecord(record, local.x, local.y, false);
-  float cb = SampleDctRecord(record + Meta[11], local.x / 2, local.y, true) - 128.0;
-  float cr = SampleDctRecord(record + Meta[11] + Meta[12], local.x / 2, local.y, true) - 128.0;
+  float cb = SampleDctRecord(record + Meta(11u), local.x / 2, local.y, true) - 128.0;
+  float cr = SampleDctRecord(record + Meta(11u) + Meta(12u), local.x / 2, local.y, true) - 128.0;
   return saturate(float3(y + 1.402 * cr,
                          y - 0.344136 * cb - 0.714136 * cr,
                          y + 1.772 * cb) / 255.0);
 }
 
-float4 PSMain(PixelInput input) : SV_TARGET {
-  float3 albedo = Meta[0] == 1u ? SampleBpal(input.uv) :
-                  Meta[0] == 2u ? SampleDct(input.uv) : SampleBpdh(input.uv);
+float4 ShadePixel(PixelInput input, float3 albedo) {
   float3 normal = normalize(input.normal);
   float3 lightDirection = normalize(LightPosition.xyz - input.worldPosition);
   float3 viewDirection = normalize(CameraPosition.xyz - input.worldPosition);
@@ -260,4 +262,16 @@ float4 PSMain(PixelInput input) : SV_TARGET {
   color = color / (1.0 + color * 0.12);
   color = pow(saturate(color), 1.0 / 2.2);
   return float4(color, 1.0);
+}
+
+float4 PSBpal(PixelInput input) : SV_TARGET {
+  return ShadePixel(input, SampleBpal(input.uv));
+}
+
+float4 PSDct(PixelInput input) : SV_TARGET {
+  return ShadePixel(input, SampleDct(input.uv));
+}
+
+float4 PSBpdh(PixelInput input) : SV_TARGET {
+  return ShadePixel(input, SampleBpdh(input.uv));
 }

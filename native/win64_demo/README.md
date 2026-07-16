@@ -29,6 +29,10 @@ The bundled sample selector exercises BPAL, BPLM, DCTBS2, and BPDH. The
 **Upload...** button opens the native Windows file picker. A file can also be
 selected while rendering. **Pause** stops and resumes rotation.
 
+The compact payload is copied through a staging buffer into GPU-local memory
+before rendering. Each format uses its own precompiled pixel shader, so launch
+does not compile HLSL and inactive decoders add no per-frame shader work.
+
 ## Build
 
 Install Visual Studio with the **Desktop development with C++** workload, then
@@ -39,7 +43,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File native/win64_demo/build.
 ```
 
 The script configures an x64 Ninja build using the Visual Studio toolchain,
-builds with the static MSVC runtime, copies the bundled samples, and runs the
+precompiles the HLSL entry points with the Windows SDK compiler, builds with
+the static MSVC runtime, copies the shaders and bundled samples, and runs the
 codec compatibility test. The resulting application is:
 
 ```text

@@ -58,11 +58,38 @@ add_executable(block_texture_demo WIN32
     src/app.manifest
 )
 set_source_files_properties(src/texture_shader.hlsl PROPERTIES HEADER_FILE_ONLY TRUE)
+
+find_program(FXC_EXECUTABLE NAMES fxc.exe fxc REQUIRED)
+set(SHADER_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/src/texture_shader.hlsl")
+set(SHADER_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/shaders")
+set(SHADER_VS "${SHADER_OUTPUT_DIR}/texture_vs.cso")
+set(SHADER_BPAL_PS "${SHADER_OUTPUT_DIR}/texture_bpal_ps.cso")
+set(SHADER_DCT_PS "${SHADER_OUTPUT_DIR}/texture_dct_ps.cso")
+set(SHADER_BPDH_PS "${SHADER_OUTPUT_DIR}/texture_bpdh_ps.cso")
+add_custom_command(
+    OUTPUT "${SHADER_VS}" "${SHADER_BPAL_PS}" "${SHADER_DCT_PS}" "${SHADER_BPDH_PS}"
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "${SHADER_OUTPUT_DIR}"
+    COMMAND "${FXC_EXECUTABLE}" /nologo /O3 /T vs_5_1 /E VSMain /Fo "${SHADER_VS}" "${SHADER_SOURCE}"
+    COMMAND "${FXC_EXECUTABLE}" /nologo /O3 /T ps_5_1 /E PSBpal /Fo "${SHADER_BPAL_PS}" "${SHADER_SOURCE}"
+    COMMAND "${FXC_EXECUTABLE}" /nologo /O3 /T ps_5_1 /E PSDct /Fo "${SHADER_DCT_PS}" "${SHADER_SOURCE}"
+    COMMAND "${FXC_EXECUTABLE}" /nologo /O3 /T ps_5_1 /E PSBpdh /Fo "${SHADER_BPDH_PS}" "${SHADER_SOURCE}"
+    DEPENDS "${SHADER_SOURCE}"
+    VERBATIM
+)
+add_custom_target(texture_shaders ALL
+    DEPENDS "${SHADER_VS}" "${SHADER_BPAL_PS}" "${SHADER_DCT_PS}" "${SHADER_BPDH_PS}"
+)
+add_custom_target(deploy_texture_shaders ALL
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${SHADER_VS}"
+        "${SHADER_BPAL_PS}" "${SHADER_DCT_PS}" "${SHADER_BPDH_PS}"
+        "$<TARGET_FILE_DIR:block_texture_demo>"
+    DEPENDS "${SHADER_VS}" "${SHADER_BPAL_PS}" "${SHADER_DCT_PS}" "${SHADER_BPDH_PS}"
+)
+add_dependencies(block_texture_demo deploy_texture_shaders)
 target_link_libraries(block_texture_demo PRIVATE
     texture_codecs
     d3d12
     dxgi
-    d3dcompiler
     comdlg32
     shell32
 )
@@ -88,12 +115,6 @@ foreach(ASSET IN LISTS DEMO_ASSETS)
             "$<TARGET_FILE_DIR:block_texture_demo>/assets/"
     )
 endforeach()
-add_custom_command(TARGET block_texture_demo POST_BUILD
-    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/texture_shader.hlsl"
-        "$<TARGET_FILE_DIR:block_texture_demo>/texture_shader.hlsl"
-)
-
 if(BUILD_TESTING)
     add_executable(texture_codec_tests tests/codec_tests.cpp)
     target_link_libraries(texture_codec_tests PRIVATE texture_codecs)

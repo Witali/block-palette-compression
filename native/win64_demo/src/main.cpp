@@ -3,7 +3,6 @@
 #include <windows.h>
 #include <commdlg.h>
 #include <d3d12.h>
-#include <d3dcompiler.h>
 #include <dxgi1_6.h>
 #include <DirectXMath.h>
 #include <wrl/client.h>
@@ -14,6 +13,7 @@
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -27,6 +27,7 @@ constexpr UINT kFrameCount = 2;
 constexpr UINT kUploadId = 1001;
 constexpr UINT kPauseId = 1002;
 constexpr UINT kPresetId = 1003;
+constexpr UINT kToolbarHeight = 64;
 
 struct Vertex {
     XMFLOAT3 position;
@@ -159,7 +160,7 @@ public:
         AdjustWindowRect(&rectangle, WS_OVERLAPPEDWINDOW, FALSE);
         window_ = CreateWindowExW(
             0, kWindowClass, L"Block Palette Compression - Native DirectX 12",
-            WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT,
+            WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, CW_USEDEFAULT, CW_USEDEFAULT,
             rectangle.right - rectangle.left, rectangle.bottom - rectangle.top,
             nullptr, nullptr, instance, nullptr);
         if (!window_) return Fail(L"Could not create the application window");
@@ -167,8 +168,7 @@ public:
         CreateControls();
         RECT client{};
         GetClientRect(window_, &client);
-        width_ = std::max<LONG>(1, client.right);
-        height_ = std::max<LONG>(1, client.bottom);
+        LayoutChildren(static_cast<UINT>(client.right), static_cast<UINT>(client.bottom));
         if (!InitializeD3d()) return false;
         LoadPreset(0);
         ShowWindow(window_, show);
@@ -204,7 +204,13 @@ public:
         case WM_SIZE:
             minimized_ = wparam == SIZE_MINIMIZED;
             if (!minimized_ && device_ && swap_chain_) {
-                Resize(std::max<UINT>(1u, LOWORD(lparam)), std::max<UINT>(1u, HIWORD(lparam)));
+                const UINT client_width = std::max<UINT>(1u, LOWORD(lparam));
+                const UINT client_height = std::max<UINT>(1u, HIWORD(lparam));
+                const UINT render_width = client_width;
+                const UINT render_height = std::max<UINT>(1u,
+                    client_height > kToolbarHeight ? client_height - kToolbarHeight : 1u);
+                Resize(render_width, render_height);
+                LayoutChildren(client_width, client_height);
             }
             return 0;
         case WM_DESTROY:
@@ -242,11 +248,27 @@ private:
         status_ = CreateWindowExW(0, L"STATIC", L"Initializing DirectX 12...",
             WS_CHILD | WS_VISIBLE | SS_LEFT | SS_CENTERIMAGE,
             557, 10, 585, 34, window_, nullptr, nullptr, nullptr);
+        render_window_ = CreateWindowExW(0, L"STATIC", nullptr,
+            WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | SS_BLACKRECT,
+            0, kToolbarHeight, 1, 1, window_, nullptr, nullptr, nullptr);
         SendMessageW(preset_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"BPAL v5 - stone"));
         SendMessageW(preset_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"BPLM v1 - stone + mips"));
         SendMessageW(preset_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"DCTBS2 - stone 1.5 bpp"));
         SendMessageW(preset_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"BPDH - Alaska landscape"));
         SendMessageW(preset_, CB_SETCURSEL, 0, 0);
+    }
+
+    void LayoutChildren(UINT client_width, UINT client_height) {
+        width_ = std::max<UINT>(1u, client_width);
+        height_ = std::max<UINT>(1u,
+            client_height > kToolbarHeight ? client_height - kToolbarHeight : 1u);
+        if (status_) {
+            MoveWindow(status_, 557, 10,
+                std::max<int>(120, static_cast<int>(client_width) - 567), 34, TRUE);
+        }
+        if (render_window_) {
+            MoveWindow(render_window_, 0, kToolbarHeight, width_, height_, TRUE);
+        }
     }
 
     bool InitializeD3d() {
@@ -290,7 +312,7 @@ private:
         swap_description.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
         ComPtr<IDXGISwapChain1> swap_chain;
         if (!Check(factory_->CreateSwapChainForHwnd(
-                queue_.Get(), window_, &swap_description, nullptr, nullptr, &swap_chain), L"CreateSwapChainForHwnd")) return false;
+                queue_.Get(), render_window_, &swap_description, nullptr, nullptr, &swap_chain), L"CreateSwapChainForHwnd")) return false;
         factory_->MakeWindowAssociation(window_, DXGI_MWA_NO_ALT_ENTER);
         if (!Check(swap_chain.As(&swap_chain_), L"Query IDXGISwapChain3")) return false;
         frame_index_ = swap_chain_->GetCurrentBackBufferIndex();
@@ -354,34 +376,27 @@ private:
         return true;
     }
 
-    bool CompileShader(const wchar_t* file, const char* entry, const char* target, ComPtr<ID3DBlob>& blob) {
-        ComPtr<ID3DBlob> errors;
-        const UINT flags = D3DCOMPILE_ENABLE_STRICTNESS |
-#if defined(_DEBUG)
-            D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
-#else
-            D3DCOMPILE_OPTIMIZATION_LEVEL3;
-#endif
-        const HRESULT result = D3DCompileFromFile(
-            file, nullptr, D3D_COMPILE_STANDARD_FILE_INCLUDE, entry, target,
-            flags, 0, &blob, &errors);
-        if (FAILED(result)) {
-            std::wstring message = HrMessage(L"D3DCompileFromFile", result);
-            if (errors) {
-                const std::string text(static_cast<const char*>(errors->GetBufferPointer()), errors->GetBufferSize());
-                message += L"\n" + std::wstring(text.begin(), text.end());
-            }
-            return Fail(message);
+    bool ReadShader(const std::filesystem::path& path, std::vector<std::uint8_t>& bytes) {
+        std::ifstream stream(path, std::ios::binary | std::ios::ate);
+        if (!stream) return Fail(L"Could not open the precompiled shader:\n" + path.wstring());
+        const std::streamoff size = stream.tellg();
+        if (size <= 0) return Fail(L"Precompiled shader is empty:\n" + path.wstring());
+        bytes.resize(static_cast<std::size_t>(size));
+        stream.seekg(0, std::ios::beg);
+        if (!stream.read(reinterpret_cast<char*>(bytes.data()), size)) {
+            return Fail(L"Could not read the precompiled shader:\n" + path.wstring());
         }
         return true;
     }
 
     bool CreatePipeline() {
-        const auto shader_path = ModuleDirectory() / L"texture_shader.hlsl";
-        ComPtr<ID3DBlob> vertex_shader;
-        ComPtr<ID3DBlob> pixel_shader;
-        if (!CompileShader(shader_path.c_str(), "VSMain", "vs_5_1", vertex_shader) ||
-            !CompileShader(shader_path.c_str(), "PSMain", "ps_5_1", pixel_shader)) return false;
+        const auto directory = ModuleDirectory();
+        std::vector<std::uint8_t> vertex_shader;
+        std::array<std::vector<std::uint8_t>, 3> pixel_shaders;
+        if (!ReadShader(directory / L"texture_vs.cso", vertex_shader) ||
+            !ReadShader(directory / L"texture_bpal_ps.cso", pixel_shaders[0]) ||
+            !ReadShader(directory / L"texture_dct_ps.cso", pixel_shaders[1]) ||
+            !ReadShader(directory / L"texture_bpdh_ps.cso", pixel_shaders[2])) return false;
 
         std::array<D3D12_ROOT_PARAMETER, 3> parameters{};
         parameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
@@ -413,8 +428,7 @@ private:
         }};
         D3D12_GRAPHICS_PIPELINE_STATE_DESC description{};
         description.pRootSignature = root_signature_.Get();
-        description.VS = {vertex_shader->GetBufferPointer(), vertex_shader->GetBufferSize()};
-        description.PS = {pixel_shader->GetBufferPointer(), pixel_shader->GetBufferSize()};
+        description.VS = {vertex_shader.data(), vertex_shader.size()};
         description.InputLayout = {input.data(), static_cast<UINT>(input.size())};
         description.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
         description.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
@@ -430,7 +444,12 @@ private:
         description.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
         description.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
         description.DepthStencilState.StencilEnable = FALSE;
-        return Check(device_->CreateGraphicsPipelineState(&description, IID_PPV_ARGS(&pipeline_)), L"CreateGraphicsPipelineState");
+        for (std::size_t index = 0; index < pipelines_.size(); ++index) {
+            description.PS = {pixel_shaders[index].data(), pixel_shaders[index].size()};
+            if (!Check(device_->CreateGraphicsPipelineState(
+                    &description, IID_PPV_ARGS(&pipelines_[index])), L"CreateGraphicsPipelineState")) return false;
+        }
+        return true;
     }
 
     bool CreateUploadBuffer(UINT64 bytes, ComPtr<ID3D12Resource>& resource, const wchar_t* operation) {
@@ -438,6 +457,19 @@ private:
         const auto description = BufferDescription(bytes);
         return Check(device_->CreateCommittedResource(
             &heap, D3D12_HEAP_FLAG_NONE, &description, D3D12_RESOURCE_STATE_GENERIC_READ,
+            nullptr, IID_PPV_ARGS(&resource)), operation);
+    }
+
+    bool CreateGpuBuffer(
+        UINT64 bytes,
+        D3D12_RESOURCE_STATES initial_state,
+        ComPtr<ID3D12Resource>& resource,
+        const wchar_t* operation
+    ) {
+        const auto heap = HeapProperties(D3D12_HEAP_TYPE_DEFAULT);
+        const auto description = BufferDescription(bytes);
+        return Check(device_->CreateCommittedResource(
+            &heap, D3D12_HEAP_FLAG_NONE, &description, initial_state,
             nullptr, IID_PPV_ARGS(&resource)), operation);
     }
 
@@ -468,13 +500,31 @@ private:
         if (texture.data.empty() || texture.metadata.size() > texture_mapped_->words.size()) {
             return Fail(L"Texture produced an invalid shader payload");
         }
+        const std::uint32_t kind = static_cast<std::uint32_t>(texture.kind);
+        if (kind == 0 || kind > pipelines_.size() || !pipelines_[kind - 1]) {
+            return Fail(L"Texture selected an unavailable shader decoder");
+        }
         WaitForGpu();
         ComPtr<ID3D12Resource> resource;
-        if (!CreateUploadBuffer(texture.data.size(), resource, L"Create shader texture buffer")) return false;
+        ComPtr<ID3D12Resource> staging;
+        if (!CreateGpuBuffer(
+                texture.data.size(), D3D12_RESOURCE_STATE_COPY_DEST,
+                resource, L"Create GPU shader texture buffer") ||
+            !CreateUploadBuffer(texture.data.size(), staging, L"Create texture staging buffer")) return false;
         void* mapped = nullptr;
-        if (!Check(resource->Map(0, nullptr, &mapped), L"Map shader texture buffer")) return false;
+        if (!Check(staging->Map(0, nullptr, &mapped), L"Map texture staging buffer")) return false;
         std::memcpy(mapped, texture.data.data(), texture.data.size());
-        resource->Unmap(0, nullptr);
+        staging->Unmap(0, nullptr);
+        if (!Check(allocator_->Reset(), L"Reset texture upload allocator") ||
+            !Check(command_list_->Reset(allocator_.Get(), nullptr), L"Reset texture upload command list")) return false;
+        command_list_->CopyBufferRegion(resource.Get(), 0, staging.Get(), 0, texture.data.size());
+        auto to_shader = Transition(
+            resource.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+        command_list_->ResourceBarrier(1, &to_shader);
+        if (!Check(command_list_->Close(), L"Close texture upload command list")) return false;
+        ID3D12CommandList* lists[] = {command_list_.Get()};
+        queue_->ExecuteCommandLists(1, lists);
+        WaitForGpu();
         texture_buffer_ = std::move(resource);
         texture_mapped_->words.fill(0);
         std::copy(texture.metadata.begin(), texture.metadata.end(), texture_mapped_->words.begin());
@@ -553,7 +603,10 @@ private:
     void Render() {
         if (!texture_buffer_) return;
         UpdateConstants();
-        if (FAILED(allocator_->Reset()) || FAILED(command_list_->Reset(allocator_.Get(), pipeline_.Get()))) return;
+        const std::uint32_t kind = static_cast<std::uint32_t>(active_texture_.kind);
+        if (kind == 0 || kind > pipelines_.size()) return;
+        if (FAILED(allocator_->Reset()) ||
+            FAILED(command_list_->Reset(allocator_.Get(), pipelines_[kind - 1].Get()))) return;
         auto to_render = Transition(render_targets_[frame_index_].Get(),
             D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
         command_list_->ResourceBarrier(1, &to_render);
@@ -613,6 +666,7 @@ private:
     }
 
     HWND window_ = nullptr;
+    HWND render_window_ = nullptr;
     HWND upload_ = nullptr;
     HWND pause_ = nullptr;
     HWND preset_ = nullptr;
@@ -635,7 +689,7 @@ private:
     ComPtr<ID3D12CommandAllocator> allocator_;
     ComPtr<ID3D12GraphicsCommandList> command_list_;
     ComPtr<ID3D12RootSignature> root_signature_;
-    ComPtr<ID3D12PipelineState> pipeline_;
+    std::array<ComPtr<ID3D12PipelineState>, 3> pipelines_;
     ComPtr<ID3D12Resource> vertex_buffer_;
     ComPtr<ID3D12Resource> index_buffer_;
     ComPtr<ID3D12Resource> scene_constants_;
