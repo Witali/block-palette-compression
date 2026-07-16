@@ -406,7 +406,7 @@ function processImage() {
   const source = state.sourceImageData;
   const jpegImport = jpegImportInput.checked && Boolean(state.sourceJpegBytes);
   const autoQuality = !jpegImport && autoQualityInput.checked;
-  const worker = new Worker("./src/dct/dct-worker.js?v=dct-page-13");
+  const worker = new Worker("./src/dct/dct-worker.js?v=dct-page-14");
   const pixels = source.data.slice();
   const jpegBytes = jpegImport ? state.sourceJpegBytes.slice() : null;
 
@@ -492,7 +492,7 @@ function processImage() {
       libraryClusterSamples: libraryOptions?.libraryClusterSamples,
       libraryCandidateCount: libraryOptions?.libraryCandidateCount,
       jpegBytes: jpegBytes ? jpegBytes.buffer : null,
-      sampleMcuCount: 24,
+      sampleMcuCount: 32,
     };
     const transfers = jpegBytes ? [pixels.buffer, jpegBytes.buffer] : [pixels.buffer];
     worker.postMessage(message, transfers);
@@ -560,8 +560,8 @@ function renderProgress(progress) {
     : t(searching ? "dct.progressSearching" : "dct.progressEncoding");
   progressDetail.textContent = t("dct.progressQuality", {
     quality: progress.quality,
-    completed: progress.completed,
-    total,
+    completed: progress.phaseCompleted ?? progress.completed,
+    total: progress.phaseTotal ?? total,
   });
 }
 

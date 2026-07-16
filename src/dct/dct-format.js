@@ -1196,6 +1196,7 @@
     const coefficientCoding = getCoefficientCoding(options.coefficientCoding, preset.key);
     const layout = getDctFileLayout(width, height, preset.key);
     const onProgress = typeof options.onProgress === "function" ? options.onProgress : () => {};
+    const finalistCount = normalizeFinalistCount(options.finalistCount);
     const coarse = [];
 
     for (let quality = 20; quality <= 95; quality += 5) {
@@ -1204,7 +1205,7 @@
 
     const sampleIndices = selectSampleMcuIndices(layout.mcuCount, options.sampleMcuCount || 24);
     const sampleResults = [];
-    const estimatedTotal = coarse.length + 9 + 3;
+    const estimatedTotal = coarse.length + 9 + finalistCount;
     let completed = 0;
 
     for (const quality of coarse) {
@@ -1252,10 +1253,11 @@
     }
 
     sampleResults.sort(compareQualityResults);
-    const finalists = sampleResults.slice(0, 3).map((result) => result.quality);
+    const finalists = sampleResults.slice(0, finalistCount).map((result) => result.quality);
     let best = null;
 
     for (const quality of finalists) {
+      const finalistStart = completed;
       const encoded = encodeDctFile(pixels, width, height, {
         preset: preset.key,
         quality,
@@ -1269,6 +1271,17 @@
         libraryCandidateCount: options.libraryCandidateCount,
         coefficientCoding: coefficientCoding.key,
         searchCandidateCount: sampleResults.length + finalists.length,
+        onProgress(progress) {
+          const fraction = progress.total > 0 ? progress.completed / progress.total : 0;
+          onProgress({
+            stage: "full",
+            completed: finalistStart + fraction * 0.9,
+            total: estimatedTotal,
+            quality,
+            phaseCompleted: progress.completed,
+            phaseTotal: progress.total,
+          });
+        },
       });
       const decoded = decodeDctFile(encoded);
       const error = calculateSquaredError(pixels, decoded.pixels);
@@ -1286,6 +1299,16 @@
       candidateCount: sampleResults.length + finalists.length,
       sampleMcuCount: sampleIndices.length,
     };
+  }
+
+  function normalizeFinalistCount(value) {
+    const count = value === undefined ? 1 : Number(value);
+
+    if (!Number.isInteger(count) || count < 1 || count > 3) {
+      throw new RangeError("DCT quality finalist count must be an integer from 1 to 3");
+    }
+
+    return count;
   }
 
   function encodeComponent(

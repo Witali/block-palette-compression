@@ -362,7 +362,7 @@
     "dct.progressTitle": "Ход DCT-сжатия",
     "dct.progressEncoding": "Кодирование фиксированных записей MCU…",
     "dct.progressSearching": "Поиск вариантов квантования…",
-    "dct.progressFinalists": "Измерение RGB PSNR финальных вариантов…",
+    "dct.progressFinalists": "Кодирование выбранного качества и измерение RGB PSNR…",
     "dct.progressWaiting": "Ожидание кодировщика…",
     "dct.progressQuality": "Качество {quality} · {completed}/{total}",
     "dct.statusSearching": "Ищем квантование с максимальным PSNR…",

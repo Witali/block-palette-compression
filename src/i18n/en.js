@@ -362,7 +362,7 @@
     "dct.progressTitle": "DCT compression progress",
     "dct.progressEncoding": "Encoding fixed MCU records…",
     "dct.progressSearching": "Searching quantization candidates…",
-    "dct.progressFinalists": "Measuring RGB PSNR for finalists…",
+    "dct.progressFinalists": "Encoding the selected quality and measuring RGB PSNR…",
     "dct.progressWaiting": "Waiting for the encoder…",
     "dct.progressQuality": "Quality {quality} · {completed}/{total}",
     "dct.statusSearching": "Searching for the highest-PSNR quantization…",

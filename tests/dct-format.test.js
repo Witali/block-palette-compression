@@ -352,6 +352,33 @@ test("finds an automatic quality and records the measured search", () => {
   assert.deepEqual(result.decoded.pixels, decodeDctFile(result.encoded).pixels);
 });
 
+test("uses one full-image quality finalist by default", () => {
+  const width = 32;
+  const height = 32;
+  const source = makePixels(width, height);
+  const fastProgress = [];
+  const fast = findBestDctQuality(source, width, height, {
+    preset: "1.5",
+    sampleMcuCount: 4,
+    onProgress: (entry) => fastProgress.push(entry),
+  });
+  const exhaustive = findBestDctQuality(source, width, height, {
+    preset: "1.5",
+    sampleMcuCount: 4,
+    finalistCount: 3,
+  });
+  const fullProgress = fastProgress.filter((entry) => entry.stage === "full");
+
+  assert.equal(exhaustive.candidateCount, fast.candidateCount + 2);
+  assert.ok(exhaustive.error <= fast.error);
+  assert.ok(fullProgress.some((entry) => entry.phaseTotal === 4));
+  assert.equal(fullProgress.at(-1).completed, fullProgress.at(-1).total);
+  assert.throws(() => findBestDctQuality(source, width, height, {
+    preset: "1.5",
+    finalistCount: 0,
+  }), /finalist count/);
+});
+
 test("reports fixed-quality encoding progress with and without a prototype library", () => {
   const width = 32;
   const height = 16;
