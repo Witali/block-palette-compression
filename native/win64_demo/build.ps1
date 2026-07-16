@@ -34,15 +34,28 @@ if ($Clean -and (Test-Path -LiteralPath $BuildDirectory)) {
 }
 
 $EnvironmentLines = & $env:ComSpec /d /c "call `"$VcVars`" >nul && set"
+$DeveloperPath = $null
 foreach ($Line in $EnvironmentLines) {
     $Separator = $Line.IndexOf('=')
     if ($Separator -gt 0) {
-        Set-Item -Path ("Env:" + $Line.Substring(0, $Separator)) -Value $Line.Substring($Separator + 1)
+        $Name = $Line.Substring(0, $Separator)
+        $Value = $Line.Substring($Separator + 1)
+        if ($Name.Equals("PATH", [StringComparison]::Ordinal)) {
+            $DeveloperPath = $Value
+        } elseif (-not $Name.Equals("Path", [StringComparison]::OrdinalIgnoreCase)) {
+            Set-Item -Path ("Env:" + $Name) -Value $Value
+        }
     }
 }
+if (-not $DeveloperPath) {
+    throw "The Visual Studio developer environment did not provide PATH."
+}
+$env:Path = $DeveloperPath
+$Compiler = (Get-Command cl.exe -ErrorAction Stop).Source
 
 & $CMake -S $ProjectDirectory -B $BuildDirectory -G Ninja `
-    "-DCMAKE_MAKE_PROGRAM=$BundledNinja" "-DCMAKE_BUILD_TYPE=$Configuration" -DBUILD_TESTING=ON
+    "-DCMAKE_MAKE_PROGRAM=$BundledNinja" "-DCMAKE_BUILD_TYPE=$Configuration" `
+    "-DCMAKE_C_COMPILER=$Compiler" "-DCMAKE_CXX_COMPILER=$Compiler" -DBUILD_TESTING=ON
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $CMake --build $BuildDirectory --parallel
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
