@@ -43,7 +43,8 @@ struct Vertex {
 struct SceneConstants {
     XMFLOAT4X4 world_view_projection;
     XMFLOAT4X4 world;
-    XMFLOAT4 light_direction;
+    XMFLOAT4 key_light_direction;
+    XMFLOAT4 fill_light_direction;
 };
 
 struct SampleTexture {
@@ -63,7 +64,8 @@ constexpr char kShaderSource[] = R"(
 cbuffer Scene : register(b0) {
     row_major float4x4 worldViewProjection;
     row_major float4x4 world;
-    float4 lightDirection;
+    float4 keyLightDirection;
+    float4 fillLightDirection;
 };
 
 struct VertexInput {
@@ -89,12 +91,29 @@ PixelInput VSMain(VertexInput input) {
 Texture2D cubeTexture : register(t0);
 SamplerState cubeSampler : register(s0);
 
+float3 SrgbToLinear(float3 color) {
+    float3 lower = color / 12.92;
+    float3 upper = pow((color + 0.055) / 1.055, 2.4);
+    return lerp(lower, upper, step(0.04045, color));
+}
+
+float3 LinearToSrgb(float3 color) {
+    float3 lower = color * 12.92;
+    float3 upper = 1.055 * pow(max(color, 0.0), 1.0 / 2.4) - 0.055;
+    return lerp(lower, upper, step(0.0031308, color));
+}
+
 float4 PSMain(PixelInput input) : SV_TARGET {
     float3 normal = normalize(input.normal);
-    float diffuse = saturate(dot(normal, normalize(-lightDirection.xyz)));
-    float lighting = 0.28 + diffuse * 0.72;
     float4 color = cubeTexture.Sample(cubeSampler, input.uv);
-    return float4(color.rgb * lighting, color.a);
+    float keyDiffuse = saturate(dot(normal, normalize(-keyLightDirection.xyz)));
+    float fillDiffuse = saturate(dot(normal, normalize(-fillLightDirection.xyz)));
+    float hemisphere = normal.y * 0.5 + 0.5;
+    float3 ambient = lerp(float3(0.42, 0.46, 0.55), float3(0.64, 0.66, 0.70), hemisphere);
+    float3 direct = keyDiffuse * float3(0.95, 0.85, 0.70)
+        + fillDiffuse * float3(0.30, 0.38, 0.52);
+    float3 litColor = SrgbToLinear(color.rgb) * (ambient + direct) * 1.25;
+    return float4(LinearToSrgb(saturate(litColor)), color.a);
 }
 )";
 
@@ -638,7 +657,7 @@ private:
         previous_frame_ = now;
         if (!paused_) angle_ += std::min(delta, 0.1f) * 0.72f;
 
-        const float clear[4] = {0.035f, 0.052f, 0.078f, 1.0f};
+        const float clear[4] = {0.055f, 0.080f, 0.120f, 1.0f};
         context_->ClearRenderTargetView(render_target_.Get(), clear);
         context_->ClearDepthStencilView(depth_view_.Get(), D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 1.0f, 0);
         ID3D11RenderTargetView* target = render_target_.Get();
@@ -660,7 +679,8 @@ private:
         SceneConstants constants{};
         DirectX::XMStoreFloat4x4(&constants.world, world);
         DirectX::XMStoreFloat4x4(&constants.world_view_projection, world * view * projection);
-        constants.light_direction = {-0.55f, -0.75f, 0.45f, 0};
+        constants.key_light_direction = {-0.45f, -0.65f, 0.60f, 0};
+        constants.fill_light_direction = {0.50f, 0.10f, 0.86f, 0};
         context_->UpdateSubresource(constant_buffer_.Get(), 0, nullptr, &constants, 0, 0);
 
         constexpr UINT stride = sizeof(Vertex);
@@ -674,6 +694,7 @@ private:
         ID3D11Buffer* constants_buffer = constant_buffer_.Get();
         context_->VSSetConstantBuffers(0, 1, &constants_buffer);
         context_->PSSetShader(pixel_shader_.Get(), nullptr, 0);
+        context_->PSSetConstantBuffers(0, 1, &constants_buffer);
         ID3D11ShaderResourceView* texture = texture_view_.Get();
         context_->PSSetShaderResources(0, 1, &texture);
         ID3D11SamplerState* sampler = sampler_.Get();
