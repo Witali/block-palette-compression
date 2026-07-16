@@ -57,28 +57,58 @@ All multi-byte integers are unsigned little-endian values.
 | 40 | 4 | Cb bytes per MCU |
 | 44 | 4 | Cr bytes per MCU |
 | 48 | 4 | JPEG-style quality value (1–100) |
-| 52 | 4 | flags; bit 0 means quality was selected automatically; bit 1 selects four 8×8 Y records; bit 2 enables a DCT prototype library |
+| 52 | 4 | flags; bit 0 means quality was selected automatically; bit 1 selects four 8×8 Y records; bit 2 enables a DCT prototype library; bits 8–11 select coefficient coding |
 | 56 | 4 | payload bytes |
 | 60 | 4 | number of quality candidates, or prototype-library bytes when flag bit 2 is set |
 
 ## Component record
 
-Every component record starts with one byte. Its high nibble selects one of
-four fixed coefficient scans (low-frequency, horizontal, vertical, or
-diagonal). Its low nibble selects the quantizer multiplier 1, 2, 4, 8, 16,
-32, 64, or 128. The legacy coding then stores a signed 10-bit DC coefficient
-followed by as many signed 6-bit AC coefficients as fit in the fixed component
-record. Unused tail bits are zero. A split-luma MCU places its four Y records
-in top-left, top-right, bottom-left, bottom-right order before Cb and Cr.
+Every component record starts with one byte. In legacy and grouped records its
+high nibble selects one of four fixed coefficient scans (low-frequency,
+horizontal, vertical, or diagonal). Bits 0–2 select the quantizer multiplier
+1, 2, 4, 8, 16, 32, 64, or 128. The legacy coding then stores a signed 10-bit
+DC coefficient followed by as many signed 6-bit AC coefficients as fit in the
+fixed component record. Unused tail bits are zero. A split-luma MCU places its
+four Y records in top-left, top-right, bottom-left, bottom-right order before
+Cb and Cr.
 
 The quantization step is reconstructed from the stored quality, the component
 dimensions, the fixed JPEG luma/chroma table, and the per-component multiplier.
 No runtime codebook or previous block is required.
 
-The default grouped coefficient coding uses signed 5-bit AC mantissas and two
-or three 3-bit binary scale indices. The scale groups are reconstructed from
-the fixed component size and coding flag, so their parsing remains bounded and
-does not depend on another MCU.
+Grouped coefficient coding uses signed 5-bit AC mantissas and two or three
+3-bit binary scale indices. The scale groups are reconstructed from the fixed
+component size and coding flag, so their parsing remains bounded and does not
+depend on another MCU.
+
+Adaptive skip codings retain grouped coding as a per-record fallback. When bit
+3 of the first byte is set, the high nibble instead selects one of eight fixed
+frequency scans and the payload after the signed 10-bit DC is a bounded token
+sequence. Each token stores a signed coefficient followed by a 2-bit skip; the
+next scan index is `current + skip + 1`. Skip-RLE uses signed 6-bit values for
+all tokens. Dual-scale skip uses signed 6-bit coarse tokens followed by signed
+4-bit fine tokens. Fine tokens use multiplier 1 when the main multiplier is
+1, 2, or 4, and multiplier 2 otherwise. The record size alone determines the
+token split, so direct addressing is unchanged.
+
+The encoder evaluates the grouped and skip candidates and writes the skip form
+only when it reduces coefficient error. Defaults follow the final fixed-rate
+experiments: skip-RLE at 0.75 bpp; dual-scale skip at 1, 1.5, and 2 bpp; and
+dual-scale skip for the 16- and 24-byte high-rate component records (3 and 4.5
+bpp). The 32-byte high-rate records at 6 bpp keep grouped coding. Low-rate
+chroma keeps grouped coding; high-rate split-luma files may use adaptive skip
+for both luma and chroma records.
+
+Coefficient coding identifiers are:
+
+| ID | Coding |
+| ---: | --- |
+| 0 | legacy signed-6 |
+| 1 | grouped signed-5, two equal groups |
+| 2 | grouped signed-5, three front-loaded groups |
+| 3 | grouped ID 1 plus adaptive skip-RLE |
+| 4 | grouped ID 1 plus adaptive dual-scale skip |
+| 5 | grouped ID 2 plus adaptive dual-scale skip |
 
 ## Optional DCT prototype library
 

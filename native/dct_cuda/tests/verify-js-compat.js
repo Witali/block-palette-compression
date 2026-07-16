@@ -213,9 +213,18 @@ function verifyPreset(preset) {
   assert.equal(cudaInfo.key, preset);
   assert.equal(cudaInfo.quality, 72);
   assert.equal(cudaInfo.splitLuma8x8, Number(preset) >= 3);
+  const expectedCoding = {
+    "0.75": "skip-rle-equal-2",
+    "1": "dual-scale-skip-equal-2",
+    "1.5": "dual-scale-skip-front",
+    "2": "dual-scale-skip-equal-2",
+    "3": "dual-scale-skip-front",
+    "4.5": "dual-scale-skip-front",
+    "6": "grouped-5-front",
+  };
   assert.equal(
     cudaInfo.coefficientCodingKey,
-    ["0.75", "1", "2"].includes(preset) ? "grouped-5-equal-2" : "grouped-5-front"
+    expectedCoding[preset]
   );
 
   const javascriptDecodedCuda = decodeDctFile(cudaEncoded);

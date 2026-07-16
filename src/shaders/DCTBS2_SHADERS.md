@@ -5,8 +5,8 @@ bitstream. They were adapted from the attached `dctbs_fragment_shaders.zip`,
 but are not bit-compatible copies of those files. The attachment targets an
 older 256-byte-header `.dctb` layout with planar component streams and embedded
 quantization tables. The current format uses a 64-byte header, interleaved
-fixed-size MCUs, quality-derived quantization, four significance scans, and
-grouped binary exponents.
+fixed-size MCUs, quality-derived quantization, grouped binary exponents, and
+adaptive skip scans.
 
 Each rate has a separately validated fragment shader:
 
@@ -21,11 +21,12 @@ Each rate has a separately validated fragment shader:
 | 6 bpp | `dctbs2-6bpp.frag.glsl` |
 
 Use `dctbs2-fullscreen.vert.glsl` for a full-screen draw. The fragment shaders
-support legacy and both grouped-exponent coefficient codings, regular or split
-8x8 luma, and DCT prototype-library versions 1 through 9. This includes the
-three-entry header library, 16/32-entry sidecar libraries, and spectral-split
-sidecar libraries. The shader calculates the MCU, sidecar index, and prototype
-address directly; it never reads another image MCU.
+support legacy, grouped-exponent, skip-RLE, and dual-scale skip coefficient
+codings, regular or split 8x8 luma, and DCT prototype-library versions 1
+through 9. This includes the three-entry header library, 16/32-entry sidecar
+libraries, and spectral-split sidecar libraries. The shader calculates the
+MCU, sidecar index, and prototype address directly; it never reads another
+image MCU.
 
 ## Input texture
 

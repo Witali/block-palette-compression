@@ -8,6 +8,7 @@ const root = path.resolve(__dirname, "..");
 const { PRESETS } = require(path.join(root, "src", "dct", "dct-format.js"));
 const {
   buildScan,
+  buildSkipScan,
   cubeShaderFile,
   generatedFiles,
   presets,
@@ -46,6 +47,7 @@ test("matches DCTBS2 v2 MCU layouts instead of the attached legacy dctb layout",
 test("keeps shader coefficient scans, grouped exponents, and libraries bounded", () => {
   assert.deepEqual(buildScan(0, 8, 8).slice(0, 8), [8, 1, 2, 9, 16, 24, 17, 10]);
   assert.equal(new Set(buildScan(3, 16, 16)).size, 255);
+  assert.equal(new Set(buildSkipScan(7, 16, 16)).size, 255);
 
   const source = generatedFiles().get("dctbs2-3bpp.frag.glsl");
   assert.match(source, /for \(int index = 0; index < 256; \+\+index\)/);
@@ -55,6 +57,9 @@ test("keeps shader coefficient scans, grouped exponents, and libraries bounded",
   assert.doesNotMatch(source, /for \(int bit = 0; bit < 16/);
   assert.match(source, /uint readSidecarBits/);
   assert.match(source, /int groupedScaleIndex/);
+  assert.match(source, /int skipScanPosition/);
+  assert.match(source, /bool skipRecord = coding >= 3/);
+  assert.match(source, /int tokenCount = skipTokenCount/);
   assert.match(source, /bool sidecarReferenceVersion/);
   assert.match(source, /int resolveLibraryIndex/);
   assert.match(source, /int prototypeOffset = prototypeBase \+ \(libraryIndex - 1\) \* recordBytes/);

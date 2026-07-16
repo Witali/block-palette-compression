@@ -35,6 +35,16 @@
   const COMPONENT_CACHE_BYTES_PER_MCU = COMPONENT_CACHE_CR_OFFSET + CHROMA_WIDTH * MCU_HEIGHT;
   const SCALE_MULTIPLIERS = Object.freeze([1, 2, 4, 8, 16, 32, 64, 128]);
   const PROFILE_NAMES = Object.freeze(["low frequency", "horizontal", "vertical", "diagonal"]);
+  const SKIP_PROFILE_NAMES = Object.freeze([
+    "low frequency",
+    "horizontal",
+    "vertical",
+    "cross",
+    "diagonal",
+    "off diagonal",
+    "middle frequency",
+    "edge frequency",
+  ]);
   const LIBRARY_MAGIC = Object.freeze([0x44, 0x43, 0x54, 0x4c, 0x49, 0x42, 0x31, 0x00]);
   const LIBRARY_VERSION_TAIL_REFERENCE = 1;
   const LIBRARY_VERSION_HEADER_REFERENCE = 2;
@@ -53,6 +63,9 @@
     freezeCoefficientCoding("legacy", 6, 0, "shared"),
     freezeCoefficientCoding("grouped-5-equal-2", 5, 2, "equal"),
     freezeCoefficientCoding("grouped-5-front", 5, 3, "front"),
+    freezeCoefficientCoding("skip-rle-equal-2", 5, 2, "equal", "single"),
+    freezeCoefficientCoding("dual-scale-skip-equal-2", 5, 2, "equal", "dual"),
+    freezeCoefficientCoding("dual-scale-skip-front", 5, 3, "front", "dual"),
   ]);
   // Higher-rate modes preserve the reference converter's four-luma-to-two-chroma
   // byte ratio while DCTBS2 keeps its independently addressable 4:2:2 MCU layout.
@@ -90,19 +103,24 @@
   ]);
   const basisCache = new Map();
   const scanCache = new Map();
+  const skipScanCache = new Map();
 
   function freezePreset(modeCode, bpp, bytesPerMcu, yBytes, cbBytes, crBytes) {
     return Object.freeze({ modeCode, bpp, bytesPerMcu, yBytes, cbBytes, crBytes });
   }
 
-  function freezeCoefficientCoding(key, mantissaBits, groupCount, grouping) {
-    return Object.freeze({ key, mantissaBits, groupCount, grouping });
+  function freezeCoefficientCoding(key, mantissaBits, groupCount, grouping, skipMode = null) {
+    return Object.freeze({ key, mantissaBits, groupCount, grouping, skipMode });
   }
 
   function getCoefficientCoding(key, presetKey) {
-    const defaultKey = presetKey === "0.75" || presetKey === "1" || presetKey === "2"
-      ? "grouped-5-equal-2"
-      : "grouped-5-front";
+    const defaultKey = presetKey === "0.75"
+      ? "skip-rle-equal-2"
+      : presetKey === "1" || presetKey === "2"
+        ? "dual-scale-skip-equal-2"
+        : presetKey === "1.5" || presetKey === "3" || presetKey === "4.5"
+          ? "dual-scale-skip-front"
+          : "grouped-5-front";
     const normalized = String(key === undefined ? defaultKey : key);
     const coding = COEFFICIENT_CODINGS.find((candidate) => candidate.key === normalized);
 
@@ -175,7 +193,16 @@
       const planes = extractMcuPlanes(pixels, width, height, mcuX, mcuY);
       const byteOffset = HEADER_BYTES + mcuIndex * layout.bytesPerMcu;
 
-      encodeLuma(output, byteOffset, layout.yBytes, planes.y, quality, splitLuma8x8, coefficientCoding);
+      encodeLuma(
+        output,
+        byteOffset,
+        layout.yBytes,
+        planes.y,
+        quality,
+        splitLuma8x8,
+        coefficientCoding,
+        true
+      );
       encodeComponent(
         output,
         byteOffset + layout.yBytes,
@@ -185,7 +212,8 @@
         16,
         quality,
         true,
-        coefficientCoding
+        coefficientCoding,
+        splitLuma8x8
       );
       encodeComponent(
         output,
@@ -196,7 +224,8 @@
         16,
         quality,
         true,
-        coefficientCoding
+        coefficientCoding,
+        splitLuma8x8
       );
     }
 
@@ -381,7 +410,16 @@
       const planes = extractJpegMcuPlanes(source, mcuX, mcuY);
       const byteOffset = HEADER_BYTES + mcuIndex * layout.bytesPerMcu;
 
-      encodeLuma(output, byteOffset, layout.yBytes, planes.y, quality, splitLuma8x8, coefficientCoding);
+      encodeLuma(
+        output,
+        byteOffset,
+        layout.yBytes,
+        planes.y,
+        quality,
+        splitLuma8x8,
+        coefficientCoding,
+        true
+      );
       encodeComponent(
         output,
         byteOffset + layout.yBytes,
@@ -391,7 +429,8 @@
         16,
         quality,
         true,
-        coefficientCoding
+        coefficientCoding,
+        splitLuma8x8
       );
       encodeComponent(
         output,
@@ -402,7 +441,8 @@
         16,
         quality,
         true,
-        coefficientCoding
+        coefficientCoding,
+        splitLuma8x8
       );
     }
 
@@ -1205,7 +1245,18 @@
     };
   }
 
-  function encodeComponent(output, offset, byteCount, samples, width, height, quality, chroma, coding) {
+  function encodeComponent(
+    output,
+    offset,
+    byteCount,
+    samples,
+    width,
+    height,
+    quality,
+    chroma,
+    coding,
+    allowSkip = false
+  ) {
     encodeComponentCoefficients(
       output,
       offset,
@@ -1215,7 +1266,8 @@
       height,
       quality,
       chroma,
-      coding
+      coding,
+      allowSkip
     );
   }
 
@@ -1228,7 +1280,8 @@
     height,
     quality,
     chroma,
-    coding
+    coding,
+    allowSkip = false
   ) {
     const candidate = chooseComponentEncoding(
       coefficients,
@@ -1237,7 +1290,10 @@
       byteCount,
       quality,
       chroma,
-      coding
+      coding,
+      0,
+      0,
+      allowSkip
     );
     writeComponentCandidate(output, offset, byteCount, candidate, coding, null);
   }
@@ -1369,18 +1425,27 @@
     const headerProfile = referenceCoding === "header"
       ? candidate.profile | libraryIndex << 2
       : candidate.profile;
+    const skipRecord = Boolean(candidate.skipMode);
 
-    writer.write((headerProfile << 4) | candidate.scaleIndex, 8);
+    writer.write((headerProfile << 4) | candidate.scaleIndex | (skipRecord ? 8 : 0), 8);
     writer.writeSigned(candidate.dc, 10);
 
-    if (coding.groupCount > 0) {
+    if (skipRecord) {
+      for (const token of candidate.tokens) {
+        writer.writeSigned(token.stored, token.bits);
+        writer.write(token.skip, 2);
+      }
+    } else if (coding.groupCount > 0) {
       for (const scaleIndex of candidate.groupScaleIndices) {
         writer.write(scaleIndex, 3);
       }
-    }
-
-    for (const value of candidate.ac) {
-      writer.writeSigned(value, coding.mantissaBits);
+      for (const value of candidate.ac) {
+        writer.writeSigned(value, coding.mantissaBits);
+      }
+    } else {
+      for (const value of candidate.ac) {
+        writer.writeSigned(value, coding.mantissaBits);
+      }
     }
 
     if (referenceCoding === "tail") {
@@ -1388,9 +1453,9 @@
     }
   }
 
-  function encodeLuma(output, offset, byteCount, samples, quality, split, coding) {
+  function encodeLuma(output, offset, byteCount, samples, quality, split, coding, allowSkip = false) {
     if (!split) {
-      encodeComponent(output, offset, byteCount, samples, 16, 16, quality, false, coding);
+      encodeComponent(output, offset, byteCount, samples, 16, 16, quality, false, coding, allowSkip);
       return;
     }
 
@@ -1415,7 +1480,8 @@
           8,
           quality,
           false,
-          coding
+          coding,
+          allowSkip
         );
       }
     }
@@ -1430,10 +1496,13 @@
     chroma,
     coding,
     reservedAcCount = 0,
-    libraryFrequencySplit = 0
+    libraryFrequencySplit = 0,
+    allowSkip = false
   ) {
+    let baseline;
+
     if (coding.groupCount > 0) {
-      return chooseGroupedComponentEncoding(
+      baseline = chooseGroupedComponentEncoding(
         coefficients,
         width,
         height,
@@ -1444,8 +1513,45 @@
         reservedAcCount,
         libraryFrequencySplit
       );
+    } else {
+      baseline = chooseLegacyComponentEncoding(
+        coefficients,
+        width,
+        height,
+        byteCount,
+        quality,
+        chroma,
+        reservedAcCount,
+        libraryFrequencySplit
+      );
     }
 
+    if (!allowSkip || !coding.skipMode || reservedAcCount > 0 || libraryFrequencySplit > 0) {
+      return baseline;
+    }
+
+    const skip = chooseSkipComponentEncoding(
+      coefficients,
+      width,
+      height,
+      byteCount,
+      quality,
+      chroma,
+      coding
+    );
+    return skip && skip.error < baseline.error ? skip : baseline;
+  }
+
+  function chooseLegacyComponentEncoding(
+    coefficients,
+    width,
+    height,
+    byteCount,
+    quality,
+    chroma,
+    reservedAcCount = 0,
+    libraryFrequencySplit = 0
+  ) {
     const acCount = Math.max(0, Math.floor((byteCount * 8 - 18) / 6) - reservedAcCount);
     let best = null;
 
@@ -1482,6 +1588,235 @@
     }
 
     return best;
+  }
+
+  function chooseSkipComponentEncoding(
+    coefficients,
+    width,
+    height,
+    byteCount,
+    quality,
+    chroma,
+    coding
+  ) {
+    const layout = getSkipTokenLayout(byteCount, width, height, coding.skipMode);
+    const baseError = squaredNorm(coefficients);
+    let best = null;
+
+    for (let profile = 0; profile < 8; profile += 1) {
+      const scan = getSkipScan(profile, width, height);
+
+      for (let scaleIndex = 0; scaleIndex < SCALE_MULTIPLIERS.length; scaleIndex += 1) {
+        const dcChoice = quantizeSkipCoefficient(
+          coefficients,
+          0,
+          width,
+          height,
+          quality,
+          chroma,
+          scaleIndex,
+          10
+        );
+        const maximumIndex = Math.min(scan.length - 1, 4 * (layout.tokenCount - 1));
+        let previous = new Float64Array(maximumIndex + 1);
+        previous.fill(Number.NEGATIVE_INFINITY);
+        const back = Array.from({ length: layout.tokenCount }, () => {
+          const indices = new Int16Array(maximumIndex + 1);
+          indices.fill(-1);
+          return indices;
+        });
+        const firstToken = getSkipTokenParameters(layout, 0, scaleIndex);
+        previous[0] = skipCoefficientBenefit(
+          coefficients,
+          scan[0],
+          width,
+          height,
+          quality,
+          chroma,
+          firstToken.scaleIndex,
+          firstToken.bits
+        ).benefit;
+
+        for (let tokenIndex = 1; tokenIndex < layout.tokenCount; tokenIndex += 1) {
+          const current = new Float64Array(maximumIndex + 1);
+          current.fill(Number.NEGATIVE_INFINITY);
+          const parameters = getSkipTokenParameters(layout, tokenIndex, scaleIndex);
+          const firstIndex = tokenIndex;
+          const lastIndex = Math.min(maximumIndex, 4 * tokenIndex);
+
+          for (let index = firstIndex; index <= lastIndex; index += 1) {
+            let previousBenefit = Number.NEGATIVE_INFINITY;
+            let previousIndex = -1;
+
+            for (let distance = 1; distance <= 4; distance += 1) {
+              const candidateIndex = index - distance;
+              if (candidateIndex >= 0 && previous[candidateIndex] > previousBenefit) {
+                previousBenefit = previous[candidateIndex];
+                previousIndex = candidateIndex;
+              }
+            }
+
+            if (previousIndex < 0) {
+              continue;
+            }
+
+            const benefit = skipCoefficientBenefit(
+              coefficients,
+              scan[index],
+              width,
+              height,
+              quality,
+              chroma,
+              parameters.scaleIndex,
+              parameters.bits
+            ).benefit;
+            current[index] = previousBenefit + benefit;
+            back[tokenIndex][index] = previousIndex;
+          }
+          previous = current;
+        }
+
+        let endIndex = 0;
+        let totalBenefit = Number.NEGATIVE_INFINITY;
+        for (let index = 0; index <= maximumIndex; index += 1) {
+          if (previous[index] > totalBenefit) {
+            totalBenefit = previous[index];
+            endIndex = index;
+          }
+        }
+        if (!Number.isFinite(totalBenefit)) {
+          continue;
+        }
+
+        const path = new Int16Array(layout.tokenCount);
+        path[layout.tokenCount - 1] = endIndex;
+        for (let tokenIndex = layout.tokenCount - 1; tokenIndex > 0; tokenIndex -= 1) {
+          path[tokenIndex - 1] = back[tokenIndex][path[tokenIndex]];
+        }
+
+        const tokens = Array.from({ length: layout.tokenCount }, (_, tokenIndex) => {
+          const parameters = getSkipTokenParameters(layout, tokenIndex, scaleIndex);
+          const position = scan[path[tokenIndex]];
+          const stored = skipCoefficientBenefit(
+            coefficients,
+            position,
+            width,
+            height,
+            quality,
+            chroma,
+            parameters.scaleIndex,
+            parameters.bits
+          ).stored;
+          const skip = tokenIndex + 1 < layout.tokenCount
+            ? path[tokenIndex + 1] - path[tokenIndex] - 1 : 0;
+          return { position, stored, skip, bits: parameters.bits };
+        });
+        const error = baseError + dcChoice.errorDelta - totalBenefit;
+        const candidate = {
+          profile,
+          scaleIndex,
+          dc: dcChoice.stored,
+          tokens,
+          error,
+          skipMode: coding.skipMode,
+        };
+
+        if (!best || compareComponentCandidates(candidate, best) < 0) {
+          best = candidate;
+        }
+      }
+    }
+
+    return best;
+  }
+
+  function getSkipTokenLayout(byteCount, width, height, skipMode) {
+    const payloadBits = byteCount * 8 - 18;
+    if (skipMode === "single") {
+      const tokenCount = Math.floor(payloadBits / 8);
+      return { tokenCount, coarseCount: tokenCount, dualScale: false };
+    }
+
+    let tokenCount;
+    let coarseCount;
+    if (byteCount === 32) {
+      tokenCount = 32;
+      coarseCount = 16;
+    } else if (byteCount === 24) {
+      tokenCount = 24;
+      coarseCount = width === 16 && height === 16 ? 12 : 11;
+    } else if (byteCount === 16) {
+      tokenCount = width === 16 && height === 16 ? 15 : 14;
+      coarseCount = width === 16 && height === 16 ? 7 : 8;
+    } else {
+      tokenCount = Math.floor(payloadBits / 7);
+      coarseCount = Math.ceil(tokenCount / 2);
+      while (coarseCount * 8 + (tokenCount - coarseCount) * 6 > payloadBits) {
+        tokenCount -= 1;
+        coarseCount = Math.ceil(tokenCount / 2);
+      }
+    }
+
+    if (tokenCount < 1 || coarseCount * 8 + (tokenCount - coarseCount) * 6 > payloadBits) {
+      throw new RangeError("DCT component record is too small for skip coding");
+    }
+    return { tokenCount, coarseCount, dualScale: true };
+  }
+
+  function getSkipTokenParameters(layout, tokenIndex, mainScaleIndex) {
+    const fine = layout.dualScale && tokenIndex >= layout.coarseCount;
+    return {
+      bits: fine ? 4 : 6,
+      scaleIndex: fine ? (mainScaleIndex >= 3 ? 1 : 0) : mainScaleIndex,
+    };
+  }
+
+  function quantizeSkipCoefficient(
+    coefficients,
+    position,
+    width,
+    height,
+    quality,
+    chroma,
+    scaleIndex,
+    bitCount
+  ) {
+    const u = position % width;
+    const v = Math.floor(position / width);
+    const step = quantizationStep(u, v, width, height, quality, chroma) *
+      SCALE_MULTIPLIERS[scaleIndex];
+    const minimum = -(2 ** (bitCount - 1));
+    const maximum = 2 ** (bitCount - 1) - 1;
+    const stored = clamp(roundSigned(coefficients[position] / step), minimum, maximum);
+    const restored = stored * step;
+    return {
+      stored,
+      errorDelta: (coefficients[position] - restored) ** 2 - coefficients[position] ** 2,
+    };
+  }
+
+  function skipCoefficientBenefit(
+    coefficients,
+    position,
+    width,
+    height,
+    quality,
+    chroma,
+    scaleIndex,
+    bitCount
+  ) {
+    const choice = quantizeSkipCoefficient(
+      coefficients,
+      position,
+      width,
+      height,
+      quality,
+      chroma,
+      scaleIndex,
+      bitCount
+    );
+    const benefit = -choice.errorDelta;
+    return benefit > 0 ? { stored: choice.stored, benefit } : { stored: 0, benefit: 0 };
   }
 
   function chooseGroupedComponentEncoding(
@@ -1621,19 +1956,61 @@
     const packedProfile = header >> 4;
     const headerReference = libraryContext && libraryContext.library.referenceCoding === "header";
     const tailReference = libraryContext && libraryContext.library.referenceCoding === "tail";
-    const profile = headerReference ? packedProfile & 3 : packedProfile;
+    const packedScale = header & 15;
+    const skipRecord = Boolean(coding.skipMode && (packedScale & 8));
+    const profile = skipRecord ? packedProfile : headerReference ? packedProfile & 3 : packedProfile;
     let libraryIndex = headerReference ? packedProfile >> 2 :
       libraryContext && libraryContext.library.referenceCoding === "sidecar"
         ? libraryContext.libraryIndex : 0;
-    const scaleIndex = header & 15;
+    const scaleIndex = packedScale & 7;
 
-    if (profile >= PROFILE_NAMES.length || scaleIndex >= SCALE_MULTIPLIERS.length) {
+    if (profile >= (skipRecord ? 8 : PROFILE_NAMES.length) ||
+        !skipRecord && packedScale >= SCALE_MULTIPLIERS.length || skipRecord && libraryContext) {
       throw new RangeError("Invalid DCT component profile");
     }
 
     const coefficients = new Float64Array(width * height);
     const dc = reader.readSigned(10);
     const reservedAcCount = tailReference ? 1 : 0;
+    coefficients[0] = dc * quantizationStep(0, 0, width, height, quality, chroma) *
+      SCALE_MULTIPLIERS[scaleIndex];
+
+    if (skipRecord) {
+      const skipLayout = getSkipTokenLayout(byteCount, width, height, coding.skipMode);
+      const scan = getSkipScan(profile, width, height);
+      let scanIndex = 0;
+      let storedCoefficientCount = dc === 0 ? 0 : 1;
+
+      for (let tokenIndex = 0; tokenIndex < skipLayout.tokenCount; tokenIndex += 1) {
+        if (scanIndex >= scan.length) {
+          throw new RangeError("Invalid DCT skip-RLE profile traversal");
+        }
+        const parameters = getSkipTokenParameters(skipLayout, tokenIndex, scaleIndex);
+        const stored = reader.readSigned(parameters.bits);
+        const skip = reader.read(2);
+        const position = scan[scanIndex];
+        const u = position % width;
+        const v = Math.floor(position / width);
+        coefficients[position] = stored * quantizationStep(u, v, width, height, quality, chroma) *
+          SCALE_MULTIPLIERS[parameters.scaleIndex];
+        storedCoefficientCount += stored === 0 ? 0 : 1;
+        scanIndex += skip + 1;
+      }
+
+      return {
+        coefficients,
+        profile,
+        scaleIndex,
+        groupScaleIndices: skipLayout.dualScale
+          ? [scaleIndex, getSkipTokenParameters(skipLayout, skipLayout.coarseCount, scaleIndex).scaleIndex]
+          : [scaleIndex],
+        coefficientCount: skipLayout.tokenCount + 1,
+        storedCoefficientCount,
+        libraryIndex: 0,
+        encodingMode: skipLayout.dualScale ? "dual-scale-skip" : "skip-rle",
+      };
+    }
+
     const groupedLayout = coding.groupCount > 0
       ? getGroupedAcLayout(byteCount, coding, reservedAcCount)
       : null;
@@ -1643,9 +2020,6 @@
     const frequencySplit = libraryIndex > 0 && libraryContext
       ? libraryContext.library.frequencySplit : 0;
     const scan = getLibraryCoefficientScan(profile, width, height, acCount, frequencySplit);
-
-    coefficients[0] = dc * quantizationStep(0, 0, width, height, quality, chroma) *
-      SCALE_MULTIPLIERS[scaleIndex];
 
     const groupScaleIndices = groupedLayout ? groupedLayout.groupEnds.map(() => reader.read(3)) : [scaleIndex];
     const groupEnds = groupedLayout ? groupedLayout.groupEnds : [acCount];
@@ -1689,7 +2063,9 @@
       scaleIndex,
       groupScaleIndices,
       coefficientCount: acCount + 1,
+      storedCoefficientCount: acCount + (dc === 0 ? 0 : 1),
       libraryIndex,
+      encodingMode: groupedLayout ? "grouped" : "legacy",
     };
   }
 
@@ -1897,13 +2273,16 @@
     if (!component.blocks) {
       return {
         profile: component.profile,
-        profileName: PROFILE_NAMES[component.profile],
+        profileName: component.encodingMode === "skip-rle" || component.encodingMode === "dual-scale-skip"
+          ? SKIP_PROFILE_NAMES[component.profile] : PROFILE_NAMES[component.profile],
         scaleIndex: component.scaleIndex,
         scale: SCALE_MULTIPLIERS[component.scaleIndex],
         groupScaleIndices: component.groupScaleIndices,
         groupScales: component.groupScaleIndices.map((scaleIndex) => SCALE_MULTIPLIERS[scaleIndex]),
         coefficientCount: component.coefficientCount,
+        storedCoefficientCount: component.storedCoefficientCount,
         libraryIndex: component.libraryIndex,
+        encodingMode: component.encodingMode,
       };
     }
 
@@ -1913,6 +2292,10 @@
       scaleIndex: null,
       scale: null,
       coefficientCount: component.blocks.reduce((total, block) => total + block.coefficientCount, 0),
+      storedCoefficientCount: component.blocks.reduce(
+        (total, block) => total + block.storedCoefficientCount,
+        0
+      ),
       blocks: component.blocks.map((block) => summarizeComponent(block)),
     };
   }
@@ -2271,6 +2654,52 @@
     return scanCache.get(key);
   }
 
+  function getSkipScan(profile, width, height) {
+    const key = `${profile}:${width}:${height}`;
+
+    if (!skipScanCache.has(key)) {
+      const positions = [];
+
+      for (let v = 0; v < height; v += 1) {
+        for (let u = 0; u < width; u += 1) {
+          if (u === 0 && v === 0) {
+            continue;
+          }
+          const normalizedU = width > 1 ? u / (width - 1) : 0;
+          const normalizedV = height > 1 ? v / (height - 1) : 0;
+          positions.push({
+            position: v * width + u,
+            u,
+            v,
+            score: skipScanScore(profile, normalizedU, normalizedV),
+          });
+        }
+      }
+
+      positions.sort((left, right) => left.score - right.score ||
+        left.u + left.v - right.u - right.v || left.v - right.v || left.u - right.u);
+      skipScanCache.set(key, positions.map((item) => item.position));
+    }
+
+    return skipScanCache.get(key);
+  }
+
+  function skipScanScore(profile, u, v) {
+    const radius = Math.sqrt(u * u + v * v);
+    if (profile === 1) return 0.22 * u * u + 2.1 * v * v;
+    if (profile === 2) return 2.1 * u * u + 0.22 * v * v;
+    if (profile === 3) {
+      return Math.min(0.18 * u * u + 2.4 * v * v, 2.4 * u * u + 0.18 * v * v);
+    }
+    if (profile === 4) return 0.72 * radius * radius + 1.35 * Math.abs(u - v);
+    if (profile === 5) {
+      return 0.72 * radius * radius + 0.55 * Math.min(u, v) + 0.08 * Math.abs(u - v);
+    }
+    if (profile === 6) return Math.abs(radius - 0.34) + 0.18 * radius;
+    if (profile === 7) return Math.abs(radius - 0.52) + 0.10 * Math.min(u, v);
+    return radius * radius;
+  }
+
   function scanScore(profile, u, v) {
     if (profile === 1) {
       return u + v * 2.4;
@@ -2303,8 +2732,20 @@
       const planes = extractMcuPlanes(pixels, width, height, mcuX, mcuY);
       const record = new Uint8Array(layout.bytesPerMcu);
 
-      encodeLuma(record, 0, layout.yBytes, planes.y, quality, layout.bpp >= 3, coding);
-      encodeComponent(record, layout.yBytes, layout.cbBytes, planes.cb, 8, 16, quality, true, coding);
+      const splitLuma8x8 = layout.bpp >= 3;
+      encodeLuma(record, 0, layout.yBytes, planes.y, quality, splitLuma8x8, coding, true);
+      encodeComponent(
+        record,
+        layout.yBytes,
+        layout.cbBytes,
+        planes.cb,
+        8,
+        16,
+        quality,
+        true,
+        coding,
+        splitLuma8x8
+      );
       encodeComponent(
         record,
         layout.yBytes + layout.cbBytes,
@@ -2314,10 +2755,11 @@
         16,
         quality,
         true,
-        coding
+        coding,
+        splitLuma8x8
       );
 
-      const yComponent = decodeLuma(record, 0, layout.yBytes, quality, layout.bpp >= 3, coding);
+      const yComponent = decodeLuma(record, 0, layout.yBytes, quality, splitLuma8x8, coding);
       const cbComponent = decodeComponent(
         record,
         layout.yBytes,

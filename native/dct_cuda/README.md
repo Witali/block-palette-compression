@@ -20,17 +20,20 @@ constant-time random access. Spectral sidecar layouts can put more low-ranked
 coefficients in the prototype and use part of the local AC budget for later
 positions in the codec's profile-specific significance scan.
 
-New files use grouped binary exponents for the selected AC coefficients. Each
-group stores one three-bit exponent and five-bit signed mantissas; the DC term
-keeps its own exponent and ten-bit signed value. The 0.75, 1, and 2 bpp modes
-use two equal AC groups, while the remaining modes use three front-loaded
-frequency groups. This increases the number of represented coefficients at
-the same fixed record size. The decoder still accepts legacy records with one
-shared exponent and six-bit AC values.
+New files choose per record between grouped binary exponents and adaptive skip
+coding. Grouped records store one three-bit exponent per group and five-bit
+signed mantissas; the DC term keeps its own exponent and ten-bit signed value.
+Skip-RLE stores signed-6 values with a two-bit forward skip. Dual-scale skip
+adds a signed-4 fine group with multiplier 1 or 2. The default is skip-RLE at
+0.75 bpp, dual-scale skip at 1, 1.5, and 2 bpp, dual-scale skip for the 16- and
+24-byte high-rate records, and grouped coding for 32-byte records. A record
+falls back to grouped coding whenever skip does not reduce coefficient error.
+The decoder still accepts older grouped and legacy records.
 
 The encoder runs RGB-to-YCbCr conversion, 4:2:2 downsampling, separable DCT,
-profile selection, grouped-exponent quantization, and packing on the GPU. Both full-image decoding and
-single-pixel reconstruction use CUDA kernels. The `pixel` command reads one
+profile selection, grouped/skip candidate evaluation, quantization, and packing
+on the GPU. Both full-image decoding and single-pixel reconstruction use CUDA
+kernels. The `pixel` command reads one
 24-192 byte MCU record and, when present, the small prototype library. It does
 not upload the other MCU records. For a split-luma record, the kernel
 reconstructs only the selected 8x8 Y block.

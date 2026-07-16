@@ -195,8 +195,10 @@ function selectBalanced(source, limit) {
 }
 
 function defaultCoding(preset) {
-  return preset === "0.75" || preset === "1" || preset === "2"
-    ? "grouped-5-equal-2" : "grouped-5-front";
+  if (preset === "0.75") return "skip-rle-equal-2";
+  if (preset === "1" || preset === "2") return "dual-scale-skip-equal-2";
+  if (preset === "6") return "grouped-5-front";
+  return "dual-scale-skip-front";
 }
 
 function fallbackQuality(preset) {

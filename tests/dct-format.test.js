@@ -164,15 +164,15 @@ test("encodes DCT files deterministically and exposes bounded MCU metadata", () 
   assert.ok(mcu.components.y.scale >= 1 && mcu.components.y.scale <= 128);
 });
 
-test("uses grouped binary exponents by default while preserving legacy files", () => {
-  const source = makePixels(16, 16);
+test("uses adaptive skip coding by default while preserving grouped and legacy files", () => {
+  const source = makeAlternatingPixels(16, 16);
   const expected = {
-    "0.75": "grouped-5-equal-2",
-    "1": "grouped-5-equal-2",
-    "1.5": "grouped-5-front",
-    "2": "grouped-5-equal-2",
-    "3": "grouped-5-front",
-    "4.5": "grouped-5-front",
+    "0.75": "skip-rle-equal-2",
+    "1": "dual-scale-skip-equal-2",
+    "1.5": "dual-scale-skip-front",
+    "2": "dual-scale-skip-equal-2",
+    "3": "dual-scale-skip-front",
+    "4.5": "dual-scale-skip-front",
     "6": "grouped-5-front",
   };
 
@@ -183,8 +183,22 @@ test("uses grouped binary exponents by default while preserving legacy files", (
     const lumaRecords = mcu.components.y.blocks || [mcu.components.y];
 
     assert.equal(info.coefficientCodingKey, coefficientCodingKey);
-    assert.ok(lumaRecords.every((record) => record.groupScaleIndices.length >= 2));
+    if (preset === "0.75") {
+      assert.ok(lumaRecords.every((record) => record.encodingMode === "skip-rle"));
+    } else if (preset === "6") {
+      assert.ok(lumaRecords.every((record) => record.encodingMode === "grouped"));
+    } else {
+      assert.ok(lumaRecords.every((record) => record.encodingMode === "dual-scale-skip"));
+    }
   }
+
+  const grouped = encodeDctFile(source, 16, 16, {
+    preset: "1.5",
+    quality: 92,
+    coefficientCoding: "grouped-5-front",
+  });
+  assert.equal(inspectDctFile(grouped).coefficientCodingKey, "grouped-5-front");
+  assert.equal(inspectDctMcu(grouped, 0).components.y.encodingMode, "grouped");
 
   const legacy = encodeDctFile(source, 16, 16, {
     preset: "1.5",
@@ -193,6 +207,23 @@ test("uses grouped binary exponents by default while preserving legacy files", (
   });
   assert.equal(inspectDctFile(legacy).coefficientCodingKey, "legacy");
   assert.equal(inspectDctMcu(legacy, 0).components.y.groupScaleIndices.length, 1);
+});
+
+test("keeps the grouped fallback when skip coding does not reduce block error", () => {
+  const source = new Uint8ClampedArray(16 * 16 * 4);
+  for (let offset = 0; offset < source.length; offset += 4) {
+    source[offset] = 128;
+    source[offset + 1] = 128;
+    source[offset + 2] = 128;
+    source[offset + 3] = 255;
+  }
+
+  for (const preset of ["0.75", "1", "1.5", "2", "3", "4.5"]) {
+    const encoded = encodeDctFile(source, 16, 16, { preset, quality: 92 });
+    const mcu = inspectDctMcu(encoded, 0);
+    const records = mcu.components.y.blocks || [mcu.components.y];
+    assert.ok(records.every((record) => record.encodingMode === "grouped"));
+  }
 });
 
 test("stores deterministic clustered DCT prototypes without losing coordinate access", () => {
@@ -356,6 +387,23 @@ function makePixels(width, height) {
       pixels[offset] = x * 17 + y * 3 & 255;
       pixels[offset + 1] = x * 5 + y * 19 & 255;
       pixels[offset + 2] = x * 11 + y * 13 & 255;
+      pixels[offset + 3] = 255;
+    }
+  }
+
+  return pixels;
+}
+
+function makeAlternatingPixels(width, height) {
+  const pixels = new Uint8ClampedArray(width * height * 4);
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const offset = (y * width + x) * 4;
+      const value = (x + y) % 2 === 0 ? 0 : 255;
+      pixels[offset] = value;
+      pixels[offset + 1] = value;
+      pixels[offset + 2] = value;
       pixels[offset + 3] = 255;
     }
   }

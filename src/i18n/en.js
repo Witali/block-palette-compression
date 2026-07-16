@@ -335,7 +335,7 @@
     "dct.readPixel": "Read pixel",
     "dct.pixelMcu": "MCU {index} · byte {offset} · {bytes} B read",
     "dct.formatTitle": "Addressable DCTBS2 layout",
-    "dct.formatDescription": "Each independent MCU stores one 16×16 luma transform at low rates or four 8×8 luma transforms at high rates, plus two 8×16 chroma transforms. Optional, separately versioned libraries provide directly addressed DCT prototypes through header or sidecar indices; no component depends on a neighboring MCU.",
+    "dct.formatDescription": "Each independent MCU stores one 16×16 luma transform at low rates or four 8×8 luma transforms at high rates, plus two 8×16 chroma transforms. Every fixed record can choose grouped coefficients or the final adaptive skip-RLE / dual-scale skip layout. Optional, separately versioned libraries provide directly addressed DCT prototypes through header or sidecar indices; no component depends on a neighboring MCU.",
     "dct.referenceSource": "Original attached source",
     "dct.addressFormula": "Pixel address formula",
     "dct.layoutDiagramTitle": "DCTBS2 visual layout",

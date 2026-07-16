@@ -66,6 +66,46 @@ function allScans(width, height) {
   return Array.from({ length: 4 }, (_, profile) => buildScan(profile, width, height)).flat();
 }
 
+function buildSkipScan(profile, width, height) {
+  const positions = [];
+  for (let v = 0; v < height; v += 1) {
+    for (let u = 0; u < width; u += 1) {
+      if (u === 0 && v === 0) continue;
+      const normalizedU = width > 1 ? u / (width - 1) : 0;
+      const normalizedV = height > 1 ? v / (height - 1) : 0;
+      positions.push({
+        position: v * width + u,
+        u,
+        v,
+        score: skipScanScore(profile, normalizedU, normalizedV),
+      });
+    }
+  }
+  positions.sort((left, right) => left.score - right.score ||
+    left.u + left.v - right.u - right.v || left.v - right.v || left.u - right.u);
+  return positions.map((entry) => entry.position);
+}
+
+function skipScanScore(profile, u, v) {
+  const radius = Math.sqrt(u * u + v * v);
+  if (profile === 1) return 0.22 * u * u + 2.1 * v * v;
+  if (profile === 2) return 2.1 * u * u + 0.22 * v * v;
+  if (profile === 3) {
+    return Math.min(0.18 * u * u + 2.4 * v * v, 2.4 * u * u + 0.18 * v * v);
+  }
+  if (profile === 4) return 0.72 * radius * radius + 1.35 * Math.abs(u - v);
+  if (profile === 5) {
+    return 0.72 * radius * radius + 0.55 * Math.min(u, v) + 0.08 * Math.abs(u - v);
+  }
+  if (profile === 6) return Math.abs(radius - 0.34) + 0.18 * radius;
+  if (profile === 7) return Math.abs(radius - 0.52) + 0.10 * Math.min(u, v);
+  return radius * radius;
+}
+
+function allSkipScans(width, height) {
+  return Array.from({ length: 8 }, (_, profile) => buildSkipScan(profile, width, height)).flat();
+}
+
 function glslIntArray(name, values) {
   const lines = [];
   for (let index = 0; index < values.length; index += 20) {
@@ -262,6 +302,9 @@ function renderFragmentShader(preset) {
   const y16Scans = glslIntArray("SCAN_Y16", allScans(16, 16));
   const y8Scans = glslIntArray("SCAN_Y8", allScans(8, 8));
   const chromaScans = glslIntArray("SCAN_C", allScans(8, 16));
+  const y16SkipScans = glslIntArray("SKIP_SCAN_Y16", allSkipScans(16, 16));
+  const y8SkipScans = glslIntArray("SKIP_SCAN_Y8", allSkipScans(8, 8));
+  const chromaSkipScans = glslIntArray("SKIP_SCAN_C", allSkipScans(8, 16));
   const lumaTable = glslIntArray("QUANT_Y", lumaQuantization);
   const chromaTable = glslIntArray("QUANT_C", chromaQuantization);
   return `#version 300 es
@@ -299,6 +342,12 @@ ${y16Scans}
 ${y8Scans}
 
 ${chromaScans}
+
+${y16SkipScans}
+
+${y8SkipScans}
+
+${chromaSkipScans}
 
 uint byteAt(int byteOffset) {
     int texelIndex = byteOffset >> 2;
@@ -400,8 +449,15 @@ int scanPosition(int kind, int profile, int index) {
     return SCAN_C[profile * 127 + index];
 }
 
+int skipScanPosition(int kind, int profile, int index) {
+    if (kind == 0) return SKIP_SCAN_Y16[profile * 255 + index];
+    if (kind == 1) return SKIP_SCAN_Y8[profile * 63 + index];
+    return SKIP_SCAN_C[profile * 127 + index];
+}
+
 int groupCount(int coding) {
-    return coding == 1 ? 2 : coding == 2 ? 3 : 0;
+    if (coding == 1 || coding == 3 || coding == 4) return 2;
+    return coding == 2 || coding == 5 ? 3 : 0;
 }
 
 int mantissaBits(int coding) {
@@ -435,7 +491,7 @@ int resolveLibraryIndex(
 int groupedScaleIndex(int recordOffset, int coding, int count, int coefficientIndex) {
     if (coding == 0) return int(byteAt(recordOffset) & 15u);
     int group = 0;
-    if (coding == 1) {
+    if (coding == 1 || coding == 3 || coding == 4) {
         group = coefficientIndex < count / 2 ? 0 : 1;
     } else {
         int firstEnd = ceilDiv(count, 6);
@@ -443,6 +499,26 @@ int groupedScaleIndex(int recordOffset, int coding, int count, int coefficientIn
         group = coefficientIndex < firstEnd ? 0 : coefficientIndex < secondEnd ? 1 : 2;
     }
     return int(readComponentBits(recordOffset, 18 + group * 3, 3));
+}
+
+int skipTokenCount(int recordBytes, int kind, int coding) {
+    int payloadBits = recordBytes * 8 - 18;
+    if (coding == 3) return payloadBits / 8;
+    if (recordBytes == 32) return 32;
+    if (recordBytes == 24) return 24;
+    if (recordBytes == 16) return kind == 0 ? 15 : 14;
+    int tokenCount = payloadBits / 7;
+    int coarseCount = (tokenCount + 1) / 2;
+    if (coarseCount * 8 + (tokenCount - coarseCount) * 6 > payloadBits) tokenCount -= 1;
+    return tokenCount;
+}
+
+int skipCoarseCount(int recordBytes, int kind, int coding, int tokenCount) {
+    if (coding == 3) return tokenCount;
+    if (recordBytes == 32) return 16;
+    if (recordBytes == 24) return kind == 0 ? 12 : 11;
+    if (recordBytes == 16) return kind == 0 ? 7 : 8;
+    return (tokenCount + 1) / 2;
 }
 
 float basis1D(int frequency, int coordinate, int size) {
@@ -481,10 +557,15 @@ float sampleRecord(
     int libraryVersion,
     int libraryIndex
 ) {
-    int packedProfile = int(byteAt(recordOffset) >> 4u);
-    int profile = headerReferenceVersion(libraryVersion) ? packedProfile & 3 : packedProfile;
-    int dcScaleIndex = int(byteAt(recordOffset) & 15u);
-    if (profile < 0 || profile >= 4 || dcScaleIndex < 0 || dcScaleIndex >= 8) return 0.0;
+    uint header = byteAt(recordOffset);
+    int packedProfile = int(header >> 4u);
+    int packedScale = int(header & 15u);
+    bool skipRecord = coding >= 3 && (packedScale & 8) != 0;
+    int profile = skipRecord ? packedProfile :
+        headerReferenceVersion(libraryVersion) ? packedProfile & 3 : packedProfile;
+    int dcScaleIndex = packedScale & 7;
+    if (profile < 0 || profile >= (skipRecord ? 8 : 4) ||
+        (!skipRecord && packedScale >= 8) || (skipRecord && libraryVersion != 0)) return 0.0;
 
     int width = componentWidth(kind);
     int height = componentHeight(kind);
@@ -502,6 +583,35 @@ float sampleRecord(
         sum,
         correction
     );
+
+    if (skipRecord) {
+        int tokenCount = skipTokenCount(recordBytes, kind, coding);
+        int coarseCount = skipCoarseCount(recordBytes, kind, coding, tokenCount);
+        int bitOffset = 18;
+        int scanIndex = 0;
+        for (int tokenIndex = 0; tokenIndex < 32; ++tokenIndex) {
+            if (tokenIndex >= tokenCount) break;
+            if (scanIndex < 0 || scanIndex >= scanLength(kind)) return 0.0;
+            bool fine = coding != 3 && tokenIndex >= coarseCount;
+            int tokenValueBits = fine ? 4 : 6;
+            int scaleIndex = fine ? (dcScaleIndex >= 3 ? 1 : 0) : dcScaleIndex;
+            int stored = readSignedComponentBits(recordOffset, bitOffset, tokenValueBits);
+            bitOffset += tokenValueBits;
+            int skip = int(readComponentBits(recordOffset, bitOffset, 2));
+            bitOffset += 2;
+            int position = skipScanPosition(kind, profile, scanIndex);
+            int u = position % width;
+            int v = position / width;
+            addCompensated(
+                float(stored) * exp2(float(scaleIndex)) * quantizationStep(position, kind, quality) *
+                    basis1D(u, localX, width) * basis1D(v, localY, height),
+                sum,
+                correction
+            );
+            scanIndex += skip + 1;
+        }
+        return sum;
+    }
 
     int quarters = libraryIndex > 0 ? frequencyQuarters(libraryVersion) : 0;
     int requestedHigh = (count * quarters + 2) / 4;
@@ -590,7 +700,7 @@ bool validMainHeader(uint flags) {
         u32le(8) == 2u && u32le(12) == EXPECTED_MODE &&
         u32le(32) == EXPECTED_MCU_BYTES && u32le(36) == EXPECTED_Y_BYTES &&
         u32le(40) == EXPECTED_CB_BYTES && u32le(44) == EXPECTED_CR_BYTES &&
-        (flags & ~0x00000f07u) == 0u && ((flags >> 8u) & 15u) <= 2u &&
+        (flags & ~0x00000f07u) == 0u && ((flags >> 8u) & 15u) <= 5u &&
         (ALLOW_SPLIT_LUMA || (flags & FLAG_SPLIT_LUMA) == 0u);
 }
 
@@ -719,6 +829,7 @@ if (require.main === module) {
 
 module.exports = {
   buildScan,
+  buildSkipScan,
   cubeShaderFile,
   generatedFiles,
   presets,
