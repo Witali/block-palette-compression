@@ -503,35 +503,48 @@
 }
 
 .dct-layout-zigzag-halo {
-  stroke: rgba(5, 10, 16, 0.82);
-  stroke-width: 5px;
+  stroke: rgba(5, 10, 16, 0.34);
+  stroke-width: 3px;
 }
 
 .dct-layout-zigzag-line {
-  stroke: #ffe071;
-  stroke-width: 2px;
+  stroke: rgba(255, 224, 113, 0.42);
+  stroke-width: 1.25px;
+}
+
+.dct-layout-zigzag-rank,
+.dct-layout-zigzag-rank-shadow {
+  font: 850 0.36px/1 ui-monospace, Consolas, monospace;
+  text-anchor: middle;
+  dominant-baseline: central;
+}
+
+.dct-layout-zigzag-rank-shadow {
+  fill: #050b12;
+  stroke: #050b12;
+  stroke-width: 0.16px;
+  opacity: 0.88;
+  filter: url("#dct-layout-zigzag-rank-blur");
 }
 
 .dct-layout-zigzag-rank {
-  fill: #ffe071;
+  fill: #fff1ad;
   stroke: #071018;
-  stroke-width: 0.045px;
+  stroke-width: 0.065px;
   paint-order: stroke fill;
-  font: 800 0.22px/1 ui-monospace, Consolas, monospace;
-  text-anchor: start;
-  dominant-baseline: central;
 }
 
 .dct-layout-coefficient {
   display: grid;
-  place-items: center;
+  place-items: end;
   min-width: 0;
   min-height: 0;
+  padding: 2px;
   border-right: 1px solid #36414d;
   border-bottom: 1px solid #36414d;
   background: rgba(77, 150, 237, var(--dct-frequency-alpha, 0.08));
   color: #eaf3fd;
-  font: 800 8px/1 ui-monospace, Consolas, monospace;
+  font: 800 7px/1 ui-monospace, Consolas, monospace;
   cursor: help;
 }
 

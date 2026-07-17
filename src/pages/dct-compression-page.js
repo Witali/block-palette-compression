@@ -693,12 +693,20 @@ function renderDctLayoutZigzag(shape, visible) {
   const positions = getDctLayoutZigzagPositions(shape.width, shape.height);
   const points = positions.map(({ u, v }) => `${u + 0.5},${v + 0.5}`).join(" ");
   const rankLabels = positions.map(({ u, v }, rank) => (
-    `<text class="dct-layout-zigzag-rank" x="${u + 0.07}" y="${v + 0.17}">${rank}</text>`
+    `<g class="dct-layout-zigzag-rank-label">
+      <text class="dct-layout-zigzag-rank-shadow" x="${u + 0.5}" y="${v + 0.5}">${rank}</text>
+      <text class="dct-layout-zigzag-rank" x="${u + 0.5}" y="${v + 0.5}">${rank}</text>
+    </g>`
   )).join("");
 
   layoutZigzag.setAttribute("viewBox", `0 0 ${shape.width} ${shape.height}`);
   layoutZigzag.setAttribute("preserveAspectRatio", "none");
   layoutZigzag.innerHTML = `
+    <defs>
+      <filter id="dct-layout-zigzag-rank-blur" x="-60%" y="-80%" width="220%" height="260%" color-interpolation-filters="sRGB">
+        <feGaussianBlur stdDeviation="0.11"></feGaussianBlur>
+      </filter>
+    </defs>
     <polyline class="dct-layout-zigzag-halo" points="${points}"></polyline>
     <polyline class="dct-layout-zigzag-line" points="${points}"></polyline>
     ${rankLabels}`;

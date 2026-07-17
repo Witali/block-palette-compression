@@ -77,7 +77,10 @@ test("shows component record bits, DCT coefficient positions, and every packing 
   assert.match(pageScript, /for \(let u = maximumU; u >= minimumU; u -= 1\)/);
   assert.doesNotMatch(pageScript, /dct-layout-zigzag-arrowhead/);
   assert.match(pageScript, /const rankLabels = positions\.map/);
+  assert.match(pageScript, /dct-layout-zigzag-rank-shadow/);
+  assert.match(pageScript, /dct-layout-zigzag-rank-blur/);
   assert.match(pageScript, /<text class="dct-layout-zigzag-rank"/);
+  assert.match(pageScript, /x="\$\{u \+ 0\.5\}" y="\$\{v \+ 0\.5\}"/);
   assert.match(pageScript, /const showZigzag = true/);
   assert.match(pageScript, /const zigzagRank = new Map/);
   assert.match(pageScript, /shape\.width === 8 && shape\.height === 8 && Number\(presetKey\) >= 6/);
@@ -85,6 +88,8 @@ test("shows component record bits, DCT coefficient positions, and every packing 
   assert.match(pageStyles, /\.dct-layout-coefficient\.is-mask-tail/);
   assert.match(pageStyles, /\.dct-layout-zigzag\.is-visible/);
   assert.match(pageStyles, /\.dct-layout-zigzag-rank/);
+  assert.match(pageStyles, /filter: url\("#dct-layout-zigzag-rank-blur"\)/);
+  assert.match(pageStyles, /font: 850 0\.36px\/1/);
   assert.match(pageStyles, /\.dct-layout-coding-item\.is-active/);
 });
 
