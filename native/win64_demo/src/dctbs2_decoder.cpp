@@ -85,6 +85,7 @@ struct ScanPosition {
 struct SkipLayout {
     int token_count = 0;
     int coarse_count = 0;
+    int tail_count = 0;
     bool dual_scale = false;
 };
 
@@ -190,7 +191,8 @@ SkipLayout GetSkipLayout(int byte_count, int width, int height, SkipMode mode) {
     const int payload_bits = byte_count * 8 - 18;
     if (mode == SkipMode::Single) {
         const int count = payload_bits / 8;
-        return {count, count, false};
+        const int spare_bits = payload_bits - count * 8;
+        return {count, count, spare_bits >= 4 ? 1 : 0, false};
     }
     int token_count = 0;
     int coarse_count = 0;
@@ -211,7 +213,14 @@ SkipLayout GetSkipLayout(int byte_count, int width, int height, SkipMode mode) {
             coarse_count = (token_count + 1) / 2;
         }
     }
-    return {token_count, coarse_count, true};
+    const int spare_bits = payload_bits - coarse_count * 8 - (token_count - coarse_count) * 6;
+    int tail_count = 0;
+    int tail_bits = 0;
+    while (tail_bits + 4 + (tail_count > 0 ? 2 : 0) <= spare_bits) {
+        tail_bits += 4 + (tail_count > 0 ? 2 : 0);
+        ++tail_count;
+    }
+    return {token_count, coarse_count, tail_count, true};
 }
 
 std::vector<double> CreateBasis(int size) {
@@ -315,6 +324,32 @@ bool DecodeComponent(
             coefficients[position] = stored * QuantizationStep(u, v, width, height, quality, chroma) *
                 kScales[token_scale];
             scan_index += static_cast<int>(skip) + 1;
+        }
+        const int tail_scale = scale_index >= 3 ? 1 : 0;
+        for (int token = 0; token < layout.tail_count; ++token) {
+            std::int32_t stored = 0;
+            if (!reader.ReadSigned(4, stored)) {
+                error = L"Truncated DCTBS2 skip tail";
+                return false;
+            }
+            if (scan_index < static_cast<int>(scan.size())) {
+                const int position = scan[scan_index];
+                const int u = position % width;
+                const int v = position / width;
+                coefficients[position] = stored * QuantizationStep(u, v, width, height, quality, chroma) *
+                    kScales[tail_scale];
+            } else if (stored != 0) {
+                error = L"Invalid DCTBS2 skip tail traversal";
+                return false;
+            }
+            if (token + 1 < layout.tail_count) {
+                std::uint32_t skip = 0;
+                if (!reader.Read(2, skip)) {
+                    error = L"Truncated DCTBS2 skip tail";
+                    return false;
+                }
+                scan_index += static_cast<int>(skip) + 1;
+            }
         }
         return true;
     }

@@ -451,6 +451,14 @@ test("uses adaptive skip coding by default while preserving grouped and legacy f
     "3": "dual-scale-skip-front",
     "4.5": "dual-scale-skip-front",
   };
+  const expectedLumaTailSlots = {
+    "0.75": 1,
+    "1": 1,
+    "1.5": 1,
+    "2": 2,
+    "3": 2,
+    "4.5": 1,
+  };
 
   for (const [preset, coefficientCodingKey] of Object.entries(expected)) {
     const encoded = encodeDctFile(source, 16, 16, { preset, quality: 92 });
@@ -464,6 +472,7 @@ test("uses adaptive skip coding by default while preserving grouped and legacy f
     } else {
       assert.ok(lumaRecords.every((record) => record.encodingMode === "dual-scale-skip"));
     }
+    assert.ok(lumaRecords.every((record) => record.tailAcCount === expectedLumaTailSlots[preset]));
   }
 
   const grouped = encodeDctFile(source, 16, 16, {
@@ -489,6 +498,35 @@ test("uses adaptive skip coding by default while preserving grouped and legacy f
     librarySize: 1,
   });
   assert.equal(inspectDctFile(library).coefficientCodingKey, "grouped-5-front");
+});
+
+test("uses spare skip-record bits for beneficial fine AC coefficients", () => {
+  const width = 16;
+  const height = 16;
+  const source = new Uint8ClampedArray(width * height * 4);
+  let randomState = 0x6d2b79f5;
+
+  for (let offset = 0; offset < source.length; offset += 4) {
+    randomState = (Math.imul(randomState, 1664525) + 1013904223) >>> 0;
+    source[offset] = randomState & 255;
+    source[offset + 1] = randomState >>> 8 & 255;
+    source[offset + 2] = randomState >>> 16 & 255;
+    source[offset + 3] = 255;
+  }
+
+  const skipBlocks = [];
+  for (const preset of ["0.75", "1", "1.5", "2", "3", "4.5"]) {
+    const encoded = encodeDctFile(source, width, height, { preset, quality: 100 });
+    const components = inspectDctMcu(encoded, 0).components;
+    for (const component of Object.values(components)) {
+      const records = component.blocks || [component];
+      skipBlocks.push(...records.filter((block) => block.tailAcCount !== undefined));
+    }
+  }
+
+  assert.ok(skipBlocks.length > 0);
+  assert.ok(skipBlocks.every((block) => block.tailAcCount > 0));
+  assert.ok(skipBlocks.some((block) => block.tailStoredCoefficientCount > 0));
 });
 
 test("selects the lower-error high-rate coding without regressing RGB quality", () => {

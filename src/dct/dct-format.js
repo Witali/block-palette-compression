@@ -1857,6 +1857,13 @@
         writer.writeSigned(token.stored, token.bits);
         writer.write(token.skip, 2);
       }
+      for (let tokenIndex = 0; tokenIndex < candidate.tailTokens.length; tokenIndex += 1) {
+        const token = candidate.tailTokens[tokenIndex];
+        writer.writeSigned(token.stored, 4);
+        if (tokenIndex + 1 < candidate.tailTokens.length) {
+          writer.write(token.skip, 2);
+        }
+      }
     } else if (coding.groupCount > 0) {
       for (const scaleIndex of candidate.groupScaleIndices) {
         writer.write(scaleIndex, 3);
@@ -2362,12 +2369,27 @@
             ? path[tokenIndex + 1] - path[tokenIndex] - 1 : 0;
           return { position, stored, skip, bits: parameters.bits };
         });
-        const error = baseError + dcChoice.errorDelta - totalBenefit;
+        const tail = selectSkipTailTokens(
+          coefficients,
+          scan,
+          path[layout.tokenCount - 1],
+          layout.tailTokenCount,
+          width,
+          height,
+          quality,
+          chroma,
+          scaleIndex
+        );
+        if (tail.tokens.length > 0) {
+          tokens[tokens.length - 1].skip = tail.firstSkip;
+        }
+        const error = baseError + dcChoice.errorDelta - totalBenefit - tail.benefit;
         const candidate = {
           profile,
           scaleIndex,
           dc: dcChoice.stored,
           tokens,
+          tailTokens: tail.tokens,
           error,
           skipMode: coding.skipMode,
         };
@@ -2385,7 +2407,7 @@
     const payloadBits = byteCount * 8 - 18;
     if (skipMode === "single") {
       const tokenCount = Math.floor(payloadBits / 8);
-      return { tokenCount, coarseCount: tokenCount, dualScale: false };
+      return finishSkipTokenLayout(payloadBits, tokenCount, tokenCount, false);
     }
 
     let tokenCount;
@@ -2411,7 +2433,104 @@
     if (tokenCount < 1 || coarseCount * 8 + (tokenCount - coarseCount) * 6 > payloadBits) {
       throw new RangeError("DCT component record is too small for skip coding");
     }
-    return { tokenCount, coarseCount, dualScale: true };
+    return finishSkipTokenLayout(payloadBits, tokenCount, coarseCount, true);
+  }
+
+  function finishSkipTokenLayout(payloadBits, tokenCount, coarseCount, dualScale) {
+    const baseBits = coarseCount * 8 + (tokenCount - coarseCount) * 6;
+    const spareBits = payloadBits - baseBits;
+    let tailTokenCount = 0;
+    let tailBits = 0;
+
+    while (tailBits + 4 + (tailTokenCount > 0 ? 2 : 0) <= spareBits) {
+      tailBits += 4 + (tailTokenCount > 0 ? 2 : 0);
+      tailTokenCount += 1;
+    }
+
+    return { tokenCount, coarseCount, dualScale, spareBits, tailBits, tailTokenCount };
+  }
+
+  function selectSkipTailTokens(
+    coefficients,
+    scan,
+    lastScanIndex,
+    tokenCount,
+    width,
+    height,
+    quality,
+    chroma,
+    mainScaleIndex
+  ) {
+    if (tokenCount < 1) {
+      return { tokens: [], benefit: 0, firstSkip: 0 };
+    }
+
+    const scaleIndex = mainScaleIndex >= 3 ? 1 : 0;
+    const indices = new Int16Array(tokenCount);
+    const storedValues = new Int16Array(tokenCount);
+    let bestBenefit = Number.NEGATIVE_INFINITY;
+    let bestIndices = null;
+    let bestStoredValues = null;
+
+    const visit = (level, previousIndex, benefit) => {
+      if (level === tokenCount) {
+        if (benefit > bestBenefit) {
+          bestBenefit = benefit;
+          bestIndices = Int16Array.from(indices);
+          bestStoredValues = Int16Array.from(storedValues);
+        }
+        return;
+      }
+
+      let hadCandidate = false;
+      for (let distance = 1; distance <= 4; distance += 1) {
+        const scanIndex = previousIndex + distance;
+        if (scanIndex >= scan.length) break;
+        hadCandidate = true;
+        const choice = skipCoefficientBenefit(
+          coefficients,
+          scan[scanIndex],
+          width,
+          height,
+          quality,
+          chroma,
+          scaleIndex,
+          4
+        );
+        indices[level] = scanIndex;
+        storedValues[level] = choice.stored;
+        visit(level + 1, scanIndex, benefit + choice.benefit);
+      }
+
+      if (!hadCandidate) {
+        for (let index = level; index < tokenCount; index += 1) {
+          indices[index] = -1;
+          storedValues[index] = 0;
+        }
+        visit(tokenCount, previousIndex, benefit);
+      }
+    };
+
+    visit(0, lastScanIndex, 0);
+    if (!bestIndices) {
+      return { tokens: [], benefit: 0, firstSkip: 0 };
+    }
+
+    const tokens = Array.from({ length: tokenCount }, (_, tokenIndex) => {
+      const scanIndex = bestIndices[tokenIndex];
+      const nextScanIndex = tokenIndex + 1 < tokenCount ? bestIndices[tokenIndex + 1] : -1;
+      return {
+        position: scanIndex >= 0 ? scan[scanIndex] : -1,
+        stored: bestStoredValues[tokenIndex],
+        skip: scanIndex >= 0 && nextScanIndex >= 0 ? nextScanIndex - scanIndex - 1 : 0,
+      };
+    });
+
+    return {
+      tokens,
+      benefit: Math.max(0, bestBenefit),
+      firstSkip: bestIndices[0] >= 0 ? bestIndices[0] - lastScanIndex - 1 : 0,
+    };
   }
 
   function getSkipTokenParameters(layout, tokenIndex, mainScaleIndex) {
@@ -2814,6 +2933,26 @@
         scanIndex += skip + 1;
       }
 
+      const tailScaleIndex = scaleIndex >= 3 ? 1 : 0;
+      let tailStoredCoefficientCount = 0;
+      for (let tokenIndex = 0; tokenIndex < skipLayout.tailTokenCount; tokenIndex += 1) {
+        const stored = reader.readSigned(4);
+        if (scanIndex < scan.length) {
+          const position = scan[scanIndex];
+          const u = position % width;
+          const v = Math.floor(position / width);
+          coefficients[position] = stored * quantizationStep(u, v, width, height, quality, chroma) *
+            SCALE_MULTIPLIERS[tailScaleIndex];
+        } else if (stored !== 0) {
+          throw new RangeError("Invalid DCT skip tail traversal");
+        }
+        tailStoredCoefficientCount += stored === 0 ? 0 : 1;
+        if (tokenIndex + 1 < skipLayout.tailTokenCount) {
+          scanIndex += reader.read(2) + 1;
+        }
+      }
+      storedCoefficientCount += tailStoredCoefficientCount;
+
       return {
         coefficients,
         profile,
@@ -2822,8 +2961,10 @@
         groupScaleIndices: skipLayout.dualScale
           ? [scaleIndex, getSkipTokenParameters(skipLayout, skipLayout.coarseCount, scaleIndex).scaleIndex]
           : [scaleIndex],
-        coefficientCount: skipLayout.tokenCount + 1,
+        coefficientCount: skipLayout.tokenCount + skipLayout.tailTokenCount + 1,
         storedCoefficientCount,
+        tailAcCount: skipLayout.tailTokenCount,
+        tailStoredCoefficientCount,
         libraryIndex: 0,
         encodingMode: skipLayout.dualScale ? "dual-scale-skip" : "skip-rle",
       };
@@ -3115,6 +3256,7 @@
         implicitAcCount: component.implicitAcCount || 0,
         explicitAcCount: component.explicitAcCount,
         tailAcCount: component.tailAcCount,
+        tailStoredCoefficientCount: component.tailStoredCoefficientCount,
         tailStart: component.tailStart,
         coefficients: Array.from(component.coefficients),
       };

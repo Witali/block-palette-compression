@@ -476,6 +476,14 @@ function createDctLayoutSkipVariant(shape, skipMode) {
       )
     );
   }
+  if (tokenLayout.tailTokenCount > 0) {
+    fields.push(dctLayoutBitField(
+      `FT×${tokenLayout.tailTokenCount}`,
+      t("dct.layoutFieldSignedAc", { count: tokenLayout.tailTokenCount, bits: 4 }),
+      tokenLayout.tailBits,
+      "ac"
+    ));
+  }
   fields.push(dctLayoutBitField("∅", t("dct.layoutFieldPadding"), totalBits - tokenLayout.usedBits, "pad"));
 
   return {
@@ -495,7 +503,7 @@ function getDctLayoutSkipTokenLayout(shape, skipMode) {
   const payloadBits = shape.bytes * 8 - 18;
   if (skipMode === "single") {
     const tokenCount = Math.floor(payloadBits / 8);
-    return { tokenCount, coarseCount: tokenCount, fineCount: 0, usedBits: 18 + tokenCount * 8 };
+    return finishDctLayoutSkipTokenLayout(payloadBits, tokenCount, tokenCount, 0);
   }
 
   let tokenCount;
@@ -518,11 +526,25 @@ function getDctLayoutSkipTokenLayout(shape, skipMode) {
     }
   }
   const fineCount = tokenCount - coarseCount;
+  return finishDctLayoutSkipTokenLayout(payloadBits, tokenCount, coarseCount, fineCount);
+}
+
+function finishDctLayoutSkipTokenLayout(payloadBits, tokenCount, coarseCount, fineCount) {
+  const baseBits = coarseCount * 8 + fineCount * 6;
+  const spareBits = payloadBits - baseBits;
+  let tailTokenCount = 0;
+  let tailBits = 0;
+  while (tailBits + 4 + (tailTokenCount > 0 ? 2 : 0) <= spareBits) {
+    tailBits += 4 + (tailTokenCount > 0 ? 2 : 0);
+    tailTokenCount += 1;
+  }
   return {
     tokenCount,
     coarseCount,
     fineCount,
-    usedBits: 18 + coarseCount * 8 + fineCount * 6,
+    tailTokenCount,
+    tailBits,
+    usedBits: 18 + baseBits + tailBits,
   };
 }
 

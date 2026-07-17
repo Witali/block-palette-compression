@@ -100,6 +100,13 @@ all tokens. Dual-scale skip uses signed 6-bit coarse tokens followed by signed
 1, 2, or 4, and multiplier 2 otherwise. The record size alone determines the
 token split, so direct addressing is unchanged.
 
+Any remaining payload bits are used for a fixed fine-AC tail instead of zero
+padding. The first extra signed 4-bit AC reuses the final base token's skip;
+each following extra stores its own 2-bit skip before another signed 4-bit
+value. The encoder writes an extra value only when its reconstructed
+coefficient reduces squared DCT error. Tail capacity is derived solely from
+the component-record size and therefore needs no additional header field.
+
 The encoder evaluates the grouped and skip candidates and writes the skip form
 only when it reduces coefficient error. Defaults follow the final fixed-rate
 experiments: skip-RLE at 0.75 bpp; dual-scale skip at 1, 1.5, and 2 bpp; and

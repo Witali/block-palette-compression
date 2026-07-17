@@ -552,6 +552,22 @@ int skipCoarseCount(int recordBytes, int kind, int coding, int tokenCount) {
     return (tokenCount + 1) / 2;
 }
 
+int skipTailTokenCount(int recordBytes, int kind, int coding) {
+    int payloadBits = recordBytes * 8 - 18;
+    int tokenCount = skipTokenCount(recordBytes, kind, coding);
+    int coarseCount = skipCoarseCount(recordBytes, kind, coding, tokenCount);
+    int spareBits = payloadBits - coarseCount * 8 - (tokenCount - coarseCount) * 6;
+    int tailCount = 0;
+    int tailBits = 0;
+    for (int token = 0; token < 8; ++token) {
+        int additional = 4 + (tailCount > 0 ? 2 : 0);
+        if (tailBits + additional > spareBits) break;
+        tailBits += additional;
+        tailCount += 1;
+    }
+    return tailCount;
+}
+
 float basis1D(int frequency, int coordinate, int size) {
     float alpha = frequency == 0 ? sqrt(1.0 / float(size)) : sqrt(2.0 / float(size));
     return alpha * cos(PI * float((2 * coordinate + 1) * frequency) / float(2 * size));
@@ -802,6 +818,31 @@ float sampleRecord(
                 correction
             );
             scanIndex += skip + 1;
+        }
+        int tailCount = skipTailTokenCount(recordBytes, kind, coding);
+        int tailScaleIndex = dcScaleIndex >= 3 ? 1 : 0;
+        for (int tokenIndex = 0; tokenIndex < 8; ++tokenIndex) {
+            if (tokenIndex >= tailCount) break;
+            int stored = readSignedComponentBits(recordOffset, bitOffset, 4);
+            bitOffset += 4;
+            if (scanIndex >= 0 && scanIndex < scanLength(kind)) {
+                int position = skipScanPosition(kind, profile, scanIndex, zigzagOrder);
+                int u = position % width;
+                int v = position / width;
+                addCompensated(
+                    float(stored) * exp2(float(tailScaleIndex)) * quantizationStep(position, kind, quality) *
+                        basis1D(u, localX, width) * basis1D(v, localY, height),
+                    sum,
+                    correction
+                );
+            } else if (stored != 0) {
+                return 0.0;
+            }
+            if (tokenIndex + 1 < tailCount) {
+                int skip = int(readComponentBits(recordOffset, bitOffset, 2));
+                bitOffset += 2;
+                scanIndex += skip + 1;
+            }
         }
         return sum;
     }

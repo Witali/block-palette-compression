@@ -963,6 +963,23 @@ __device__ int skip_coarse_count(int byte_count, int coefficient_coding, int tok
     return (token_count + 1) / 2;
 }
 
+template <int WIDTH, int HEIGHT>
+__device__ int skip_tail_token_count(int byte_count, int coefficient_coding) {
+    const int payload_bits = byte_count * 8 - 18;
+    const int token_count = skip_token_count<WIDTH, HEIGHT>(byte_count, coefficient_coding);
+    const int coarse_count = skip_coarse_count<WIDTH, HEIGHT>(
+        byte_count, coefficient_coding, token_count
+    );
+    const int spare_bits = payload_bits - coarse_count * 8 - (token_count - coarse_count) * 6;
+    int tail_count = 0;
+    int tail_bits = 0;
+    while (tail_bits + 4 + (tail_count > 0 ? 2 : 0) <= spare_bits) {
+        tail_bits += 4 + (tail_count > 0 ? 2 : 0);
+        ++tail_count;
+    }
+    return tail_count;
+}
+
 template <int WIDTH, int HEIGHT, bool CHROMA>
 __device__ double skip_coefficient_benefit(
     const double *coefficients,
@@ -1003,12 +1020,14 @@ __device__ __noinline__ void encode_skip_component_record(
     bool zigzag_order
 ) {
     constexpr int MAX_TOKENS = 32;
+    constexpr int MAX_TAIL_TOKENS = 8;
     constexpr int MAX_POSITIONS = 256;
     const int token_count = skip_token_count<WIDTH, HEIGHT>(byte_count, coefficient_coding);
     const int coarse_count = skip_coarse_count<WIDTH, HEIGHT>(
         byte_count, coefficient_coding, token_count
     );
-    if (token_count < 1 || token_count > MAX_TOKENS) return;
+    const int tail_count = skip_tail_token_count<WIDTH, HEIGHT>(byte_count, coefficient_coding);
+    if (token_count < 1 || token_count > MAX_TOKENS || tail_count > MAX_TAIL_TOKENS) return;
 
     double base_error = 0.0;
 #pragma unroll 1
@@ -1021,6 +1040,11 @@ __device__ __noinline__ void encode_skip_component_record(
     int best_scale_index = 0;
     int best_dc = 0;
     int16_t best_path[MAX_TOKENS];
+    int16_t best_tail_path[MAX_TAIL_TOKENS];
+    int16_t best_tail_stored[MAX_TAIL_TOKENS];
+    int16_t candidate_path[MAX_TOKENS];
+    int16_t candidate_tail_path[MAX_TAIL_TOKENS];
+    int16_t candidate_tail_stored[MAX_TAIL_TOKENS];
     double previous[MAX_POSITIONS];
     double current[MAX_POSITIONS];
     int16_t back[MAX_TOKENS][MAX_POSITIONS];
@@ -1106,7 +1130,96 @@ __device__ __noinline__ void encode_skip_component_record(
                     end_index = index;
                 }
             }
-            const double error = rn_add(rn_add(base_error, dc_delta), -total_benefit);
+            candidate_path[token_count - 1] = static_cast<int16_t>(end_index);
+#pragma unroll 1
+            for (int token_index = token_count - 1; token_index > 0; --token_index) {
+                candidate_path[token_index - 1] = back[token_index][candidate_path[token_index]];
+            }
+
+            double tail_benefit = 0.0;
+            for (int token_index = 0; token_index < tail_count; ++token_index) {
+                candidate_tail_path[token_index] = -1;
+                candidate_tail_stored[token_index] = 0;
+            }
+            if (tail_count > 0) {
+                const int tail_scale_index = scale_index >= 3 ? 1 : 0;
+                const int scan_length = WIDTH * HEIGHT - 1;
+                for (int index = 0; index < scan_length; ++index) {
+                    previous[index] = -DBL_MAX;
+                    back[0][index] = -1;
+                }
+                for (int distance = 1; distance <= 4; ++distance) {
+                    const int index = end_index + distance;
+                    if (index >= scan_length) break;
+                    previous[index] = skip_coefficient_benefit<WIDTH, HEIGHT, CHROMA>(
+                        coefficients,
+                        skip_scan_position(WIDTH, HEIGHT, profile, index, zigzag_order),
+                        quality,
+                        tail_scale_index,
+                        4,
+                        &ignored_stored
+                    );
+                    back[0][index] = static_cast<int16_t>(end_index);
+                }
+                for (int tail_index = 1; tail_index < tail_count; ++tail_index) {
+                    for (int index = 0; index < scan_length; ++index) {
+                        current[index] = -DBL_MAX;
+                        back[tail_index][index] = -1;
+                    }
+                    for (int index = 0; index < scan_length; ++index) {
+                        double previous_benefit = -DBL_MAX;
+                        int previous_index = -1;
+                        for (int distance = 1; distance <= 4; ++distance) {
+                            const int source_index = index - distance;
+                            if (source_index >= 0 && previous[source_index] > previous_benefit) {
+                                previous_benefit = previous[source_index];
+                                previous_index = source_index;
+                            }
+                        }
+                        if (previous_index < 0) continue;
+                        const double benefit = skip_coefficient_benefit<WIDTH, HEIGHT, CHROMA>(
+                            coefficients,
+                            skip_scan_position(WIDTH, HEIGHT, profile, index, zigzag_order),
+                            quality,
+                            tail_scale_index,
+                            4,
+                            &ignored_stored
+                        );
+                        current[index] = rn_add(previous_benefit, benefit);
+                        back[tail_index][index] = static_cast<int16_t>(previous_index);
+                    }
+                    for (int index = 0; index < scan_length; ++index) previous[index] = current[index];
+                }
+                int tail_end_index = -1;
+                for (int index = 0; index < scan_length; ++index) {
+                    if (previous[index] > tail_benefit || tail_end_index < 0 && previous[index] > -DBL_MAX) {
+                        tail_benefit = previous[index];
+                        tail_end_index = index;
+                    }
+                }
+                if (tail_end_index >= 0) {
+                    candidate_tail_path[tail_count - 1] = static_cast<int16_t>(tail_end_index);
+                    for (int tail_index = tail_count - 1; tail_index > 0; --tail_index) {
+                        candidate_tail_path[tail_index - 1] =
+                            back[tail_index][candidate_tail_path[tail_index]];
+                    }
+                    for (int tail_index = 0; tail_index < tail_count; ++tail_index) {
+                        int stored = 0;
+                        skip_coefficient_benefit<WIDTH, HEIGHT, CHROMA>(
+                            coefficients,
+                            skip_scan_position(
+                                WIDTH, HEIGHT, profile, candidate_tail_path[tail_index], zigzag_order
+                            ),
+                            quality,
+                            tail_scale_index,
+                            4,
+                            &stored
+                        );
+                        candidate_tail_stored[tail_index] = static_cast<int16_t>(stored);
+                    }
+                }
+            }
+            const double error = rn_add(rn_add(rn_add(base_error, dc_delta), -total_benefit), -tail_benefit);
             const bool better = error < best_error ||
                 (error == best_error && best_profile >= 0 &&
                     (scale_index < best_scale_index ||
@@ -1116,10 +1229,13 @@ __device__ __noinline__ void encode_skip_component_record(
             best_profile = profile;
             best_scale_index = scale_index;
             best_dc = dc;
-            best_path[token_count - 1] = static_cast<int16_t>(end_index);
 #pragma unroll 1
-            for (int token_index = token_count - 1; token_index > 0; --token_index) {
-                best_path[token_index - 1] = back[token_index][best_path[token_index]];
+            for (int token_index = 0; token_index < token_count; ++token_index) {
+                best_path[token_index] = candidate_path[token_index];
+            }
+            for (int token_index = 0; token_index < tail_count; ++token_index) {
+                best_tail_path[token_index] = candidate_tail_path[token_index];
+                best_tail_stored[token_index] = candidate_tail_stored[token_index];
             }
         }
     }
@@ -1146,9 +1262,19 @@ __device__ __noinline__ void encode_skip_component_record(
             coefficients, position, quality, value_scale_index, value_bits, &stored
         );
         const int skip = token_index + 1 < token_count
-            ? best_path[token_index + 1] - best_path[token_index] - 1 : 0;
+            ? best_path[token_index + 1] - best_path[token_index] - 1
+            : tail_count > 0 && best_tail_path[0] >= 0
+                ? best_tail_path[0] - best_path[token_index] - 1 : 0;
         write_signed_bits(record, &bit_offset, stored, value_bits);
         write_bits(record, &bit_offset, static_cast<uint32_t>(skip), 2);
+    }
+    for (int token_index = 0; token_index < tail_count; ++token_index) {
+        write_signed_bits(record, &bit_offset, best_tail_stored[token_index], 4);
+        if (token_index + 1 < tail_count) {
+            const int skip = best_tail_path[token_index] >= 0 && best_tail_path[token_index + 1] >= 0
+                ? best_tail_path[token_index + 1] - best_tail_path[token_index] - 1 : 0;
+            write_bits(record, &bit_offset, static_cast<uint32_t>(skip), 2);
+        }
     }
 }
 
@@ -1789,6 +1915,7 @@ __device__ __noinline__ bool decode_grouped_component_record(
         const int coarse_count = skip_coarse_count<WIDTH, HEIGHT>(
             byte_count, coefficient_coding, token_count
         );
+        const int tail_count = skip_tail_token_count<WIDTH, HEIGHT>(byte_count, coefficient_coding);
         int scan_index = 0;
         for (int token_index = 0; token_index < token_count; ++token_index) {
             if (scan_index >= WIDTH * HEIGHT - 1) return false;
@@ -1807,6 +1934,27 @@ __device__ __noinline__ bool decode_grouped_component_record(
                 quantization_step(u, v, WIDTH, HEIGHT, quality, CHROMA) * (1 << scale_index);
             coefficients[position] = add_coefficients ? coefficients[position] + restored : restored;
             scan_index += skip + 1;
+        }
+        const int tail_scale_index = dc_scale_index >= 3 ? 1 : 0;
+        for (int token_index = 0; token_index < tail_count; ++token_index) {
+            const int stored = read_signed_bits(record, &bit_offset, 4);
+            if (scan_index < WIDTH * HEIGHT - 1) {
+                const int position = skip_scan_position(
+                    WIDTH, HEIGHT, profile, scan_index, zigzag_order
+                );
+                const int u = position % WIDTH;
+                const int v = position / WIDTH;
+                const double restored = static_cast<double>(stored) *
+                    quantization_step(u, v, WIDTH, HEIGHT, quality, CHROMA) *
+                    (1 << tail_scale_index);
+                coefficients[position] = add_coefficients ? coefficients[position] + restored : restored;
+            } else if (stored != 0) {
+                return false;
+            }
+            if (token_index + 1 < tail_count) {
+                const int skip = static_cast<int>(read_bits(record, &bit_offset, 2));
+                scan_index += skip + 1;
+            }
         }
         *library_index = 0;
         return true;
