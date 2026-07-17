@@ -105,6 +105,11 @@
       structureDescription: byId("structure-description"),
       structureSummary: byId("structure-summary"),
       structureFlow: byId("structure-flow"),
+      bpalPaletteSections: byId("bpal-palette-sections"),
+      bpalBlockLabel: byId("lab-bpal-block-label"),
+      bpalBlockPalette: byId("lab-bpal-block-palette"),
+      bpalPaletteSummary: byId("lab-bpal-palette-summary"),
+      bpalGlobalPalette: byId("lab-bpal-global-palette"),
       selectedUnit: byId("selected-unit"),
       pixelCoordinate: byId("pixel-coordinate"),
       pixelSourceColor: byId("pixel-source-color"),
@@ -220,6 +225,7 @@
     for (const panel of document.querySelectorAll("[data-format-panel]")) {
       panel.hidden = panel.dataset.formatPanel !== state.format;
     }
+    elements.bpalPaletteSections.hidden = state.format !== "bpal";
 
     const adapter = currentAdapter();
     elements.formatDescription.textContent = t(adapter.descriptionKey);
@@ -230,6 +236,7 @@
     renderFormatGuide();
     elements.structureSummary.textContent = "—";
     elements.structureFlow.replaceChildren(emptyState(t("lab.encodeToInspect")));
+    clearBpalPalettes();
     clearInspector();
     syncDctControls();
 
@@ -330,6 +337,7 @@
     elements.downloadFile.disabled = true;
     elements.downloadPng.disabled = true;
     resetMetrics(true);
+    clearBpalPalettes();
     clearInspector();
     renderFormatGuide();
     showProgress(adapter.label);
@@ -721,6 +729,7 @@
     comparison.clearResult();
     elements.metricDimensions.textContent = "—";
     resetMetrics(true);
+    clearBpalPalettes();
     clearInspector();
     renderFormatGuide();
     elements.structureSummary.textContent = "—";
@@ -1171,6 +1180,7 @@
     elements.pixelSwatch.style.backgroundColor = `rgb(${sampled.r}, ${sampled.g}, ${sampled.b})`;
     elements.blockDetailsSummary.textContent = detail.summary;
     elements.blockDetailsBody.replaceChildren(detail.body);
+    if (state.format === "bpal") renderBpalPalettes(result.raw, px, py);
     comparison.drawOverlay();
   }
 
@@ -1185,6 +1195,118 @@
     elements.pixelSwatch.style.backgroundColor = "#111820";
     elements.blockDetailsSummary.textContent = "—";
     elements.blockDetailsBody.replaceChildren(emptyState(t("lab.selectPixel")));
+  }
+
+  function clearBpalPalettes() {
+    elements.bpalBlockLabel.textContent = "—";
+    elements.bpalPaletteSummary.textContent = "—";
+    elements.bpalBlockPalette.replaceChildren();
+    elements.bpalGlobalPalette.replaceChildren();
+  }
+
+  function renderBpalPalettes(image, selectedX, selectedY) {
+    const blockSize = image.blockSize || image.codingUnitSize;
+    const blockX = Math.floor(selectedX / blockSize);
+    const blockY = Math.floor(selectedY / blockSize);
+    const blockIndex = blockY * image.blocksX + blockX;
+    const paletteIndex = image.blockPaletteSelectors[blockIndex];
+    const paletteBase = paletteIndex * image.globalColorCount;
+    const paletteOffset = blockIndex * image.localColorCount;
+    const entries = [];
+
+    for (let localIndex = 0; localIndex < image.localColorCount; localIndex += 1) {
+      const globalIndex = image.blockPaletteIndices[paletteOffset + localIndex];
+      const color = image.palette[paletteBase + globalIndex];
+      const item = document.createElement("div");
+      const sample = document.createElement("span");
+      const data = document.createElement("span");
+      const hex = document.createElement("strong");
+      const mapping = document.createElement("span");
+
+      item.className = "block-swatch";
+      sample.className = "swatch-color";
+      sample.style.backgroundColor = colorCss(color);
+      sample.textContent = String(localIndex);
+      data.className = "swatch-data";
+      hex.textContent = color.hex || colorHex(color);
+      mapping.textContent = t("block.mapping", {
+        local: localIndex,
+        palette: paletteIndex + 1,
+        global: globalIndex,
+      });
+      data.append(hex, mapping);
+      item.append(sample, data);
+      entries.push(item);
+    }
+
+    elements.bpalBlockLabel.textContent = t("block.blockLabel", {
+      x: blockX,
+      y: blockY,
+      x1: blockX * blockSize,
+      x2: Math.min(image.width, (blockX + 1) * blockSize) - 1,
+      y1: blockY * blockSize,
+      y2: Math.min(image.height, (blockY + 1) * blockSize) - 1,
+      palette: paletteIndex + 1,
+    });
+    elements.bpalBlockPalette.replaceChildren(...entries);
+    elements.bpalPaletteSummary.textContent = t("block.paletteSummary", {
+      palettes: image.paletteCount,
+      active: formatInteger(image.activeGlobalColorCount),
+      used: formatInteger(image.resultColorCount),
+      format: Number(image.paletteColorBits) === 16 ? "RGB565" : "RGB888",
+    });
+    if (elements.bpalGlobalPalette.childElementCount === 0) {
+      renderBpalGlobalPalettes(image);
+    }
+  }
+
+  function renderBpalGlobalPalettes(image) {
+    const groups = [];
+
+    for (let paletteIndex = 0; paletteIndex < image.paletteCount; paletteIndex += 1) {
+      const group = document.createElement("section");
+      const title = document.createElement("h3");
+      const colors = document.createElement("div");
+      const paletteBase = paletteIndex * image.globalColorCount;
+
+      group.className = "shared-palette-group";
+      title.textContent = t("block.paletteLabel", { palette: paletteIndex + 1 });
+      colors.className = "global-palette-colors";
+      colors.replaceChildren(...image.palette
+        .slice(paletteBase, paletteBase + image.globalColorCount)
+        .map((color, paletteColorIndex) => createBpalGlobalSwatch(
+          color,
+          paletteIndex,
+          paletteColorIndex,
+          image.globalIndexBits
+        )));
+      group.append(title, colors);
+      groups.push(group);
+    }
+
+    elements.bpalGlobalPalette.replaceChildren(...groups);
+  }
+
+  function createBpalGlobalSwatch(color, paletteIndex, paletteColorIndex, indexBits) {
+    const item = document.createElement("div");
+    const sample = document.createElement("span");
+    const label = document.createElement("small");
+    const hex = color.hex || colorHex(color);
+    const pixelCount = Number(color.count) || 0;
+
+    item.className = `global-swatch${pixelCount === 0 ? " is-unused" : ""}`;
+    item.title = t("block.indexTitle", {
+      palette: paletteIndex + 1,
+      index: paletteColorIndex,
+      hex,
+      pixels: t("units.pixels", { value: formatInteger(pixelCount) }),
+    });
+    sample.className = "swatch-color";
+    sample.style.backgroundColor = colorCss(color);
+    sample.textContent = formatPaletteIndex(paletteColorIndex, indexBits);
+    label.textContent = hex;
+    item.append(sample, label);
+    return item;
   }
 
   function renderBpalBlock(image, blockIndex, selectedX, selectedY) {
@@ -1420,6 +1542,7 @@
     if (state.result) {
       renderMetrics(state.result);
       renderStructure(state.result);
+      if (state.format === "bpal") renderBpalGlobalPalettes(state.result.raw);
       renderInspector(comparison.selectedX, comparison.selectedY);
     }
   }
@@ -1548,6 +1671,12 @@
     if (!Number.isFinite(numeric)) return String(value);
     if (numeric === 0) return "0";
     return Number(numeric.toPrecision(4)).toString();
+  }
+
+  function formatPaletteIndex(index, bits) {
+    return bits >= 8
+      ? index.toString(16).padStart(Math.ceil(bits / 4), "0").toUpperCase()
+      : String(index);
   }
 
   function optionText(select) {

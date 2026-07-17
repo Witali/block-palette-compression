@@ -12,7 +12,7 @@
     <link rel="stylesheet" href="./block-palette.css?v=type-scale-1">
     <link rel="stylesheet" href="./bpdh.css?v=type-scale-1">
     <link rel="stylesheet" href="./dct-compression.css?v=type-scale-1">
-    <link rel="stylesheet" href="./codec-lab.css?v=format-guide-1">
+    <link rel="stylesheet" href="./codec-lab.css?v=bpal-palettes-1">
     <link rel="stylesheet" href="./i18n.css?v=type-scale-1">
   </head>
   <body>
@@ -172,6 +172,30 @@
         <div id="structure-flow" class="lab-structure-flow"></div>
       </section>
 
+      <div id="bpal-palette-sections" class="lab-bpal-palettes">
+        <section class="palette-section block-section" aria-labelledby="lab-bpal-block-title">
+          <div class="section-heading">
+            <div>
+              <h2 id="lab-bpal-block-title" data-i18n="block.selectedPalette">Selected block palette</h2>
+              <p data-i18n="block.selectedDescription">Select a result block. It chooses one shared palette, then stores every color as an index into that palette.</p>
+            </div>
+            <output id="lab-bpal-block-label">—</output>
+          </div>
+          <div id="lab-bpal-block-palette" class="block-palette" aria-live="polite"></div>
+        </section>
+
+        <section class="palette-section" aria-labelledby="lab-bpal-shared-title">
+          <div class="section-heading">
+            <div>
+              <h2 id="lab-bpal-shared-title" data-i18n="block.sharedPalette">Shared palettes</h2>
+              <p data-i18n="block.sharedDescription">These exact palettes are restored from BPAL; each block stores a palette selector and the color indices shown on its swatches.</p>
+            </div>
+            <output id="lab-bpal-palette-summary">—</output>
+          </div>
+          <div id="lab-bpal-global-palette" class="global-palette" aria-live="polite"></div>
+        </section>
+      </div>
+
       <section class="palette-section inspector-section lab-inspector" aria-labelledby="inspector-title">
         <div class="section-heading">
           <div>
@@ -211,7 +235,7 @@
     <script src="./src/i18n/ru.js?v=format-guide-2"></script>
     <script src="./src/i18n/i18n.js"></script>
     <script src="./src/pages/codec-comparison-view.js?v=codec-lab-3"></script>
-    <script src="./src/pages/codec-lab-page.js?v=format-guide-2"></script>
+    <script src="./src/pages/codec-lab-page.js?v=bpal-palettes-1"></script>
     <script src="./src/pwa/register-service-worker.js?v=1"></script>
   </body>
 </html>

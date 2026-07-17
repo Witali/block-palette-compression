@@ -76,6 +76,22 @@ test("shows a format-specific expandable binary layout reference", () => {
   assert.match(styles, /\.lab-file-segment\.is-dct/);
 });
 
+test("shows selected and shared BPAL palettes only in BPAL mode", () => {
+  assert.match(page, /id="bpal-palette-sections" class="lab-bpal-palettes"/);
+  assert.match(page, /id="lab-bpal-block-palette" class="block-palette"/);
+  assert.match(page, /id="lab-bpal-global-palette" class="global-palette"/);
+  assert.match(page, /data-i18n="block\.selectedPalette"/);
+  assert.match(page, /data-i18n="block\.sharedPalette"/);
+  assert.match(script, /elements\.bpalPaletteSections\.hidden = state\.format !== "bpal"/);
+  assert.match(script, /if \(state\.format === "bpal"\) renderBpalPalettes\(result\.raw, px, py\)/);
+  assert.match(script, /function renderBpalPalettes\(image, selectedX, selectedY\)/);
+  assert.match(script, /function renderBpalGlobalPalettes\(image\)/);
+  assert.match(script, /className = "block-swatch"/);
+  assert.match(script, /className = "shared-palette-group"/);
+  assert.match(script, /className = `global-swatch\$\{pixelCount === 0 \? " is-unused" : ""\}`/);
+  assert.match(styles, /\.lab-bpal-palettes\[hidden\] \{[\s\S]*?display: none;/);
+});
+
 test("loads and converts only after the encode button is pressed", () => {
   const startup = script.slice(0, script.indexOf("function collectElements"));
   const bindings = script.slice(script.indexOf("function bindEvents"), script.indexOf("function selectInitialFormat"));

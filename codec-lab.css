@@ -198,6 +198,31 @@
   margin-top: 18px;
 }
 
+.lab-bpal-palettes {
+  display: grid;
+}
+
+.lab-bpal-palettes[hidden] {
+  display: none;
+}
+
+.lab-bpal-palettes .palette-section:first-child {
+  margin-top: 0;
+}
+
+.lab-bpal-palettes output {
+  color: #8794a3;
+  font-size: var(--font-size-md);
+  white-space: nowrap;
+}
+
+.lab-bpal-palettes .block-palette:empty::before,
+.lab-bpal-palettes .global-palette:empty::before {
+  content: "—";
+  display: block;
+  color: #7f8d9b;
+}
+
 .lab-format-guide {
   margin-top: 18px;
   padding: 0;
