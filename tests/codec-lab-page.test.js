@@ -103,6 +103,8 @@ test("shows a format-specific expandable binary layout reference", () => {
   assert.match(styles, /\.lab-dct-frequency-grid/);
   assert.match(styles, /\.lab-dct-zigzag polyline/);
   assert.match(styles, /\.lab-dct-record-map/);
+  assert.match(script, /appendDctByteBoundaries\(segment, field, description\.totalBits\)/);
+  assert.match(styles, /\.lab-dct-byte-boundary/);
   assert.match(styles, /\.lab-dct-record-table/);
   assert.match(styles, /@media \(max-width: 1000px\) \{[\s\S]*?\.lab-codec-layout-diagrams \{[\s\S]*?grid-template-columns: minmax\(0, 1fr\);/);
 });

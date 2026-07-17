@@ -1570,6 +1570,7 @@
       label.textContent = dctRecordFieldShort(field);
       bits.textContent = `${field.bits} b`;
       segment.append(label, bits);
+      appendDctByteBoundaries(segment, field, description.totalBits);
       strip.append(segment);
     }
 
@@ -1606,6 +1607,21 @@
     note.textContent = dctRecordVariantNote(variant);
     section.append(heading, stats, strip, table, note);
     return section;
+  }
+
+  function appendDctByteBoundaries(segment, field, totalBits) {
+    const fieldEnd = field.startBit + field.bits;
+    const firstBoundary = Math.max(8, Math.ceil(field.startBit / 8) * 8);
+
+    for (let boundary = firstBoundary;
+      boundary < fieldEnd && boundary < totalBits;
+      boundary += 8) {
+      const marker = document.createElement("i");
+      marker.className = "lab-dct-byte-boundary";
+      marker.style.left = `${(boundary - field.startBit) / field.bits * 100}%`;
+      marker.setAttribute("aria-hidden", "true");
+      segment.append(marker);
+    }
   }
 
   function renderBpdhDctRecordMap(componentName) {

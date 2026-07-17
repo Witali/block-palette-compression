@@ -678,6 +678,7 @@
 }
 
 .lab-dct-record-strip > span {
+  position: relative;
   display: grid;
   flex-basis: 0;
   min-width: 62px;
@@ -690,6 +691,23 @@
   background: #224f7c;
   color: #f3f8fd;
   text-align: center;
+}
+
+.lab-dct-record-strip strong,
+.lab-dct-record-strip small {
+  position: relative;
+  z-index: 2;
+}
+
+.lab-dct-byte-boundary {
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: rgba(190, 198, 207, 0.46);
+  box-shadow: 1px 0 rgba(20, 27, 34, 0.2);
+  pointer-events: none;
 }
 
 .lab-dct-record-strip > span:last-child { border-right: 0; }
