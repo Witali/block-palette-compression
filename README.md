@@ -154,6 +154,7 @@ Detailed documentation:
 - [BPDI v3 pattern-dictionary experiment](./benchmark/results/bpdi-pattern-dictionary-clic.md);
 - [hybrid BPAL/DCT research and benchmark plan](./docs/HYBRID_BPAL_DCT_PLAN.md);
 - [standalone BPAL v5 CPU/SIMD and CUDA tools](./native/bpal5_simd/README.md);
+- [canonical JavaScript DCTBS2 command-line encoder](./docs/DCTBS2_CLI.md);
 - [standalone CUDA DCTBS2 encoder, decoder, and pixel sampler](./native/dct_cuda/README.md);
 - [reproducible BPAL/BC/ASTC texture codec benchmark](./benchmark/README.md).
 

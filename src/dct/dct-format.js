@@ -702,6 +702,24 @@
     return source;
   }
 
+  function decodeJpegDctPixels(jpeg) {
+    const source = getPreparedJpegDctSource(jpeg);
+    const pixels = new Uint8ClampedArray(source.width * source.height * 4);
+
+    for (let y = 0; y < source.height; y += 1) {
+      for (let x = 0; x < source.width; x += 1) {
+        const luma = sampleJpegComponent(source, 0, x, y);
+        const cb = source.components.length === 3
+          ? sampleJpegComponent(source, 1, x, y) : 128;
+        const cr = source.components.length === 3
+          ? sampleJpegComponent(source, 2, x, y) : 128;
+        writeRgba(pixels, (y * source.width + x) * 4, yCbCrToRgba(luma, cb, cr));
+      }
+    }
+
+    return { width: source.width, height: source.height, pixels };
+  }
+
   function getJpegDctRecordMap(jpeg) {
     let records = jpegDctRecordCache.get(jpeg);
     if (!records) {
@@ -4342,6 +4360,7 @@
     getDctFileLayout,
     encodeDctFile,
     importJpegDctFile,
+    decodeJpegDctPixels,
     decodeDctFile,
     decodeDctComponentSamples,
     sampleDctFilePixel,

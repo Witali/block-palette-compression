@@ -1,5 +1,11 @@
 # CUDA DCTBS2 command-line tool
 
+The CUDA executable is the accelerated native backend. The canonical
+command-line interface with the complete set of web encoder algorithms and
+settings is [`tools/dctbs2-cli.js`](../../tools/dctbs2-cli.js); it imports the
+same [`src/dct/dct-format.js`](../../src/dct/dct-format.js) module as the web
+worker. Use `npm run dct -- --help` for that byte-identical JavaScript path.
+
 `dctcuda` is a CUDA encoder and decoder for the same independently addressable
 DCTBS2 v2 files used by `src/dct/dct-format.js`. The file remains a 64-byte
 header followed by fixed 16x16 MCU records. Low-rate files use one 16x16 Y
