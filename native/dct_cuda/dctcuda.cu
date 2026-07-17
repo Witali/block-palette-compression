@@ -2983,7 +2983,7 @@ RatedEncoding encode_best_coding(
 ) {
     const bool compare_masked = requested_coding < 0 && preset.nominal_bpp >= 6.0;
     const int coding_count = compare_masked
-        ? (preset.mode_code == 9000u ? 5 : 3) : 1;
+        ? (preset.mode_code == 9000u ? 3 : 2) : 1;
     RatedEncoding best;
 
     for (const Preset &allocation : component_budget_presets(preset, component_budget)) {
@@ -2991,9 +2991,9 @@ RatedEncoding encode_best_coding(
             ? requested_coding : default_coefficient_coding(allocation);
         for (int coding_index = 0; coding_index < coding_count; ++coding_index) {
             const int coding = coding_index == 0 ? first_coding
-                : coding_index <= 2 ? COEFFICIENT_CODING_MASKED_TAIL_8X8
+                : coding_index == 1 ? COEFFICIENT_CODING_MASKED_TAIL_8X8
                 : COEFFICIENT_CODING_MASKED_TAIL_IMPLICIT2_48;
-            const bool zigzag_order = coding_index == 0 || (coding_index & 1) != 0;
+            const bool zigzag_order = true;
             GpuResult encoded = encode_gpu(
                 rgb, width, height, allocation, quality, auto_quality, candidate_count,
                 coding, zigzag_order

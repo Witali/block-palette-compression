@@ -92,6 +92,7 @@ test("exposes quality search and every prototype-library control from the shared
     ]);
     const info = inspectDctFile(fs.readFileSync(library));
     assert.equal(info.libraryEnabled, true);
+    assert.equal(info.zigzagOrder, true);
     assert.equal(info.library.referenceCoding, "sidecar");
     assert.equal(info.library.frequencySplit, 0.25);
   });

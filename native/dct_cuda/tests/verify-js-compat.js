@@ -217,6 +217,7 @@ function verifyPreset(preset) {
   assert.equal(cudaInfo.quality, 72);
   assert.equal(cudaInfo.splitLuma8x8, Number(preset) >= 3);
   assert.equal(cudaInfo.chroma420, true);
+  assert.equal(cudaInfo.zigzagOrder, true);
   const expectedCoding = {
     "0.75": "skip-rle-equal-2",
     "1": "dual-scale-skip-equal-2",
@@ -245,8 +246,10 @@ function verifyPreset(preset) {
   assertRgbMatchesRgba(readPpm(cudaPpm), javascriptDecodedCuda.pixels, `CUDA encode ${preset}`);
 
   const javascriptEncoded = encodeDctFile(rgba, width, height, { preset, quality: 72 });
-  assert.equal(inspectDctFile(javascriptEncoded).splitLuma8x8, Number(preset) >= 3);
-  assert.equal(inspectDctFile(javascriptEncoded).chroma420, true);
+  const javascriptInfo = inspectDctFile(javascriptEncoded);
+  assert.equal(javascriptInfo.splitLuma8x8, Number(preset) >= 3);
+  assert.equal(javascriptInfo.chroma420, true);
+  assert.equal(javascriptInfo.zigzagOrder, true);
   fs.writeFileSync(jsFile, javascriptEncoded);
   const javascriptDecodedJs = decodeDctFile(javascriptEncoded);
   run(["decode", jsFile, jsPpm]);
@@ -285,6 +288,10 @@ function verifyMaskedTailCoding() {
     const automatic = fs.readFileSync(automaticFile);
     const implicit = preset === "9" ? fs.readFileSync(implicitFile) : null;
     assert.equal(inspectDctFile(masked).coefficientCodingKey, "masked-tail-8x8");
+    assert.equal(inspectDctFile(grouped).zigzagOrder, true);
+    assert.equal(inspectDctFile(masked).zigzagOrder, true);
+    assert.equal(inspectDctFile(automatic).zigzagOrder, true);
+    if (implicit) assert.equal(inspectDctFile(implicit).zigzagOrder, true);
     const groupedError = rgbError(rgba, decodeDctFile(grouped).pixels);
     const maskedError = rgbError(rgba, decodeDctFile(masked).pixels);
     const implicitError = implicit

@@ -9,6 +9,7 @@ const {
   PRESETS,
   encodeDctFile,
   importJpegDctFile,
+  decodeJpegDctPixels,
   decodeDctFile,
   sampleDctFilePixel,
   inspectDctFile,
@@ -582,6 +583,36 @@ test("uses adaptive skip coding by default while preserving grouped and legacy f
   assert.equal(inspectDctFile(library).coefficientCodingKey, "grouped-5-front");
 });
 
+test("defaults every DCT preset and encoder path to zigzag coefficient order", () => {
+  const source = makePixels(16, 16);
+  const jpegBytes = fs.readFileSync(path.join(root, "assets/stone-texture-small.jpg"));
+  const jpeg = GpuJpegDecoder.parse(jpegBytes);
+  const reference = decodeJpegDctPixels(jpeg).pixels;
+
+  for (const preset of Object.keys(PRESETS)) {
+    const encoded = encodeDctFile(source, 16, 16, {
+      preset,
+      quality: 92,
+    });
+    const imported = importJpegDctFile(jpeg, {
+      preset,
+      quality: 92,
+      referencePixels: reference,
+    });
+
+    assert.equal(inspectDctFile(encoded).zigzagOrder, true, `RGBA preset ${preset}`);
+    assert.equal(inspectDctFile(imported).zigzagOrder, true, `JPEG preset ${preset}`);
+  }
+
+  const library = encodeDctFile(source, 16, 16, {
+    preset: "3",
+    quality: 92,
+    dctLibrary: true,
+    librarySize: 3,
+  });
+  assert.equal(inspectDctFile(library).zigzagOrder, true, "prototype-library mode");
+});
+
 test("uses spare skip-record bits for beneficial fine AC coefficients", () => {
   const width = 16;
   const height = 16;
@@ -651,7 +682,7 @@ test("selects the best fixed-size Y/C allocation without regressing RGB quality"
   }
 });
 
-test("selects the lower-error high-rate coding without regressing RGB quality", () => {
+test("selects the lowest-error zigzag coding for every high-rate preset", () => {
   const source = makePixels(16, 16);
 
   for (const preset of ["6", "7.5", "9"]) {
@@ -665,44 +696,26 @@ test("selects the lower-error high-rate coding without regressing RGB quality", 
       quality: 97,
       coefficientCoding: "masked-tail-8x8",
     });
-    const legacyMasked = encodeDctFile(source, 16, 16, {
-      preset,
-      quality: 97,
-      coefficientCoding: "masked-tail-8x8",
-      zigzagOrder: false,
-    });
     const implicit = preset === "9" ? encodeDctFile(source, 16, 16, {
       preset,
       quality: 97,
       coefficientCoding: "masked-tail-implicit2-48",
     }) : null;
-    const legacyImplicit = preset === "9" ? encodeDctFile(source, 16, 16, {
-      preset,
-      quality: 97,
-      coefficientCoding: "masked-tail-implicit2-48",
-      zigzagOrder: false,
-    }) : null;
     const automatic = encodeDctFile(source, 16, 16, { preset, quality: 97 });
     const groupedError = calculateRgbError(source, decodeDctFile(grouped).pixels);
     const maskedError = calculateRgbError(source, decodeDctFile(masked).pixels);
-    const legacyMaskedError = calculateRgbError(
-      source, decodeDctFile(legacyMasked).pixels
-    );
     const implicitError = implicit
       ? calculateRgbError(source, decodeDctFile(implicit).pixels) : Infinity;
-    const legacyImplicitError = legacyImplicit
-      ? calculateRgbError(source, decodeDctFile(legacyImplicit).pixels) : Infinity;
     const automaticError = calculateRgbError(source, decodeDctFile(automatic).pixels);
     const expected = [
       ["grouped-5-front", groupedError],
       ["masked-tail-8x8", maskedError],
-      ["masked-tail-8x8", legacyMaskedError],
       ["masked-tail-implicit2-48", implicitError],
-      ["masked-tail-implicit2-48", legacyImplicitError],
     ].reduce((best, candidate) => candidate[1] < best[1] ? candidate : best);
 
     assert.equal(automaticError, expected[1]);
     assert.equal(inspectDctFile(automatic).coefficientCodingKey, expected[0]);
+    assert.equal(inspectDctFile(automatic).zigzagOrder, true);
   }
 
   const tied = encodeDctFile(makeConstantPixels(16, 16, 128), 16, 16, {
@@ -747,7 +760,7 @@ test("stores deterministic clustered DCT prototypes without losing coordinate ac
 
   assert.deepEqual(first, second);
   assert.equal(info.libraryEnabled, true);
-  assert.equal(info.zigzagOrder, false);
+  assert.equal(info.zigzagOrder, true);
   assert.equal(info.library.referenceCoding, "header");
   assert.equal(info.library.y.count, 3);
   assert.equal(info.library.cb.count, 3);
@@ -851,6 +864,7 @@ test("finds an automatic quality and records the measured search", () => {
   assert.ok(result.quality >= 1 && result.quality <= 100);
   assert.ok(result.candidateCount >= 19);
   assert.equal(info.autoQuality, true);
+  assert.equal(info.zigzagOrder, true);
   assert.equal(info.quality, result.quality);
   assert.equal(info.searchCandidateCount, result.candidateCount);
   assert.deepEqual(result.decoded.pixels, decodeDctFile(result.encoded).pixels);

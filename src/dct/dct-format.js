@@ -201,7 +201,7 @@
     const coding = options.dctLibrary && requested.maskedTail
       ? getCoefficientCoding("grouped-5-front", presetKey)
       : requested;
-    return withCoefficientOrder(coding, !options.dctLibrary && options.zigzagOrder !== false);
+    return withCoefficientOrder(coding, options.zigzagOrder !== false);
   }
 
   function withCoefficientOrder(coding, zigzagOrder) {
@@ -930,16 +930,14 @@
   }
 
   function highRateCandidateConfigurations(presetKey) {
+    // Keep every automatically produced high-rate file in frequency order.
+    // Row-major records remain readable and may still be requested explicitly.
     const candidates = [
       { coefficientCoding: "grouped-5-front", zigzagOrder: true },
       { coefficientCoding: "masked-tail-8x8", zigzagOrder: true },
-      { coefficientCoding: "masked-tail-8x8", zigzagOrder: false },
     ];
     if (String(presetKey) === "9") {
-      candidates.push(
-        { coefficientCoding: "masked-tail-implicit2-48", zigzagOrder: true },
-        { coefficientCoding: "masked-tail-implicit2-48", zigzagOrder: false }
-      );
+      candidates.push({ coefficientCoding: "masked-tail-implicit2-48", zigzagOrder: true });
     }
     return candidates;
   }
