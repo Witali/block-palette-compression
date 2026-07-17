@@ -16,9 +16,87 @@ const {
   findBestDctQuality,
   calculateSquaredError,
   getCachedDctEncodingResult,
+  describeDctComponentRecord,
 } = require("../src/dct/dct-format.js");
 
 const root = path.resolve(__dirname, "..");
+
+test("describes every bit in grouped, skip, and masked DCT component records", () => {
+  const dualScale = describeDctComponentRecord({
+    byteCount: 24,
+    width: 8,
+    height: 8,
+    presetKey: "4.5",
+    coefficientCodingKey: "dual-scale-skip-front",
+    allowSkip: true,
+  });
+  const grouped = dualScale.variants.find((variant) => variant.mode === "grouped");
+  const skip = dualScale.variants.find((variant) => variant.mode === "dual-scale-skip");
+
+  assert.equal(grouped.dcBits, 10);
+  assert.deepEqual(grouped.acBitDepths, [{ count: 33, bits: 5 }]);
+  assert.deepEqual(skip.acBitDepths, [{ count: 11, bits: 6 }, { count: 14, bits: 4 }]);
+  assert.equal(skip.fields.find((field) => field.key === "padding").bits, 4);
+
+  const chroma = describeDctComponentRecord({
+    byteCount: 12,
+    width: 8,
+    height: 8,
+    presetKey: "1.5",
+    coefficientCodingKey: "dual-scale-skip-front",
+    allowSkip: false,
+  });
+  assert.deepEqual(chroma.variants[0].acBitDepths, [{ count: 13, bits: 5 }]);
+
+  const masked = describeDctComponentRecord({
+    byteCount: 32,
+    width: 8,
+    height: 8,
+    presetKey: "6",
+    coefficientCodingKey: "masked-tail-8x8",
+  });
+  assert.equal(masked.bitOrder, "lsb-first");
+  assert.equal(masked.variants[0].dcBits, 8);
+  assert.deepEqual(masked.variants[0].acBitDepths, [{ count: 23, bits: 8 }]);
+
+  const implicit = describeDctComponentRecord({
+    byteCount: 48,
+    width: 8,
+    height: 8,
+    presetKey: "9",
+    coefficientCodingKey: "masked-tail-implicit2-48",
+  });
+  assert.equal(implicit.variants[0].implicitAcCount, 2);
+  assert.equal(implicit.variants[0].selectableAcCount, 60);
+  assert.deepEqual(implicit.variants[0].acBitDepths, [{ count: 39, bits: 8 }]);
+
+  const library = describeDctComponentRecord({
+    byteCount: 24,
+    width: 8,
+    height: 8,
+    presetKey: "4.5",
+    coefficientCodingKey: "grouped-5-front",
+    libraryReferenceCoding: "header",
+  });
+  assert.equal(library.prototypeReference.bits, 2);
+  assert.equal(library.variants[0].fields[0].key, "library-index");
+  assert.equal(library.variants[0].fields[0].bits, 2);
+
+  for (const description of [dualScale, chroma, masked, implicit, library]) {
+    for (const variant of description.variants) {
+      assert.equal(
+        variant.fields.reduce((total, field) => total + field.bits, 0),
+        description.totalBits
+      );
+      assert.deepEqual(
+        variant.fields.map((field) => field.startBit),
+        variant.fields.map((field, index, fields) => index === 0
+          ? 0
+          : fields.slice(0, index).reduce((total, entry) => total + entry.bits, 0))
+      );
+    }
+  }
+});
 
 test("stores every DCT preset as fixed independently addressed MCU records", () => {
   const width = 19;

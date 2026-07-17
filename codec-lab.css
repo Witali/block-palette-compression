@@ -414,8 +414,8 @@
 .lab-mcu-luma.is-split { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .lab-mcu-chroma { grid-template-rows: repeat(2, minmax(0, 1fr)); }
 
-.lab-mcu-luma > span,
-.lab-mcu-chroma > span {
+.lab-mcu-luma > button,
+.lab-mcu-chroma > button {
   display: grid;
   place-items: center;
   min-width: 0;
@@ -426,6 +426,14 @@
   text-align: center;
   white-space: pre-line;
 }
+
+.lab-mcu-luma > button:hover,
+.lab-mcu-chroma > button:hover,
+.lab-mcu-byte-bar > button:hover { filter: brightness(1.12); }
+
+.lab-mcu-luma > button.is-selected,
+.lab-mcu-chroma > button.is-selected,
+.lab-mcu-byte-bar > button.is-selected { box-shadow: inset 0 0 0 2px #f4d56c; }
 
 .lab-mcu-luma > .is-y { background: linear-gradient(145deg, var(--diagram-y), #19466d); }
 .lab-mcu-chroma > .is-cb { background: linear-gradient(145deg, var(--diagram-cb), #18544d); }
@@ -439,7 +447,7 @@
   border-radius: 6px;
 }
 
-.lab-mcu-byte-bar > span {
+.lab-mcu-byte-bar > button {
   display: grid;
   place-items: center;
   flex-basis: 0;
@@ -603,6 +611,117 @@
 .lab-dct-diagram-legend .is-tail { background: #2c8b7c; }
 .lab-dct-diagram-legend .is-mask-tail { background: linear-gradient(135deg, #7358a9 0 50%, #2c8b7c 50% 100%); }
 .lab-dct-diagram-legend .is-zigzag { border: 0; background: linear-gradient(to bottom, transparent 0 40%, #ffe071 40% 60%, transparent 60%); }
+
+.lab-dct-record-map {
+  grid-column: 1 / -1;
+}
+
+.lab-dct-record-variants {
+  display: grid;
+  gap: 12px;
+}
+
+.lab-dct-record-variant {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding-top: 12px;
+  border-top: 1px solid #303b48;
+}
+
+.lab-dct-record-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.lab-dct-record-heading strong { color: #edf4fb; font-size: var(--font-size-md); }
+.lab-dct-record-heading span {
+  color: #83b8ff;
+  font: 700 var(--font-size-sm)/1.3 ui-monospace, Consolas, monospace;
+}
+
+.lab-dct-record-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.lab-dct-record-stats > span {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid #2f3d4a;
+  border-radius: 6px;
+  background: #101720;
+}
+
+.lab-dct-record-stats small {
+  color: #8795a4;
+  font-size: var(--font-size-sm);
+}
+
+.lab-dct-record-stats strong {
+  overflow-wrap: anywhere;
+  color: #eff5fa;
+  font: 750 var(--font-size-sm)/1.3 ui-monospace, Consolas, monospace;
+}
+
+.lab-dct-record-strip {
+  display: flex;
+  min-width: 0;
+  overflow-x: auto;
+  border: 1px solid #3a4856;
+  border-radius: 6px;
+}
+
+.lab-dct-record-strip > span {
+  display: grid;
+  flex-basis: 0;
+  min-width: 62px;
+  min-height: 55px;
+  place-items: center;
+  align-content: center;
+  gap: 3px;
+  padding: 6px;
+  border-right: 1px solid rgba(255, 255, 255, 0.18);
+  background: #224f7c;
+  color: #f3f8fd;
+  text-align: center;
+}
+
+.lab-dct-record-strip > span:last-child { border-right: 0; }
+.lab-dct-record-strip > .is-flag { background: #626f7d; }
+.lab-dct-record-strip > .is-dc { background: #a95650; }
+.lab-dct-record-strip > .is-dct { background: #2f7251; }
+.lab-dct-record-strip > .is-map { background: #796329; }
+.lab-dct-record-strip > .is-index { background: #5d4980; }
+.lab-dct-record-strip > .is-reserved { background: #343d47; color: #a3afba; }
+
+.lab-dct-record-strip strong,
+.lab-dct-record-strip small {
+  font: 750 var(--font-size-sm)/1.15 ui-monospace, Consolas, monospace;
+}
+
+.lab-dct-record-strip small { opacity: 0.8; }
+
+.lab-dct-record-table { min-width: 820px; }
+.lab-dct-record-table td:first-child { color: #9fc6ef; }
+.lab-dct-record-table td:nth-child(2) { color: #f1dc8e; }
+.lab-dct-record-table td:nth-child(3) { color: #e5edf5; }
+.lab-dct-record-table.is-variable td:nth-child(2) { white-space: normal; }
+
+.lab-dct-sidecar-note {
+  margin: 0;
+  padding: 9px 11px;
+  border-left: 3px solid #7964a9;
+  background: rgba(93, 73, 128, 0.16);
+  color: #b9acd2;
+  font-size: var(--font-size-sm);
+  line-height: 1.45;
+}
 
 .lab-file-map {
   display: flex;
@@ -1002,6 +1121,10 @@
   .format-settings .range-label {
     grid-column: auto;
   }
+
+  .lab-dct-record-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 720px) {
@@ -1072,5 +1195,13 @@
 
   .lab-dct-frequency-frame.is-wide .lab-dct-frequency-grid > span:not(.is-major) strong {
     display: none;
+  }
+
+  .lab-dct-record-heading {
+    display: grid;
+  }
+
+  .lab-dct-record-stats {
+    grid-template-columns: minmax(0, 1fr);
   }
 }

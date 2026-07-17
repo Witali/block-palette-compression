@@ -967,6 +967,12 @@
     const preset = info || selectedPreset;
     const presetBpp = Number(presetKey);
     const splitLuma = info ? info.splitLuma8x8 : preset.bpp >= 3;
+    const requestedLibrary = elements.dctLibrary.value;
+    const libraryReferenceCoding = info?.library?.referenceCoding ||
+      (requestedLibrary === "header3" ? "header" :
+        requestedLibrary === "none" ? null : "sidecar");
+    const requestedSidecarBits = requestedLibrary === "sidecar16" ? 5 :
+      requestedLibrary.startsWith("sidecar32") ? 6 : 0;
     const variable = t("lab.formatGuideVariable");
     return {
       summary: `DCTBS2 · v2 · 64 B · ${preset.bytesPerMcu} B/MCU`,
@@ -982,6 +988,12 @@
         splitLuma,
         coefficientCodingKey: info?.coefficientCodingKey || defaultDctGuideCoding(presetKey),
         zigzagOrder: info?.zigzagOrder ?? true,
+        libraryReferenceCoding,
+        libraryReferenceBits: {
+          y: info?.library?.y?.reference?.bits ?? requestedSidecarBits,
+          cb: info?.library?.cb?.reference?.bits ?? 0,
+          cr: info?.library?.cr?.reference?.bits ?? 0,
+        },
       },
       sections: [
         guideMapEntry(t("lab.guideHeader"), "64 B", t("lab.dctGuideHeaderDetail"), 512, "header"),
@@ -1205,10 +1217,15 @@
       layout.append(diagram.mode === "bpal"
         ? renderNoDctDiagram()
         : renderDctBlockDiagram(diagram));
+      if (diagram.mode !== "bpal") layout.append(renderDctRecordBitMap(diagram));
       return layout;
     }
 
-    layout.append(renderDctMcuDiagram(diagram), renderDctBlockDiagram(diagram));
+    layout.append(
+      renderDctMcuDiagram(diagram),
+      renderDctBlockDiagram(diagram),
+      renderDctRecordBitMap(diagram)
+    );
     return layout;
   }
 
@@ -1457,6 +1474,351 @@
     return t(coding.startsWith("masked-tail") ? "lab.diagramDctMaskedNote" : "lab.diagramDctGroupedNote");
   }
 
+  function renderDctRecordBitMap(diagram) {
+    const component = ["y", "cb", "cr"].includes(state.guideComponent)
+      ? state.guideComponent : "y";
+    const shape = getGuideDctShape(diagram, component);
+    const componentName = t(`lab.diagramComponent${component === "y" ? "Y" : component === "cb" ? "Cb" : "Cr"}`);
+    const figure = createCodecDiagramPanel(
+      t("lab.dctBitMapTitle"),
+      diagram.kind === "bpdh"
+        ? `${componentName} · 8×8 · ${t("lab.formatGuideVariable")}`
+        : `${componentName} · ${shape.width}×${shape.height} · ${shape.bytes} B`
+    );
+    figure.classList.add("lab-dct-record-map");
+
+    if (diagram.kind === "bpdh") {
+      figure.append(renderBpdhDctRecordMap(componentName));
+      return figure;
+    }
+
+    const description = root.DctImageFormat.describeDctComponentRecord({
+      byteCount: shape.bytes,
+      width: shape.width,
+      height: shape.height,
+      presetKey: diagram.presetKey,
+      coefficientCodingKey: diagram.coefficientCodingKey,
+      zigzagOrder: diagram.zigzagOrder,
+      allowSkip: !diagram.libraryReferenceCoding &&
+        (component === "y" || diagram.splitLuma),
+      libraryReferenceCoding: diagram.libraryReferenceCoding,
+      libraryReferenceBits: diagram.libraryReferenceBits?.[component] || 0,
+    });
+    const intro = document.createElement("p");
+    intro.className = "lab-codec-diagram-note";
+    intro.textContent = t("lab.dctBitMapIntro", {
+      component: componentName,
+      bytes: description.byteCount,
+      bits: description.totalBits,
+    });
+    const variants = document.createElement("div");
+    variants.className = "lab-dct-record-variants";
+    for (const variant of description.variants) {
+      variants.append(renderDctRecordVariant(description, variant));
+    }
+    figure.append(intro, variants);
+
+    if (description.prototypeReference?.location === "sidecar") {
+      const sidecar = document.createElement("p");
+      sidecar.className = "lab-dct-sidecar-note";
+      sidecar.textContent = description.prototypeReference.bits > 0
+        ? t("lab.dctSidecarReference", { bits: description.prototypeReference.bits })
+        : t("lab.dctSidecarUnused");
+      figure.append(sidecar);
+    }
+    return figure;
+  }
+
+  function renderDctRecordVariant(description, variant) {
+    const section = document.createElement("section");
+    const heading = document.createElement("div");
+    const title = document.createElement("strong");
+    const order = document.createElement("span");
+    const stats = document.createElement("div");
+    const strip = document.createElement("div");
+    const table = document.createElement("table");
+    const head = document.createElement("thead");
+    const body = document.createElement("tbody");
+    const note = document.createElement("p");
+    section.className = "lab-dct-record-variant";
+    heading.className = "lab-dct-record-heading";
+    title.textContent = dctRecordVariantName(variant);
+    order.textContent = t(variant.bitOrder === "lsb-first"
+      ? "dct.layoutLsbFirst" : "dct.layoutMsbFirst");
+    heading.append(title, order);
+
+    stats.className = "lab-dct-record-stats";
+    stats.append(
+      dctRecordStat("DC", `1 × ${variant.dcBits} bit`),
+      dctRecordStat("AC", variant.acBitDepths
+        .map((entry) => `${entry.count} × ${entry.bits} bit`).join(" + ")),
+      dctRecordStat(t("lab.dctStoredCoefficients"),
+        `${variant.acCount + 1} / ${description.coefficientCount}`),
+      dctRecordStat(t("lab.dctRecordSize"),
+        `${description.byteCount} B · ${description.totalBits} bit`)
+    );
+
+    strip.className = "lab-dct-record-strip";
+    strip.setAttribute("role", "img");
+    strip.setAttribute("aria-label", `${title.textContent} · ${description.totalBits} bit`);
+    for (const field of variant.fields) {
+      const segment = document.createElement("span");
+      const label = document.createElement("strong");
+      const bits = document.createElement("small");
+      segment.className = `is-${dctRecordTone(field)}`;
+      segment.style.flexGrow = String(Math.max(1, Math.sqrt(field.bits)));
+      label.textContent = dctRecordFieldShort(field);
+      bits.textContent = `${field.bits} b`;
+      segment.append(label, bits);
+      strip.append(segment);
+    }
+
+    const headerRow = document.createElement("tr");
+    for (const label of [
+      t("lab.formatGuideOffset"),
+      t("lab.formatGuideBits"),
+      t("lab.formatGuideField"),
+      t("lab.formatGuideMeaning"),
+    ]) {
+      const cell = document.createElement("th");
+      cell.textContent = label;
+      headerRow.append(cell);
+    }
+    head.append(headerRow);
+    for (const field of variant.fields) {
+      const row = document.createElement("tr");
+      const values = [
+        dctRecordBitRange(field, variant.bitOrder),
+        String(field.bits),
+        dctRecordFieldLabel(field),
+        dctRecordFieldMeaning(field),
+      ];
+      for (const value of values) {
+        const cell = document.createElement("td");
+        cell.textContent = value;
+        row.append(cell);
+      }
+      body.append(row);
+    }
+    table.className = "lab-format-table lab-dct-record-table";
+    table.append(head, body);
+    note.className = "lab-codec-diagram-note";
+    note.textContent = dctRecordVariantNote(variant);
+    section.append(heading, stats, strip, table, note);
+    return section;
+  }
+
+  function renderBpdhDctRecordMap(componentName) {
+    const section = document.createElement("section");
+    const stats = document.createElement("div");
+    const strip = document.createElement("div");
+    const table = document.createElement("table");
+    const head = document.createElement("thead");
+    const body = document.createElement("tbody");
+    const note = document.createElement("p");
+    section.className = "lab-dct-record-variant";
+    stats.className = "lab-dct-record-stats";
+    stats.append(
+      dctRecordStat("DC", t("lab.dctVariableExpGolomb")),
+      dctRecordStat("AC", t("lab.dctBpdhAcCapacity")),
+      dctRecordStat(t("lab.dctRecordSize"), t("lab.formatGuideVariable")),
+      dctRecordStat(t("lab.dctBitOrder"), t("dct.layoutMsbFirst"))
+    );
+    strip.className = "lab-dct-record-strip";
+    for (const [short, bits, tone] of [
+      ["DC se(v)", "var", "dct"],
+      ["0", "1 b", "flag"],
+      ["run ue(v)", "var", "map"],
+      ["AC se(v)", "var", "dct"],
+      ["…", "×0…63", "reserved"],
+      ["EOB=1", "1 b", "flag"],
+    ]) {
+      const segment = document.createElement("span");
+      const label = document.createElement("strong");
+      const detail = document.createElement("small");
+      segment.className = `is-${tone}`;
+      label.textContent = short;
+      detail.textContent = bits;
+      segment.append(label, detail);
+      strip.append(segment);
+    }
+    const headerRow = document.createElement("tr");
+    for (const label of [t("lab.formatGuideOffset"), t("lab.formatGuideField"), t("lab.formatGuideMeaning")]) {
+      const cell = document.createElement("th");
+      cell.textContent = label;
+      headerRow.append(cell);
+    }
+    head.append(headerRow);
+    for (const values of [
+      ["cursor", "DC · se(v)", t("lab.dctBpdhDcMeaning")],
+      ["next 1 bit", "AC marker = 0", t("lab.dctBpdhMarkerMeaning")],
+      ["cursor", "zero run · ue(v)", t("lab.dctBpdhRunMeaning")],
+      ["cursor", "AC · se(v)", t("lab.dctBpdhAcMeaning")],
+      ["next 1 bit", "EOB = 1", t("lab.dctBpdhEobMeaning")],
+    ]) {
+      const row = document.createElement("tr");
+      for (const value of values) {
+        const cell = document.createElement("td");
+        cell.textContent = value;
+        row.append(cell);
+      }
+      body.append(row);
+    }
+    table.className = "lab-format-table lab-dct-record-table is-variable";
+    table.append(head, body);
+    note.className = "lab-codec-diagram-note";
+    note.textContent = t("lab.dctBpdhRecordNote", { component: componentName });
+    section.append(stats, strip, table, note);
+    return section;
+  }
+
+  function dctRecordStat(label, value) {
+    const stat = document.createElement("span");
+    const name = document.createElement("small");
+    const detail = document.createElement("strong");
+    name.textContent = label;
+    detail.textContent = value;
+    stat.append(name, detail);
+    return stat;
+  }
+
+  function dctRecordVariantName(variant) {
+    if (variant.mode === "legacy") return t("lab.dctVariantLegacy");
+    if (variant.mode === "grouped") {
+      const groups = variant.fields.filter((field) => field.key === "ac-group-scale").length;
+      return t("dct.layoutGroupedVariant", { groups });
+    }
+    if (variant.mode === "skip-rle") return t("dct.layoutSkipRleVariant");
+    if (variant.mode === "dual-scale-skip") return t("dct.layoutDualScaleVariant");
+    if (variant.mode === "masked-tail-implicit2") return t("dct.layoutImplicit2Variant");
+    return t("dct.layoutMaskedVariant");
+  }
+
+  function dctRecordVariantNote(variant) {
+    if (variant.mode === "legacy" || variant.mode === "grouped") {
+      const bits = variant.acBitDepths[0]?.bits || 0;
+      return t("lab.dctGroupedRecordNote", { count: variant.acCount, bits });
+    }
+    if (variant.mode === "skip-rle") {
+      return t("dct.layoutSkipRleNote", { count: variant.acCount });
+    }
+    if (variant.mode === "dual-scale-skip") {
+      return t("lab.dctDualScaleRecordNote", {
+        coarse: variant.coarseAcCount,
+        fine: variant.fineAcCount,
+        tail: variant.tailAcCount,
+      });
+    }
+    if (variant.mode === "masked-tail-implicit2") return t("dct.layoutImplicit2Note");
+    return t("dct.layoutMaskedNote", { count: variant.acCount });
+  }
+
+  function dctRecordFieldShort(field) {
+    const names = {
+      "library-index": "LIB",
+      profile: "P",
+      "record-mode": field.value ? "1" : "0",
+      "dc-scale": "Sdc",
+      "shared-scale": "S",
+      "main-scale": "S",
+      dc: "DC",
+      "ac-group-scale": `S${field.group}`,
+      "ac-group-values": `G${field.group}×${field.count}`,
+      "ac-values": `AC×${field.count}`,
+      "coarse-skip-tokens": `C×${field.count}`,
+      "fine-skip-tokens": `F×${field.count}`,
+      "fine-tail-tokens": `FT×${field.count}`,
+      "ac-mask-low": "M1–32",
+      "ac-mask-high": "M33–62",
+      "ac-selection-mask": "M60",
+      "implicit-ac-values": `I×${field.count}`,
+      "selected-tail-ac-values": `AC×${field.count}`,
+      padding: "∅",
+    };
+    return names[field.key] || field.key;
+  }
+
+  function dctRecordFieldLabel(field) {
+    if (field.key === "library-index") return t("lab.dctFieldLibraryIndex");
+    if (field.key === "profile") return t("dct.layoutFieldProfile");
+    if (field.key === "record-mode") return t(field.value
+      ? "dct.layoutFieldSkipOne" : "dct.layoutFieldSkipZero");
+    if (field.key === "dc-scale") return t("dct.layoutFieldDcScale");
+    if (field.key === "shared-scale") return t("dct.layoutFieldSharedScale");
+    if (field.key === "main-scale") return t("dct.layoutFieldMainScale");
+    if (field.key === "dc") return t("dct.layoutFieldSignedDc", { bits: field.valueBits });
+    if (field.key === "ac-group-scale") return t("lab.dctFieldGroupScale", { group: field.group });
+    if (["ac-group-values", "ac-values", "selected-tail-ac-values"].includes(field.key)) {
+      return t("dct.layoutFieldSignedAc", { count: field.count, bits: field.valueBits });
+    }
+    if (field.key === "coarse-skip-tokens") return t("dct.layoutFieldCoarseTokens", { count: field.count });
+    if (field.key === "fine-skip-tokens") return t("dct.layoutFieldFineTokens", { count: field.count });
+    if (field.key === "fine-tail-tokens") return t("lab.dctFieldTailTokens", { count: field.count });
+    if (field.key === "ac-mask-low" || field.key === "ac-mask-high") {
+      return t("lab.dctFieldMaskRange", { first: field.firstRank, last: field.lastRank });
+    }
+    if (field.key === "ac-selection-mask") return t("dct.layoutFieldMask60");
+    if (field.key === "implicit-ac-values") return t("lab.dctFieldImplicitValues", {
+      count: field.count,
+      bits: field.valueBits,
+    });
+    if (field.key === "padding") return t("dct.layoutFieldPadding");
+    return field.key;
+  }
+
+  function dctRecordFieldMeaning(field) {
+    if (field.key === "profile") return t("lab.dctProfileMeaning");
+    if (field.key === "library-index") return t("lab.dctLibraryIndexMeaning");
+    if (field.key === "record-mode") return t("lab.dctRecordModeMeaning", { value: field.value });
+    if (["dc-scale", "shared-scale", "main-scale", "ac-group-scale"].includes(field.key)) {
+      return t("lab.dctScaleMeaning");
+    }
+    if (field.key === "dc") return t("lab.dctDcMeaning", { bits: field.valueBits });
+    if (["coarse-skip-tokens", "fine-skip-tokens"].includes(field.key)) {
+      return t("lab.dctSkipTokenMeaning", {
+        count: field.count,
+        bits: field.valueBits,
+        skip: field.skipBits,
+      });
+    }
+    if (field.key === "fine-tail-tokens") {
+      return t("lab.dctTailTokenMeaning", { count: field.count, bits: field.valueBits });
+    }
+    if (["ac-mask-low", "ac-mask-high", "ac-selection-mask"].includes(field.key)) {
+      return t("lab.dctMaskMeaning");
+    }
+    if (field.key === "implicit-ac-values") return t("lab.dctImplicitMeaning");
+    if (["ac-group-values", "ac-values", "selected-tail-ac-values"].includes(field.key)) {
+      return t("lab.dctAcValuesMeaning", { count: field.count, bits: field.valueBits });
+    }
+    if (field.key === "padding") return t("lab.dctPaddingMeaning");
+    return "";
+  }
+
+  function dctRecordBitRange(field, bitOrder) {
+    const endBit = field.startBit + field.bits - 1;
+    const position = (bit) => {
+      const byte = Math.floor(bit / 8);
+      const within = bit % 8;
+      const byteBit = bitOrder === "lsb-first" ? within : 7 - within;
+      return `B${byte}:b${byteBit}`;
+    };
+    const stream = field.startBit === endBit
+      ? String(field.startBit) : `${field.startBit}–${endBit}`;
+    const bytes = field.bits === 1
+      ? position(field.startBit) : `${position(field.startBit)} → ${position(endBit)}`;
+    return `${stream} · ${bytes}`;
+  }
+
+  function dctRecordTone(field) {
+    if (field.tone === "map") return "map";
+    if (field.tone === "flag") return "flag";
+    if (field.tone === "index") return "index";
+    if (field.tone === "reserved") return "reserved";
+    if (field.key === "dc") return "dc";
+    return field.tone === "dct" ? "dct" : "header";
+  }
+
   function defaultDctGuideCoding(presetKey) {
     if (presetKey === "0.75") return "skip-rle-equal-2";
     if (presetKey === "1" || presetKey === "2") return "dual-scale-skip-equal-2";
@@ -1495,15 +1857,21 @@
   }
 
   function codecLayoutTile(component, label) {
-    const tile = document.createElement("span");
-    tile.className = `is-${component}`;
+    const tile = document.createElement("button");
+    tile.type = "button";
+    tile.dataset.guideComponent = component;
+    tile.className = `is-${component}${state.guideComponent === component ? " is-selected" : ""}`;
+    tile.setAttribute("aria-pressed", String(state.guideComponent === component));
     tile.textContent = label;
     return tile;
   }
 
   function codecByteSegment(component, bytes, label) {
-    const segment = document.createElement("span");
-    segment.className = `is-${component}`;
+    const segment = document.createElement("button");
+    segment.type = "button";
+    segment.dataset.guideComponent = component;
+    segment.className = `is-${component}${state.guideComponent === component ? " is-selected" : ""}`;
+    segment.setAttribute("aria-pressed", String(state.guideComponent === component));
     segment.style.flexGrow = String(bytes);
     segment.textContent = label;
     return segment;

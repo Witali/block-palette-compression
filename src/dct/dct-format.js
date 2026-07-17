@@ -2905,6 +2905,265 @@
     return { acCount, groupEnds };
   }
 
+  function describeDctComponentRecord(options = {}) {
+    const byteCount = Math.round(Number(options.byteCount));
+    const width = Math.round(Number(options.width));
+    const height = Math.round(Number(options.height));
+
+    if (!Number.isInteger(byteCount) || byteCount < 1 ||
+        !Number.isInteger(width) || width < 1 ||
+        !Number.isInteger(height) || height < 1) {
+      throw new RangeError("DCT component record description requires positive dimensions and bytes");
+    }
+
+    const baseCoding = getCoefficientCoding(options.coefficientCodingKey, options.presetKey);
+    const coding = withCoefficientOrder(baseCoding, options.zigzagOrder !== false);
+    const referenceCoding = options.libraryReferenceCoding === undefined ||
+      options.libraryReferenceCoding === null
+      ? null : String(options.libraryReferenceCoding);
+    if (referenceCoding !== null && !["header", "tail", "sidecar"].includes(referenceCoding)) {
+      throw new RangeError("Unsupported DCT prototype reference coding");
+    }
+
+    const maskedConfig = getMaskedTailConfig(coding, width, height, byteCount);
+    const variants = maskedConfig
+      ? [describeMaskedTailRecord(byteCount, coding, maskedConfig)]
+      : [describeSequentialRecord(byteCount, width, height, coding, referenceCoding)];
+    if (!maskedConfig && options.allowSkip && !referenceCoding && coding.skipMode) {
+      variants.push(describeSkipRecord(byteCount, width, height, coding));
+    }
+
+    const sidecarBits = referenceCoding === "sidecar"
+      ? Math.max(0, Math.round(Number(options.libraryReferenceBits) || 0)) : 0;
+    return {
+      byteCount,
+      totalBits: byteCount * 8,
+      width,
+      height,
+      coefficientCount: width * height,
+      coefficientCodingKey: coding.key,
+      zigzagOrder: Boolean(coding.zigzagOrder),
+      bitOrder: maskedConfig ? "lsb-first" : "msb-first",
+      prototypeReference: referenceCoding ? {
+        coding: referenceCoding,
+        bits: referenceCoding === "header" ? 2 :
+          referenceCoding === "tail" ? coding.mantissaBits : sidecarBits,
+        location: referenceCoding === "sidecar" ? "sidecar" : "record",
+      } : null,
+      variants,
+    };
+  }
+
+  function describeSequentialRecord(byteCount, width, height, coding, referenceCoding) {
+    const fields = [];
+    const add = createDctRecordFieldAdder(fields);
+    if (referenceCoding === "header") {
+      add("library-index", 2, "index", { valueBits: 2, maximum: 3 });
+      add("profile", 2, "header", { valueBits: 2 });
+    } else {
+      add("profile", 4, "header", { valueBits: 4 });
+    }
+    add("record-mode", 1, "flag", { value: 0 });
+    add(coding.groupCount > 0 ? "dc-scale" : "shared-scale", 3, "flag", {
+      valueBits: 3,
+    });
+    add("dc", 10, "dct", { count: 1, valueBits: 10, signed: true });
+
+    const reservedAcCount = referenceCoding === "tail" ? 1 : 0;
+    let acCount;
+    let mode;
+    let acBitDepths;
+    if (coding.groupCount > 0) {
+      mode = "grouped";
+      const layout = getGroupedAcLayout(
+        byteCount,
+        coding,
+        reservedAcCount,
+        width * height - 1
+      );
+      acCount = layout.acCount;
+      let groupStart = 0;
+      for (let groupIndex = 0; groupIndex < layout.groupEnds.length; groupIndex += 1) {
+        add("ac-group-scale", 3, "flag", { group: groupIndex + 1, valueBits: 3 });
+      }
+      for (let groupIndex = 0; groupIndex < layout.groupEnds.length; groupIndex += 1) {
+        const count = layout.groupEnds[groupIndex] - groupStart;
+        if (count > 0) {
+          add("ac-group-values", count * coding.mantissaBits, "dct", {
+            group: groupIndex + 1,
+            count,
+            valueBits: coding.mantissaBits,
+            signed: true,
+          });
+        }
+        groupStart = layout.groupEnds[groupIndex];
+      }
+      acBitDepths = [{ count: acCount, bits: coding.mantissaBits }];
+    } else {
+      mode = "legacy";
+      acCount = Math.min(
+        width * height - 1,
+        Math.max(0, Math.floor((byteCount * 8 - 18) / coding.mantissaBits) - reservedAcCount)
+      );
+      if (acCount > 0) {
+        add("ac-values", acCount * coding.mantissaBits, "dct", {
+          count: acCount,
+          valueBits: coding.mantissaBits,
+          signed: true,
+        });
+      }
+      acBitDepths = [{ count: acCount, bits: coding.mantissaBits }];
+    }
+
+    if (referenceCoding === "tail") {
+      add("library-index", coding.mantissaBits, "index", {
+        valueBits: coding.mantissaBits,
+        maximum: 2 ** coding.mantissaBits - 1,
+      });
+    }
+    finishDctRecordFields(fields, byteCount * 8, add);
+    return {
+      key: mode,
+      mode,
+      bitOrder: "msb-first",
+      dcBits: 10,
+      acCount,
+      acBitDepths,
+      fields,
+    };
+  }
+
+  function describeSkipRecord(byteCount, width, height, coding) {
+    const fields = [];
+    const add = createDctRecordFieldAdder(fields);
+    const layout = getSkipTokenLayout(byteCount, width, height, coding.skipMode);
+    const fineCount = layout.tokenCount - layout.coarseCount;
+    add("profile", 4, "header", { valueBits: 4 });
+    add("record-mode", 1, "flag", { value: 1 });
+    add("main-scale", 3, "flag", { valueBits: 3 });
+    add("dc", 10, "dct", { count: 1, valueBits: 10, signed: true });
+    if (layout.coarseCount > 0) {
+      add("coarse-skip-tokens", layout.coarseCount * 8, "dct", {
+        count: layout.coarseCount,
+        valueBits: 6,
+        skipBits: 2,
+        unitBits: 8,
+        signed: true,
+      });
+    }
+    if (fineCount > 0) {
+      add("fine-skip-tokens", fineCount * 6, "dct", {
+        count: fineCount,
+        valueBits: 4,
+        skipBits: 2,
+        unitBits: 6,
+        signed: true,
+      });
+    }
+    if (layout.tailTokenCount > 0) {
+      add("fine-tail-tokens", layout.tailBits, "dct", {
+        count: layout.tailTokenCount,
+        valueBits: 4,
+        skipBits: 2,
+        unitBits: null,
+        signed: true,
+      });
+    }
+    finishDctRecordFields(fields, byteCount * 8, add);
+    return {
+      key: layout.dualScale ? "dual-scale-skip" : "skip-rle",
+      mode: layout.dualScale ? "dual-scale-skip" : "skip-rle",
+      bitOrder: "msb-first",
+      dcBits: 10,
+      acCount: layout.tokenCount + layout.tailTokenCount,
+      acBitDepths: [
+        ...(layout.coarseCount > 0 ? [{ count: layout.coarseCount, bits: 6 }] : []),
+        ...(fineCount + layout.tailTokenCount > 0
+          ? [{ count: fineCount + layout.tailTokenCount, bits: 4 }] : []),
+      ],
+      coarseAcCount: layout.coarseCount,
+      fineAcCount: fineCount,
+      tailAcCount: layout.tailTokenCount,
+      fields,
+    };
+  }
+
+  function describeMaskedTailRecord(byteCount, coding, config) {
+    const fields = [];
+    const add = createDctRecordFieldAdder(fields);
+    const implicitCount = (config.implicitPositions || []).length;
+    if (implicitCount > 0) {
+      add("ac-selection-mask", 62 - implicitCount, "map", {
+        count: 62 - implicitCount,
+        firstRank: 1,
+        lastRank: 62,
+        excludedImplicitCount: implicitCount,
+      });
+      add("shared-scale", 2, "flag", { valueBits: 2 });
+      add("dc", config.dcBits, "dct", {
+        count: 1,
+        valueBits: config.dcBits,
+        signed: true,
+      });
+      add("implicit-ac-values", implicitCount * config.acBits, "dct", {
+        count: implicitCount,
+        valueBits: config.acBits,
+        signed: true,
+      });
+      add("selected-tail-ac-values", (config.maxAc - implicitCount) * config.acBits, "dct", {
+        count: config.maxAc - implicitCount,
+        valueBits: config.acBits,
+        signed: true,
+      });
+    } else {
+      add("ac-mask-low", 32, "map", { count: 32, firstRank: 1, lastRank: 32 });
+      add("ac-mask-high", 30, "map", { count: 30, firstRank: 33, lastRank: 62 });
+      add("shared-scale", 2, "flag", { valueBits: 2 });
+      add("dc", config.dcBits, "dct", {
+        count: 1,
+        valueBits: config.dcBits,
+        signed: true,
+      });
+      add("selected-tail-ac-values", config.maxAc * config.acBits, "dct", {
+        count: config.maxAc,
+        valueBits: config.acBits,
+        signed: true,
+      });
+    }
+    finishDctRecordFields(fields, byteCount * 8, add);
+    return {
+      key: implicitCount > 0 ? "masked-tail-implicit2" : "masked-tail",
+      mode: implicitCount > 0 ? "masked-tail-implicit2" : "masked-tail",
+      bitOrder: "lsb-first",
+      dcBits: config.dcBits,
+      acCount: config.maxAc,
+      acBitDepths: [{ count: config.maxAc, bits: config.acBits }],
+      implicitAcCount: implicitCount,
+      selectableAcCount: 62 - implicitCount,
+      fields,
+    };
+  }
+
+  function createDctRecordFieldAdder(fields) {
+    let bitOffset = 0;
+    const add = (key, bits, tone, metadata = {}) => {
+      if (bits <= 0) return;
+      fields.push({ key, startBit: bitOffset, bits, tone, ...metadata });
+      bitOffset += bits;
+    };
+    add.offset = () => bitOffset;
+    return add;
+  }
+
+  function finishDctRecordFields(fields, totalBits, add) {
+    const remaining = totalBits - add.offset();
+    if (remaining < 0) {
+      throw new RangeError("DCT component record description exceeds its byte budget");
+    }
+    if (remaining > 0) add("padding", remaining, "reserved", { value: 0 });
+    return fields;
+  }
+
   function writeLittleEndianBits(bytes, byteOffset, bitOffset, value, bitCount) {
     for (let bit = 0; bit < bitCount; bit += 1) {
       if ((value >> bit & 1) !== 0) {
@@ -4358,6 +4617,7 @@
     COEFFICIENT_CODINGS,
     getDctPreset,
     getDctFileLayout,
+    describeDctComponentRecord,
     encodeDctFile,
     importJpegDctFile,
     decodeJpegDctPixels,

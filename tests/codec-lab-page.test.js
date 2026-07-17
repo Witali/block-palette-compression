@@ -77,6 +77,11 @@ test("shows a format-specific expandable binary layout reference", () => {
   assert.match(script, /function renderBpdhMcuDiagram\(diagram\)/);
   assert.match(script, /function renderDctBlockDiagram\(diagram\)/);
   assert.match(script, /button\.dataset\.guideComponent = name/);
+  assert.match(script, /function renderDctRecordBitMap\(diagram\)/);
+  assert.match(script, /root\.DctImageFormat\.describeDctComponentRecord/);
+  assert.match(script, /function renderDctRecordVariant\(description, variant\)/);
+  assert.match(script, /function dctRecordBitRange\(field, bitOrder\)/);
+  assert.match(script, /`B\$\{byte\}:b\$\{byteBit\}`/);
   assert.match(script, /function getGuideZigzagPositions\(width, height\)/);
   assert.match(script, /function getGuideRowMajorPositions\(width, height\)/);
   assert.match(script, /coefficientCodingKey: info\?\.coefficientCodingKey \|\| defaultDctGuideCoding\(presetKey\)/);
@@ -97,6 +102,8 @@ test("shows a format-specific expandable binary layout reference", () => {
   assert.match(styles, /\.lab-mcu-spatial/);
   assert.match(styles, /\.lab-dct-frequency-grid/);
   assert.match(styles, /\.lab-dct-zigzag polyline/);
+  assert.match(styles, /\.lab-dct-record-map/);
+  assert.match(styles, /\.lab-dct-record-table/);
   assert.match(styles, /@media \(max-width: 1000px\) \{[\s\S]*?\.lab-codec-layout-diagrams \{[\s\S]*?grid-template-columns: minmax\(0, 1fr\);/);
 });
 
