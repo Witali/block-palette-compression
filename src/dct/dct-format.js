@@ -2429,80 +2429,74 @@
     coding
   ) {
     const layout = getSkipTokenLayout(byteCount, width, height, coding.skipMode);
+    const coefficientCount = width * height;
     const baseError = squaredNorm(coefficients);
+    const quantizationSteps = getScaledQuantizationSteps(width, height, quality, chroma);
+    const coarseChoices = SCALE_MULTIPLIERS.map((_, scaleIndex) =>
+      createSkipCoefficientChoices(
+        coefficients,
+        quantizationSteps,
+        coefficientCount,
+        scaleIndex,
+        6
+      )
+    );
+    const fineChoices = [0, 1].map((scaleIndex) => createSkipCoefficientChoices(
+      coefficients,
+      quantizationSteps,
+      coefficientCount,
+      scaleIndex,
+      4
+    ));
+    const dcChoices = SCALE_MULTIPLIERS.map((_, scaleIndex) => quantizeSkipCoefficient(
+      coefficients,
+      0,
+      width,
+      height,
+      quality,
+      chroma,
+      scaleIndex,
+      10
+    ));
     let best = null;
 
     for (let profile = 0; profile < getProfileCount(coding, true); profile += 1) {
       const scan = getProfileScan(coding, profile, width, height, true);
+      const maximumIndex = Math.min(scan.length - 1, 4 * (layout.tokenCount - 1));
+      const rowSize = maximumIndex + 1;
+      let previous = new Float64Array(rowSize);
+      let current = new Float64Array(rowSize);
+      const back = new Int16Array(layout.tokenCount * rowSize);
+      const path = new Int16Array(layout.tokenCount);
+      const maximumWindow = new Int16Array(4);
 
       for (let scaleIndex = 0; scaleIndex < SCALE_MULTIPLIERS.length; scaleIndex += 1) {
-        const dcChoice = quantizeSkipCoefficient(
-          coefficients,
-          0,
-          width,
-          height,
-          quality,
-          chroma,
-          scaleIndex,
-          10
-        );
-        const maximumIndex = Math.min(scan.length - 1, 4 * (layout.tokenCount - 1));
-        let previous = new Float64Array(maximumIndex + 1);
+        const dcChoice = dcChoices[scaleIndex];
+        const mainChoices = coarseChoices[scaleIndex];
+        const reducedChoices = fineChoices[scaleIndex >= 3 ? 1 : 0];
         previous.fill(Number.NEGATIVE_INFINITY);
-        const back = Array.from({ length: layout.tokenCount }, () => {
-          const indices = new Int16Array(maximumIndex + 1);
-          indices.fill(-1);
-          return indices;
-        });
-        const firstToken = getSkipTokenParameters(layout, 0, scaleIndex);
-        previous[0] = skipCoefficientBenefit(
-          coefficients,
-          scan[0],
-          width,
-          height,
-          quality,
-          chroma,
-          firstToken.scaleIndex,
-          firstToken.bits
-        ).benefit;
+        current.fill(Number.NEGATIVE_INFINITY);
+        previous[0] = mainChoices.benefits[scan[0]];
 
         for (let tokenIndex = 1; tokenIndex < layout.tokenCount; tokenIndex += 1) {
-          const current = new Float64Array(maximumIndex + 1);
           current.fill(Number.NEGATIVE_INFINITY);
-          const parameters = getSkipTokenParameters(layout, tokenIndex, scaleIndex);
+          const choices = layout.dualScale && tokenIndex >= layout.coarseCount
+            ? reducedChoices : mainChoices;
           const firstIndex = tokenIndex;
           const lastIndex = Math.min(maximumIndex, 4 * tokenIndex);
-
-          for (let index = firstIndex; index <= lastIndex; index += 1) {
-            let previousBenefit = Number.NEGATIVE_INFINITY;
-            let previousIndex = -1;
-
-            for (let distance = 1; distance <= 4; distance += 1) {
-              const candidateIndex = index - distance;
-              if (candidateIndex >= 0 && previous[candidateIndex] > previousBenefit) {
-                previousBenefit = previous[candidateIndex];
-                previousIndex = candidateIndex;
-              }
-            }
-
-            if (previousIndex < 0) {
-              continue;
-            }
-
-            const benefit = skipCoefficientBenefit(
-              coefficients,
-              scan[index],
-              width,
-              height,
-              quality,
-              chroma,
-              parameters.scaleIndex,
-              parameters.bits
-            ).benefit;
-            current[index] = previousBenefit + benefit;
-            back[tokenIndex][index] = previousIndex;
-          }
-          previous = current;
+          const backOffset = tokenIndex * rowSize;
+          fillSkipDpRow(
+            previous,
+            current,
+            choices.benefits,
+            scan,
+            firstIndex,
+            lastIndex,
+            back,
+            backOffset,
+            maximumWindow
+          );
+          [previous, current] = [current, previous];
         }
 
         let endIndex = 0;
@@ -2517,39 +2511,25 @@
           continue;
         }
 
-        const path = new Int16Array(layout.tokenCount);
         path[layout.tokenCount - 1] = endIndex;
         for (let tokenIndex = layout.tokenCount - 1; tokenIndex > 0; tokenIndex -= 1) {
-          path[tokenIndex - 1] = back[tokenIndex][path[tokenIndex]];
+          path[tokenIndex - 1] = back[tokenIndex * rowSize + path[tokenIndex]];
         }
 
         const tokens = Array.from({ length: layout.tokenCount }, (_, tokenIndex) => {
-          const parameters = getSkipTokenParameters(layout, tokenIndex, scaleIndex);
+          const fine = layout.dualScale && tokenIndex >= layout.coarseCount;
+          const choices = fine ? reducedChoices : mainChoices;
           const position = scan[path[tokenIndex]];
-          const stored = skipCoefficientBenefit(
-            coefficients,
-            position,
-            width,
-            height,
-            quality,
-            chroma,
-            parameters.scaleIndex,
-            parameters.bits
-          ).stored;
+          const stored = choices.stored[position];
           const skip = tokenIndex + 1 < layout.tokenCount
             ? path[tokenIndex + 1] - path[tokenIndex] - 1 : 0;
-          return { position, stored, skip, bits: parameters.bits };
+          return { position, stored, skip, bits: fine ? 4 : 6 };
         });
         const tail = selectSkipTailTokens(
-          coefficients,
           scan,
           path[layout.tokenCount - 1],
           layout.tailTokenCount,
-          width,
-          height,
-          quality,
-          chroma,
-          scaleIndex
+          reducedChoices
         );
         if (tail.tokens.length > 0) {
           tokens[tokens.length - 1].skip = tail.firstSkip;
@@ -2572,6 +2552,46 @@
     }
 
     return best;
+  }
+
+  function fillSkipDpRow(
+    previous,
+    current,
+    coefficientBenefits,
+    scan,
+    firstIndex,
+    lastIndex,
+    back,
+    backOffset,
+    maximumWindow
+  ) {
+    let windowStart = 0;
+    let windowLength = 0;
+
+    for (let index = firstIndex; index <= lastIndex; index += 1) {
+      const minimumPreviousIndex = index - 4;
+      while (windowLength > 0 && maximumWindow[windowStart] < minimumPreviousIndex) {
+        windowStart = (windowStart + 1) & 3;
+        windowLength -= 1;
+      }
+
+      const enteringIndex = index - 1;
+      const enteringBenefit = previous[enteringIndex];
+      if (Number.isFinite(enteringBenefit)) {
+        while (windowLength > 0) {
+          const lastWindowSlot = (windowStart + windowLength - 1) & 3;
+          if (previous[maximumWindow[lastWindowSlot]] > enteringBenefit) break;
+          windowLength -= 1;
+        }
+        maximumWindow[(windowStart + windowLength) & 3] = enteringIndex;
+        windowLength += 1;
+      }
+
+      if (windowLength === 0) continue;
+      const previousIndex = maximumWindow[windowStart];
+      current[index] = previous[previousIndex] + coefficientBenefits[scan[index]];
+      back[backOffset + index] = previousIndex;
+    }
   }
 
   function getSkipTokenLayout(byteCount, width, height, skipMode) {
@@ -2622,21 +2642,15 @@
   }
 
   function selectSkipTailTokens(
-    coefficients,
     scan,
     lastScanIndex,
     tokenCount,
-    width,
-    height,
-    quality,
-    chroma,
-    mainScaleIndex
+    choices
   ) {
     if (tokenCount < 1) {
       return { tokens: [], benefit: 0, firstSkip: 0 };
     }
 
-    const scaleIndex = mainScaleIndex >= 3 ? 1 : 0;
     const indices = new Int16Array(tokenCount);
     const storedValues = new Int16Array(tokenCount);
     let bestBenefit = Number.NEGATIVE_INFINITY;
@@ -2658,19 +2672,10 @@
         const scanIndex = previousIndex + distance;
         if (scanIndex >= scan.length) break;
         hadCandidate = true;
-        const choice = skipCoefficientBenefit(
-          coefficients,
-          scan[scanIndex],
-          width,
-          height,
-          quality,
-          chroma,
-          scaleIndex,
-          4
-        );
+        const position = scan[scanIndex];
         indices[level] = scanIndex;
-        storedValues[level] = choice.stored;
-        visit(level + 1, scanIndex, benefit + choice.benefit);
+        storedValues[level] = choices.stored[position];
+        visit(level + 1, scanIndex, benefit + choices.benefits[position]);
       }
 
       if (!hadCandidate) {
@@ -2736,28 +2741,33 @@
     };
   }
 
-  function skipCoefficientBenefit(
+  function createSkipCoefficientChoices(
     coefficients,
-    position,
-    width,
-    height,
-    quality,
-    chroma,
+    quantizationSteps,
+    coefficientCount,
     scaleIndex,
     bitCount
   ) {
-    const choice = quantizeSkipCoefficient(
-      coefficients,
-      position,
-      width,
-      height,
-      quality,
-      chroma,
-      scaleIndex,
-      bitCount
-    );
-    const benefit = -choice.errorDelta;
-    return benefit > 0 ? { stored: choice.stored, benefit } : { stored: 0, benefit: 0 };
+    const minimum = -(2 ** (bitCount - 1));
+    const maximum = 2 ** (bitCount - 1) - 1;
+    const stepOffset = scaleIndex * coefficientCount;
+    const stored = new Int16Array(coefficientCount);
+    const benefits = new Float64Array(coefficientCount);
+
+    for (let position = 0; position < coefficientCount; position += 1) {
+      const coefficient = coefficients[position];
+      const step = quantizationSteps[stepOffset + position];
+      const value = clamp(roundSigned(coefficient / step), minimum, maximum);
+      const restored = value * step;
+      const benefit = coefficient ** 2 - (coefficient - restored) ** 2;
+
+      if (benefit > 0) {
+        stored[position] = value;
+        benefits[position] = benefit;
+      }
+    }
+
+    return { stored, benefits };
   }
 
   function chooseGroupedComponentEncoding(
