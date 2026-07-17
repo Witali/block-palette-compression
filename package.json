@@ -14,6 +14,7 @@
     "benchmark:patterns": "node tools/pattern-dictionary-benchmark.js",
     "benchmark:patterns:clic": "node tools/pattern-dictionary-clic-benchmark.js",
     "benchmark:textures:cuda-astc": "python tools/cuda_astc_texture_benchmark.py",
-    "benchmark:textures:test": "python -m unittest benchmark.test_metrics benchmark.test_cuda_astc_texture_benchmark benchmark.test_local_palette_packing_benchmark"
+    "benchmark:textures:hybrid-4bpp": "python tools/hybrid_bpdh_astc_4bpp_benchmark.py",
+    "benchmark:textures:test": "python -m unittest benchmark.test_metrics benchmark.test_cuda_astc_texture_benchmark benchmark.test_local_palette_packing_benchmark benchmark.test_hybrid_bpdh_astc_4bpp_benchmark"
   }
 }
