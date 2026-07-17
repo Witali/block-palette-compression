@@ -3,11 +3,15 @@
 `BarcelonaPavilionViewer.exe` is a native Unicode Win32 application. It uses
 Direct3D 11 directly, without a browser, WebView, Node.js, or a JavaScript
 runtime. The application loads the Barcelona Pavilion geometry and switches
-between BPAL, DCTBS2, and ASTC texture streams while the scene is running.
+between original-resolution BC1/BC7, BPAL, DCTBS2, and ASTC textures while the
+scene is running.
 
 The fragment shaders obtain every visible texel from compressed data stored in
-Direct3D `ByteAddressBuffer` resources. The runtime does not create an RGBA,
-DDS, BC7, or other fully decoded texture cache:
+Direct3D resources. The runtime does not create an RGBA or other fully decoded
+texture cache:
+
+- the original mode uploads DDS blocks directly as `DXGI_FORMAT_BC1` for the
+  15 opaque textures and `DXGI_FORMAT_BC7` for the two alpha textures;
 
 - BPAL reads the packed pixel index, block palette, and palette selector bits,
   then performs the two palette lookups. The build tool appends only the small
@@ -20,7 +24,7 @@ DDS, BC7, or other fully decoded texture cache:
   subset by averaging each 6x6 block; it is intentionally lower quality than a
   complete ASTC partition/weight decoder.
 
-Three specialized pixel shaders are compiled at startup so switching formats
+Four specialized pixel shaders are compiled at startup so switching formats
 does not leave a per-pixel codec dispatch in the hot path. Bump values are also
 sampled from the selected compressed stream; screen-space derivatives provide
 the height gradient without decoding neighboring texels into a cache.
@@ -30,7 +34,7 @@ the height gradient without decoding neighboring texels into a cache.
 - left mouse drag: orbit;
 - mouse wheel: zoom;
 - `R`: reset the camera;
-- `1`, `2`, `3`: select BPAL, DCTBS2, or ASTC.
+- `1`, `2`, `3`, `4`: select original BC1/BC7, BPAL, DCTBS2, or ASTC.
 
 ## Rebuild assets
 
@@ -44,6 +48,7 @@ This reads `assets/scenes/barcelona/scene.gltf`, `scene.bin`, and the compressed
 scene textures. It writes:
 
 - `assets/barcelona.dxscene`, containing the baked scene geometry;
+- `assets/original/*.dds`, containing original-resolution BC1/BC7 GPU textures;
 - `assets/streams/<codec>/*.dxtx`, containing an 80-byte Direct3D metadata
   header followed by the compressed bytes uploaded to a raw buffer;
 - `assets/scene.hlsl`, generated from `scene.hlsl.in` plus the canonical DCT
@@ -67,8 +72,8 @@ The executable and copied runtime assets are written to
 `build/x64/Release/`.
 
 The hidden smoke test creates the Direct3D device, compiles all shader variants,
-uploads the complete scene, loads all three compressed stream sets, and renders
-one frame for each codec:
+uploads the complete scene, loads all four texture sets, and renders one frame
+for each format:
 
 ```powershell
 native\win32-directx-viewer\build\x64\Release\BarcelonaPavilionViewer.exe --smoke-test

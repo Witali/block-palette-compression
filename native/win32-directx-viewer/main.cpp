@@ -37,8 +37,8 @@ namespace {
 constexpr wchar_t kWindowClass[] = L"BpalDirectXSceneViewer";
 constexpr int kCodecComboId = 1001;
 constexpr int kStatusLabelId = 1002;
-constexpr std::array<const char*, 3> kCodecDirectories = {"bpal", "dct", "astc"};
-constexpr std::array<const wchar_t*, 3> kCodecLabels = {L"BPAL", L"DCTBS2", L"ASTC"};
+constexpr std::array<const char*, 4> kCodecDirectories = {"original", "bpal", "dct", "astc"};
+constexpr std::array<const wchar_t*, 4> kCodecLabels = {L"Original BC1/BC7", L"BPAL", L"DCTBS2", L"ASTC"};
 
 struct SceneConstants {
     XMFLOAT4X4 viewProjection;
@@ -67,6 +67,7 @@ static_assert(sizeof(TextureConstants) % 16 == 0);
 
 struct TextureGpuResource {
     ComPtr<ID3D11Buffer> buffer;
+    ComPtr<ID3D11Texture2D> texture;
     ComPtr<ID3D11ShaderResourceView> view;
     TextureDescriptorGpu descriptor;
 };
@@ -136,10 +137,10 @@ public:
 
         if (smokeTest) {
             Render();
-            LoadCodec(1);
-            Render();
-            LoadCodec(2);
-            Render();
+            for (int index = 1; index < static_cast<int>(kCodecLabels.size()); ++index) {
+                LoadCodec(index);
+                Render();
+            }
             return 0;
         }
 
@@ -161,7 +162,7 @@ public:
             if (LOWORD(wParam) == kCodecComboId && HIWORD(wParam) == CBN_SELCHANGE) {
                 const int selection = static_cast<int>(SendMessageW(codecCombo_, CB_GETCURSEL, 0, 0));
                 try {
-                    LoadCodec(std::clamp(selection, 0, 2));
+                    LoadCodec(std::clamp(selection, 0, 3));
                 } catch (const std::exception& error) {
                     MessageBoxA(window_, error.what(), "Texture switch failed", MB_OK | MB_ICONERROR);
                     SendMessageW(codecCombo_, CB_SETCURSEL, codecIndex_, 0);
@@ -204,7 +205,7 @@ public:
         }
         case WM_KEYDOWN:
             if (wParam == 'R') ResetCamera();
-            if (wParam >= '1' && wParam <= '3') {
+            if (wParam >= '1' && wParam <= '4') {
                 const int index = static_cast<int>(wParam - '1');
                 SendMessageW(codecCombo_, CB_SETCURSEL, index, 0);
                 try {
@@ -261,7 +262,7 @@ private:
             0, 0, 240, 200,
             window_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kCodecComboId)), instance, nullptr);
         statusLabel_ = CreateWindowExW(
-            0, L"STATIC", L"Left drag: orbit    Wheel: zoom    R: reset    1/2/3: texture format",
+            0, L"STATIC", L"Left drag: orbit    Wheel: zoom    R: reset    1/2/3/4: texture format",
             WS_CHILD | WS_VISIBLE | SS_LEFT,
             20, 20, 760, 24,
             window_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kStatusLabelId)), instance, nullptr);
@@ -373,7 +374,7 @@ private:
         ThrowIfFailed(device_->CreateVertexShader(
             vertexBytecode->GetBufferPointer(), vertexBytecode->GetBufferSize(), nullptr, &vertexShader_),
             "CreateVertexShader");
-        constexpr std::array<const char*, 3> codecDefines = {"1", "2", "3"};
+        constexpr std::array<const char*, 4> codecDefines = {"4", "1", "2", "3"};
         for (std::size_t index = 0; index < pixelShaders_.size(); ++index) {
             ComPtr<ID3DBlob> pixelBytecode;
             CompileShader("PSMain", "ps_5_0", pixelBytecode, codecDefines[index]);
@@ -426,6 +427,18 @@ private:
         ThrowIfFailed(device_->CreateDepthStencilState(&depthDescription, &transparentDepth_), "CreateDepthStencilState");
 
         fallbackTexture_ = CreateFallbackStream();
+        fallbackOriginalTexture_ = CreateFallbackOriginalTexture();
+
+        D3D11_SAMPLER_DESC samplerDescription{};
+        samplerDescription.Filter = D3D11_FILTER_ANISOTROPIC;
+        samplerDescription.AddressU = D3D11_TEXTURE_ADDRESS_WRAP;
+        samplerDescription.AddressV = D3D11_TEXTURE_ADDRESS_WRAP;
+        samplerDescription.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;
+        samplerDescription.MaxAnisotropy = 8;
+        samplerDescription.ComparisonFunc = D3D11_COMPARISON_NEVER;
+        samplerDescription.MinLOD = 0;
+        samplerDescription.MaxLOD = D3D11_FLOAT32_MAX;
+        ThrowIfFailed(device_->CreateSamplerState(&samplerDescription, &originalSampler_), "CreateSamplerState");
     }
 
     void CompileShader(
@@ -520,23 +533,30 @@ private:
     void LoadCodec(int index) {
         std::unordered_map<std::string, TextureResourcePtr> cache;
         std::vector<MaterialTextures> loaded(materials_.size());
-        const auto directory = assetsDirectory_ / L"streams" / std::filesystem::path(kCodecDirectories[index]);
+        const bool original = index == 0;
+        const auto directory = original
+            ? assetsDirectory_ / L"original"
+            : assetsDirectory_ / L"streams" / std::filesystem::path(kCodecDirectories[index]);
 
         for (std::size_t materialIndex = 0; materialIndex < materials_.size(); materialIndex += 1) {
             const auto& material = materials_[materialIndex];
             if (material.flags & native_scene::MaterialHasBaseTexture) {
                 const std::string identifier = FixedString(material.baseTexture, sizeof(material.baseTexture));
-                loaded[materialIndex].base = LoadCachedStream(directory, identifier, cache);
-                const auto alphaPath = directory / std::filesystem::path(identifier + "-alpha.dxtx");
-                if (std::filesystem::exists(alphaPath)) {
-                    loaded[materialIndex].alpha = LoadCachedStream(directory, identifier + "-alpha", cache);
+                if (original) {
+                    loaded[materialIndex].base = LoadCachedOriginal(directory, identifier, true, cache);
+                } else {
+                    loaded[materialIndex].base = LoadCachedStream(directory, identifier, cache);
+                    const auto alphaPath = directory / std::filesystem::path(identifier + "-alpha.dxtx");
+                    if (std::filesystem::exists(alphaPath)) {
+                        loaded[materialIndex].alpha = LoadCachedStream(directory, identifier + "-alpha", cache);
+                    }
                 }
             }
             if (material.flags & native_scene::MaterialHasBumpTexture) {
-                loaded[materialIndex].bump = LoadCachedStream(
-                    directory,
-                    FixedString(material.bumpTexture, sizeof(material.bumpTexture)),
-                    cache);
+                const std::string identifier = FixedString(material.bumpTexture, sizeof(material.bumpTexture));
+                loaded[materialIndex].bump = original
+                    ? LoadCachedOriginal(directory, identifier, false, cache)
+                    : LoadCachedStream(directory, identifier, cache);
             }
         }
         materialTextures_ = std::move(loaded);
@@ -600,6 +620,88 @@ private:
         return resource;
     }
 
+    TextureResourcePtr LoadCachedOriginal(
+        const std::filesystem::path& directory,
+        const std::string& identifier,
+        bool srgb,
+        std::unordered_map<std::string, TextureResourcePtr>& cache) {
+        const std::string cacheKey = std::string(srgb ? "color:" : "linear:") + identifier;
+        if (const auto found = cache.find(cacheKey); found != cache.end()) return found->second;
+        auto filePath = directory / std::filesystem::path(identifier + ".bc7.dds");
+        if (!std::filesystem::exists(filePath)) {
+            filePath = directory / std::filesystem::path(identifier + ".bc1.dds");
+        }
+        auto texture = LoadOriginalTexture(filePath, srgb);
+        cache.emplace(cacheKey, texture);
+        return texture;
+    }
+
+    TextureResourcePtr LoadOriginalTexture(const std::filesystem::path& filePath, bool srgb) {
+        const auto bytes = ReadBinaryFile(filePath);
+        if (bytes.size() < 128 || std::memcmp(bytes.data(), "DDS ", 4) != 0) {
+            throw std::runtime_error("Original DDS header is invalid: " + filePath.string());
+        }
+        const auto read32 = [&bytes](std::size_t offset) {
+            std::uint32_t value{};
+            if (offset + sizeof(value) > bytes.size()) return value;
+            std::memcpy(&value, bytes.data() + offset, sizeof(value));
+            return value;
+        };
+        const std::uint32_t height = read32(12);
+        const std::uint32_t width = read32(16);
+        std::size_t dataOffset{};
+        std::uint32_t blockBytes{};
+        DXGI_FORMAT format{};
+        if (std::memcmp(bytes.data() + 84, "DXT1", 4) == 0) {
+            dataOffset = 128;
+            blockBytes = 8;
+            format = srgb ? DXGI_FORMAT_BC1_UNORM_SRGB : DXGI_FORMAT_BC1_UNORM;
+        } else if (
+            bytes.size() >= 148 &&
+            std::memcmp(bytes.data() + 84, "DX10", 4) == 0 &&
+            read32(128) == 98
+        ) {
+            dataOffset = 148;
+            blockBytes = 16;
+            format = srgb ? DXGI_FORMAT_BC7_UNORM_SRGB : DXGI_FORMAT_BC7_UNORM;
+        } else {
+            throw std::runtime_error("Original DDS is not BC1 or BC7: " + filePath.string());
+        }
+        const std::uint64_t blocksX = (static_cast<std::uint64_t>(width) + 3) / 4;
+        const std::uint64_t blocksY = (static_cast<std::uint64_t>(height) + 3) / 4;
+        const std::uint64_t dataBytes = blocksX * blocksY * blockBytes;
+        if (!width || !height || dataOffset + dataBytes != bytes.size() || dataBytes > UINT_MAX) {
+            throw std::runtime_error("Original DDS dimensions are invalid: " + filePath.string());
+        }
+
+        D3D11_TEXTURE2D_DESC description{};
+        description.Width = width;
+        description.Height = height;
+        description.MipLevels = 1;
+        description.ArraySize = 1;
+        description.Format = format;
+        description.SampleDesc.Count = 1;
+        description.Usage = D3D11_USAGE_IMMUTABLE;
+        description.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+        D3D11_SUBRESOURCE_DATA initialData{
+            bytes.data() + dataOffset,
+            static_cast<UINT>(blocksX * blockBytes),
+            static_cast<UINT>(dataBytes),
+        };
+        auto resource = std::make_shared<TextureGpuResource>();
+        ThrowIfFailed(
+            device_->CreateTexture2D(&description, &initialData, &resource->texture),
+            "CreateTexture2D(BC1/BC7 original)");
+        ThrowIfFailed(
+            device_->CreateShaderResourceView(resource->texture.Get(), nullptr, &resource->view),
+            "CreateShaderResourceView(BC1/BC7 original)");
+        resource->descriptor.header[0] = 4;
+        resource->descriptor.header[1] = width;
+        resource->descriptor.header[2] = height;
+        resource->descriptor.header[3] = static_cast<std::uint32_t>(dataBytes);
+        return resource;
+    }
+
     TextureResourcePtr CreateFallbackStream() {
         const std::uint32_t zero = 0;
         D3D11_BUFFER_DESC description{};
@@ -619,6 +721,28 @@ private:
         ThrowIfFailed(
             device_->CreateShaderResourceView(resource->buffer.Get(), &viewDescription, &resource->view),
             "CreateShaderResourceView(fallback stream)");
+        return resource;
+    }
+
+    TextureResourcePtr CreateFallbackOriginalTexture() {
+        const std::uint8_t whiteBc1Block[8] = {0xff, 0xff, 0x00, 0x00, 0, 0, 0, 0};
+        D3D11_TEXTURE2D_DESC description{};
+        description.Width = 4;
+        description.Height = 4;
+        description.MipLevels = 1;
+        description.ArraySize = 1;
+        description.Format = DXGI_FORMAT_BC1_UNORM;
+        description.SampleDesc.Count = 1;
+        description.Usage = D3D11_USAGE_IMMUTABLE;
+        description.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+        D3D11_SUBRESOURCE_DATA initialData{whiteBc1Block, sizeof(whiteBc1Block), sizeof(whiteBc1Block)};
+        auto resource = std::make_shared<TextureGpuResource>();
+        ThrowIfFailed(
+            device_->CreateTexture2D(&description, &initialData, &resource->texture),
+            "CreateTexture2D(fallback BC1)");
+        ThrowIfFailed(
+            device_->CreateShaderResourceView(resource->texture.Get(), nullptr, &resource->view),
+            "CreateShaderResourceView(fallback BC1)");
         return resource;
     }
 
@@ -677,6 +801,7 @@ private:
         context_->PSSetConstantBuffers(0, 1, sceneConstantBuffer_.GetAddressOf());
         context_->PSSetConstantBuffers(1, 1, materialConstantBuffer_.GetAddressOf());
         context_->PSSetConstantBuffers(2, 1, textureConstantBuffer_.GetAddressOf());
+        context_->PSSetSamplers(0, 1, originalSampler_.GetAddressOf());
 
         const float blendFactor[4] = {0, 0, 0, 0};
         for (int transparentPass = 0; transparentPass < 2; transparentPass += 1) {
@@ -700,10 +825,13 @@ private:
                 context_->UpdateSubresource(materialConstantBuffer_.Get(), 0, nullptr, &materialConstants, 0, 0);
 
                 const auto& materialStreams = materialTextures_[draw.materialIndex];
+                const TextureResourcePtr& fallback = codecIndex_ == 0
+                    ? fallbackOriginalTexture_
+                    : fallbackTexture_;
                 const TextureResourcePtr streams[] = {
-                    materialStreams.base ? materialStreams.base : fallbackTexture_,
-                    materialStreams.alpha ? materialStreams.alpha : fallbackTexture_,
-                    materialStreams.bump ? materialStreams.bump : fallbackTexture_,
+                    materialStreams.base ? materialStreams.base : fallback,
+                    materialStreams.alpha ? materialStreams.alpha : fallback,
+                    materialStreams.bump ? materialStreams.bump : fallback,
                 };
                 TextureConstants textureConstants{};
                 ID3D11ShaderResourceView* resources[3]{};
@@ -725,7 +853,7 @@ private:
         title += kCodecLabels[codecIndex_];
         title += L" (";
         title += FormatBytes(sceneHeader_.codecBytes[codecIndex_]);
-        title += L" compressed source)";
+        title += L" texture data)";
         SetWindowTextW(window_, title.c_str());
     }
 
@@ -758,7 +886,7 @@ private:
     ComPtr<ID3D11Texture2D> depthTexture_;
     ComPtr<ID3D11DepthStencilView> depthStencil_;
     ComPtr<ID3D11VertexShader> vertexShader_;
-    std::array<ComPtr<ID3D11PixelShader>, 3> pixelShaders_;
+    std::array<ComPtr<ID3D11PixelShader>, 4> pixelShaders_;
     ComPtr<ID3D11InputLayout> inputLayout_;
     ComPtr<ID3D11Buffer> vertexBuffer_;
     ComPtr<ID3D11Buffer> indexBuffer_;
@@ -771,7 +899,9 @@ private:
     ComPtr<ID3D11BlendState> alphaBlend_;
     ComPtr<ID3D11DepthStencilState> opaqueDepth_;
     ComPtr<ID3D11DepthStencilState> transparentDepth_;
+    ComPtr<ID3D11SamplerState> originalSampler_;
     TextureResourcePtr fallbackTexture_;
+    TextureResourcePtr fallbackOriginalTexture_;
     D3D11_VIEWPORT viewport_{};
 
     XMFLOAT3 focusTarget_{};

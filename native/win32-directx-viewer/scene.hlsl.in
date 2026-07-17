@@ -17,12 +17,19 @@ cbuffer TextureConstants : register(b2)
     uint4 textureInfo[15];
 };
 
+#ifndef ACTIVE_CODEC
+#define ACTIVE_CODEC 1
+#endif
+
+#if ACTIVE_CODEC == 4
+Texture2D<float4> baseStream : register(t0);
+Texture2D<float4> alphaStream : register(t1);
+Texture2D<float4> bumpStream : register(t2);
+SamplerState originalSampler : register(s0);
+#else
 ByteAddressBuffer baseStream : register(t0);
 ByteAddressBuffer alphaStream : register(t1);
 ByteAddressBuffer bumpStream : register(t2);
-
-#ifndef ACTIVE_CODEC
-#define ACTIVE_CODEC 1
 #endif
 
 static const float DCT_PI = 3.1415926535897932384626433832795;
@@ -260,7 +267,18 @@ float4 SampleAstc(
         (float)(high >> 16u)) / 65535.0;
 }
 
-float4 SampleCompressed(
+#if ACTIVE_CODEC == 4
+float4 SampleTexture(
+    Texture2D<float4> data,
+    int descriptor,
+    float2 uv,
+    bool convertSrgb)
+{
+    float2 wrapped = frac(uv);
+    return data.Sample(originalSampler, float2(wrapped.x, 1.0 - wrapped.y));
+}
+#else
+float4 SampleTexture(
     ByteAddressBuffer data,
     int descriptor,
     float2 uv,
@@ -279,26 +297,25 @@ float4 SampleCompressed(
 #elif ACTIVE_CODEC == 3
     if (header.x == 3u)
         value = SampleAstc(data, header, textureInfo[offset + 1], uv);
-#else
-#error Unsupported ACTIVE_CODEC
 #endif
     if (convertSrgb) value.rgb = SrgbToLinear(value.rgb);
     return value;
 }
+#endif
 
 float4 PSMain(PixelInput input) : SV_TARGET
 {
     float4 sampled = materialParameters.x > 0.5
-        ? SampleCompressed(baseStream, 0, input.uv, true)
+        ? SampleTexture(baseStream, 0, input.uv, true)
         : float4(1.0, 1.0, 1.0, 1.0);
-    sampled.a *= SampleCompressed(alphaStream, 1, input.uv, false).r;
+    sampled.a *= SampleTexture(alphaStream, 1, input.uv, false).r;
     float4 albedo = sampled * baseColor;
     if (materialParameters.z > 0.0) clip(albedo.a - materialParameters.z);
 
     float3 normal = normalize(input.normal);
     if (materialParameters.y > 0.5)
     {
-        float height = SampleCompressed(bumpStream, 2, input.uv, false).r;
+        float height = SampleTexture(bumpStream, 2, input.uv, false).r;
         float2 gradient = float2(ddx(height), ddy(height));
         normal = normalize(normal + float3(-gradient.x * 1.5, 0.0, -gradient.y * 1.5));
     }

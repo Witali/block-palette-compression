@@ -36,7 +36,7 @@ buildShaderSource();
 
 process.stdout.write(
   `Built Win32 scene assets: ${nativeScene.byteLength} scene bytes and ` +
-  `${manifest.textureCount} source textures in three directly sampled codec sets.\n`,
+  `${manifest.textureCount} source textures in four GPU texture sets.\n`,
 );
 
 function buildNativeScene() {
@@ -68,7 +68,7 @@ function buildNativeScene() {
   let offset = 0;
 
   output.write("DXSC", offset, 4, "ascii"); offset += 4;
-  output.writeUInt32LE(1, offset); offset += 4;
+  output.writeUInt32LE(2, offset); offset += 4;
   output.writeUInt32LE(vertices.length / 8, offset); offset += 4;
   output.writeUInt32LE(indices.length, offset); offset += 4;
   output.writeUInt32LE(draws.length, offset); offset += 4;
@@ -76,7 +76,7 @@ function buildNativeScene() {
   for (const value of [...bounds.min, ...bounds.max]) {
     output.writeFloatLE(value, offset); offset += 4;
   }
-  for (const codec of ["bpal", "dct", "astc"]) {
+  for (const codec of ["original", "bpal", "dct", "astc"]) {
     output.writeBigUInt64LE(BigInt(manifest.codecTotals[codec]), offset); offset += 8;
   }
   offset = SCENE_HEADER_BYTES;
@@ -203,8 +203,21 @@ async function buildTextureStreams() {
   const wasmBinary = fs.readFileSync(path.join(ROOT, "vendor", "astc-encoder-wasm", "astcenc.wasm"));
   const astcModule = await createASTCModule({ wasmBinary });
 
-  fs.rmSync(path.join(OUTPUT_DIRECTORY, "textures"), { recursive: true, force: true });
+  fs.rmSync(path.join(OUTPUT_DIRECTORY, "original"), { recursive: true, force: true });
   fs.rmSync(path.join(OUTPUT_DIRECTORY, "streams"), { recursive: true, force: true });
+
+  const originalDirectory = path.join(OUTPUT_DIRECTORY, "original");
+  fs.mkdirSync(originalDirectory, { recursive: true });
+  for (const identifier of [...identifiers].sort()) {
+    const variant = textureEntries.get(identifier)?.variants.original;
+    if (!variant || !["BC1", "BC7"].includes(variant.gpuFormat)) {
+      throw new Error(`Texture ${identifier} has no BC1/BC7 original variant`);
+    }
+    fs.copyFileSync(
+      path.join(SOURCE_DIRECTORY, variant.color),
+      path.join(originalDirectory, path.basename(variant.color)),
+    );
+  }
 
   for (const codec of ["bpal", "dct", "astc"]) {
     const codecDirectory = path.join(OUTPUT_DIRECTORY, "streams", codec);

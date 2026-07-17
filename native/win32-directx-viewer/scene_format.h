@@ -4,7 +4,7 @@
 
 namespace native_scene {
 
-constexpr std::uint32_t kSceneVersion = 1;
+constexpr std::uint32_t kSceneVersion = 2;
 constexpr std::uint32_t kTextureStreamVersion = 1;
 
 enum TextureCodec : std::uint32_t {
@@ -33,8 +33,8 @@ struct SceneHeader {
     std::uint32_t materialCount;
     float boundsMin[3];
     float boundsMax[3];
-    std::uint64_t codecBytes[3];
-    std::uint32_t reserved[6];
+    std::uint64_t codecBytes[4];
+    std::uint32_t reserved[4];
 };
 
 struct MaterialRecord {

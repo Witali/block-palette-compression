@@ -11,6 +11,7 @@ const root = path.resolve(__dirname, "..");
 const sourceDirectory = path.join(root, "assets", "scenes", "barcelona");
 const nativeDirectory = path.join(root, "native", "win32-directx-viewer");
 const streamDirectory = path.join(nativeDirectory, "assets", "streams");
+const originalDirectory = path.join(nativeDirectory, "assets", "original");
 const manifest = JSON.parse(fs.readFileSync(path.join(sourceDirectory, "manifest.json"), "utf8"));
 
 test("ships raw Direct3D streams instead of decoded texture caches", () => {
@@ -30,6 +31,22 @@ test("ships raw Direct3D streams instead of decoded texture caches", () => {
     assert.ok(stream.codec >= 1 && stream.codec <= 3);
     assert.ok(stream.width > 0 && stream.height > 0);
     assert.equal(stream.payload.length % 4, 0);
+  }
+});
+
+test("ships original-resolution BC1 and BC7 textures without RGBA caches", () => {
+  const main = fs.readFileSync(path.join(nativeDirectory, "main.cpp"), "utf8");
+  const hlsl = fs.readFileSync(path.join(nativeDirectory, "assets", "scene.hlsl"), "utf8");
+
+  assert.match(main, /DXGI_FORMAT_BC1_UNORM/);
+  assert.match(main, /DXGI_FORMAT_BC7_UNORM/);
+  assert.match(hlsl, /Texture2D<float4> baseStream/);
+  for (const texture of manifest.textures) {
+    const variant = texture.variants.original;
+    const source = fs.readFileSync(path.join(sourceDirectory, variant.color));
+    const native = fs.readFileSync(path.join(originalDirectory, path.basename(variant.color)));
+    assert.deepEqual(native, source);
+    assert.equal(variant.gpuFormat, texture.hasAlpha ? "BC7" : "BC1");
   }
 });
 
