@@ -1,0 +1,317 @@
+cbuffer SceneConstants : register(b0)
+{
+    float4x4 viewProjection;
+    float4 lightDirectionExposure;
+    float4 cameraPosition;
+};
+
+cbuffer MaterialConstants : register(b1)
+{
+    float4 baseColor;
+    float4 materialParameters;
+};
+
+cbuffer TextureConstants : register(b2)
+{
+    // Five uint4 values per stream: header followed by fourteen codec parameters.
+    uint4 textureInfo[15];
+};
+
+ByteAddressBuffer baseStream : register(t0);
+ByteAddressBuffer alphaStream : register(t1);
+ByteAddressBuffer bumpStream : register(t2);
+
+#ifndef ACTIVE_CODEC
+#define ACTIVE_CODEC 1
+#endif
+
+static const float DCT_PI = 3.1415926535897932384626433832795;
+static const int DCT_QUANT_Y[64] = {
+    16, 11, 10, 16, 24, 40, 51, 61,
+    12, 12, 14, 19, 26, 58, 60, 55,
+    14, 13, 16, 24, 40, 57, 69, 56,
+    14, 17, 22, 29, 51, 87, 80, 62,
+    18, 22, 37, 56, 68, 109, 103, 77,
+    24, 35, 55, 64, 81, 104, 113, 92,
+    49, 64, 78, 87, 103, 121, 120, 101,
+    72, 92, 95, 98, 112, 100, 103, 99
+};
+
+static const int DCT_QUANT_C[64] = {
+    17, 18, 24, 47, 99, 99, 99, 99,
+    18, 21, 26, 66, 99, 99, 99, 99,
+    24, 26, 56, 99, 99, 99, 99, 99,
+    47, 66, 99, 99, 99, 99, 99, 99,
+    99, 99, 99, 99, 99, 99, 99, 99,
+    99, 99, 99, 99, 99, 99, 99, 99,
+    99, 99, 99, 99, 99, 99, 99, 99,
+    99, 99, 99, 99, 99, 99, 99, 99
+};
+
+__DCT_SCAN_TABLES__
+
+struct VertexInput
+{
+    float3 position : POSITION;
+    float3 normal : NORMAL;
+    float2 uv : TEXCOORD0;
+};
+
+struct PixelInput
+{
+    float4 position : SV_POSITION;
+    float3 worldPosition : TEXCOORD0;
+    float3 normal : TEXCOORD1;
+    float2 uv : TEXCOORD2;
+};
+
+PixelInput VSMain(VertexInput input)
+{
+    PixelInput output;
+    output.position = mul(float4(input.position, 1.0), viewProjection);
+    output.worldPosition = input.position;
+    output.normal = input.normal;
+    output.uv = input.uv;
+    return output;
+}
+
+uint StreamByte(ByteAddressBuffer data, uint byteOffset)
+{
+    uint word = data.Load(byteOffset & ~3u);
+    return (word >> ((byteOffset & 3u) * 8u)) & 255u;
+}
+
+uint ReadBitsMsb(ByteAddressBuffer data, uint bitOffset, uint bitCount)
+{
+    if (bitCount == 0u) return 0u;
+    uint byteOffset = bitOffset >> 3u;
+    uint bitInByte = bitOffset & 7u;
+    uint value = (StreamByte(data, byteOffset) << 16u) |
+        (StreamByte(data, byteOffset + 1u) << 8u) |
+        StreamByte(data, byteOffset + 2u);
+    uint shift = 24u - bitInByte - bitCount;
+    return (value >> shift) & ((1u << bitCount) - 1u);
+}
+
+float3 SrgbToLinear(float3 color)
+{
+    float3 low = color / 12.92;
+    float3 high = pow((color + 0.055) / 1.055, 2.4);
+    return lerp(high, low, color <= 0.04045);
+}
+
+float4 SampleBpal(
+    ByteAddressBuffer data,
+    uint4 header,
+    uint4 p0,
+    uint4 p1,
+    uint4 p2,
+    float2 uv)
+{
+    uint2 dimensions = max(header.yz, uint2(1u, 1u));
+    float2 wrapped = frac(uv);
+    float2 oriented = float2(wrapped.x, 1.0 - wrapped.y);
+    uint2 pixel = min((uint2)(oriented * (float2)dimensions), dimensions - 1u);
+    uint blockSize = p0.x;
+    uint blockIndex = (pixel.y / blockSize) * p0.y + pixel.x / blockSize;
+    uint localIndex = ReadBitsMsb(
+        data,
+        p2.z + (pixel.y * dimensions.x + pixel.x) * p1.x,
+        p1.x);
+    uint globalIndex = ReadBitsMsb(
+        data,
+        p2.y + (blockIndex * p0.z + localIndex) * p1.y,
+        p1.y);
+    uint paletteIndex = p1.z == 0u
+        ? 0u
+        : ReadBitsMsb(data, p2.x + blockIndex * p1.z, p1.z);
+    uint packed = data.Load(p2.w + (paletteIndex * p0.w + globalIndex) * 4u);
+    return float4(
+        float3(packed & 255u, (packed >> 8u) & 255u, (packed >> 16u) & 255u) / 255.0,
+        1.0);
+}
+
+uint ReadDctBe32(ByteAddressBuffer data, uint byteOffset)
+{
+    return (StreamByte(data, byteOffset) << 24u) |
+        (StreamByte(data, byteOffset + 1u) << 16u) |
+        (StreamByte(data, byteOffset + 2u) << 8u) |
+        StreamByte(data, byteOffset + 3u);
+}
+
+int SignedBits(uint value, uint bitCount)
+{
+    uint sign = 1u << (bitCount - 1u);
+    return (value & sign) == 0u ? (int)value : (int)value - (int)(1u << bitCount);
+}
+
+float DctBasis(int frequency, int coordinate, int size)
+{
+    float alpha = frequency == 0 ? sqrt(1.0 / (float)size) : sqrt(2.0 / (float)size);
+    return alpha * cos(DCT_PI * (float)((2 * coordinate + 1) * frequency) / (float)(2 * size));
+}
+
+float DctQuantizationStep(int position, bool chroma, int width, int height, int quality)
+{
+    int u = position % width;
+    int v = position / width;
+    int tableX = min(7, (int)floor((float)(u * 7) / (float)max(1, width - 1) + 0.5));
+    int tableY = min(7, (int)floor((float)(v * 7) / (float)max(1, height - 1) + 0.5));
+    float qualityScale = quality < 50 ? 50.0 / (float)quality : 2.0 - (float)quality * 0.02;
+    float dimensionScale = sqrt((float)(width * height) / 64.0);
+    int tableValue = chroma ? DCT_QUANT_C[tableY * 8 + tableX] : DCT_QUANT_Y[tableY * 8 + tableX];
+    return max(1.0, (float)tableValue * qualityScale * dimensionScale);
+}
+
+float SampleDctComponent(
+    ByteAddressBuffer data,
+    uint recordOffset,
+    int localX,
+    int localY,
+    int width,
+    int height,
+    bool chroma,
+    int acCount,
+    int quality,
+    uint flags)
+{
+    uint headerWord = ReadDctBe32(data, recordOffset);
+    int profile = (int)(headerWord >> 28u);
+    int storedProfile = (flags & 16u) != 0u ? profile : profile + 1;
+    int dcScaleIndex = (int)((headerWord >> 24u) & 15u);
+    int dc = SignedBits((headerWord >> 14u) & 1023u, 10u);
+    float scales[3] = {
+        exp2((float)((headerWord >> 11u) & 7u)),
+        exp2((float)((headerWord >> 8u) & 7u)),
+        exp2((float)((headerWord >> 5u) & 7u))
+    };
+    float sum = (float)dc * exp2((float)dcScaleIndex) *
+        DctQuantizationStep(0, chroma, width, height, quality) *
+        DctBasis(0, localX, width) * DctBasis(0, localY, height);
+    float correction = 0.0;
+    int firstEnd = (acCount + 5) / 6;
+    int secondEnd = (acCount + 1) / 2;
+
+    [loop]
+    for (int index = 0; index < acCount; ++index)
+    {
+        int position = width == 16
+            ? DCT_SCAN_Y[storedProfile * 97 + index]
+            : DCT_SCAN_C420[storedProfile * 20 + index];
+        int stored = SignedBits(ReadBitsMsb(data, recordOffset * 8u + 27u + (uint)index * 5u, 5u), 5u);
+        int group = index < firstEnd ? 0 : index < secondEnd ? 1 : 2;
+        float value = (float)stored * scales[group] *
+            DctQuantizationStep(position, chroma, width, height, quality) *
+            DctBasis(position % width, localX, width) *
+            DctBasis(position / width, localY, height);
+        float adjusted = value - correction;
+        float next = sum + adjusted;
+        correction = (next - sum) - adjusted;
+        sum = next;
+    }
+    return sum + 128.0;
+}
+
+float4 SampleDct(
+    ByteAddressBuffer data,
+    uint4 header,
+    uint4 p0,
+    uint4 p1,
+    float2 uv)
+{
+    uint2 dimensions = max(header.yz, uint2(1u, 1u));
+    float2 wrapped = frac(uv);
+    float2 oriented = float2(wrapped.x, 1.0 - wrapped.y);
+    uint2 pixel = min((uint2)(oriented * (float2)dimensions), dimensions - 1u);
+    uint mcuIndex = (pixel.y >> 4u) * p0.x + (pixel.x >> 4u);
+    uint mcuOffset = 64u + mcuIndex * p0.z;
+    int2 local = (int2)(pixel & 15u);
+    float y = SampleDctComponent(data, mcuOffset, local.x, local.y, 16, 16, false, 97, (int)p0.y, p1.z);
+    int chromaX = local.x >> 1;
+    int chromaY = local.y >> 1;
+    float cb = SampleDctComponent(data, mcuOffset + p0.w, chromaX, chromaY, 8, 8, true, 20, (int)p0.y, p1.z);
+    float cr = SampleDctComponent(data, mcuOffset + p0.w + p1.x, chromaX, chromaY, 8, 8, true, 20, (int)p0.y, p1.z);
+    cb -= 128.0;
+    cr -= 128.0;
+    float3 rgb = saturate(float3(
+        y + 1.402 * cr,
+        y - 0.344136 * cb - 0.714136 * cr,
+        y + 1.772 * cb) / 255.0);
+    return float4(rgb, 1.0);
+}
+
+float4 SampleAstc(
+    ByteAddressBuffer data,
+    uint4 header,
+    uint4 p0,
+    float2 uv)
+{
+    uint2 dimensions = max(header.yz, uint2(1u, 1u));
+    float2 wrapped = frac(uv);
+    float2 oriented = float2(wrapped.x, 1.0 - wrapped.y);
+    uint2 pixel = min((uint2)(oriented * (float2)dimensions), dimensions - 1u);
+    uint blockIndex = (pixel.y / p0.y) * p0.z + pixel.x / p0.x;
+    uint low = data.Load(blockIndex * 16u + 8u);
+    uint high = data.Load(blockIndex * 16u + 12u);
+    return float4(
+        (float)(low & 65535u),
+        (float)(low >> 16u),
+        (float)(high & 65535u),
+        (float)(high >> 16u)) / 65535.0;
+}
+
+float4 SampleCompressed(
+    ByteAddressBuffer data,
+    int descriptor,
+    float2 uv,
+    bool convertSrgb)
+{
+    int offset = descriptor * 5;
+    uint4 header = textureInfo[offset];
+    float4 value = float4(1.0, 1.0, 1.0, 1.0);
+    if (header.x == 0u) return value;
+#if ACTIVE_CODEC == 1
+    if (header.x == 1u)
+        value = SampleBpal(data, header, textureInfo[offset + 1], textureInfo[offset + 2], textureInfo[offset + 3], uv);
+#elif ACTIVE_CODEC == 2
+    if (header.x == 2u)
+        value = SampleDct(data, header, textureInfo[offset + 1], textureInfo[offset + 2], uv);
+#elif ACTIVE_CODEC == 3
+    if (header.x == 3u)
+        value = SampleAstc(data, header, textureInfo[offset + 1], uv);
+#else
+#error Unsupported ACTIVE_CODEC
+#endif
+    if (convertSrgb) value.rgb = SrgbToLinear(value.rgb);
+    return value;
+}
+
+float4 PSMain(PixelInput input) : SV_TARGET
+{
+    float4 sampled = materialParameters.x > 0.5
+        ? SampleCompressed(baseStream, 0, input.uv, true)
+        : float4(1.0, 1.0, 1.0, 1.0);
+    sampled.a *= SampleCompressed(alphaStream, 1, input.uv, false).r;
+    float4 albedo = sampled * baseColor;
+    if (materialParameters.z > 0.0) clip(albedo.a - materialParameters.z);
+
+    float3 normal = normalize(input.normal);
+    if (materialParameters.y > 0.5)
+    {
+        float height = SampleCompressed(bumpStream, 2, input.uv, false).r;
+        float2 gradient = float2(ddx(height), ddy(height));
+        normal = normalize(normal + float3(-gradient.x * 1.5, 0.0, -gradient.y * 1.5));
+    }
+
+    float3 lightDirection = normalize(lightDirectionExposure.xyz);
+    float diffuse = saturate(dot(normal, -lightDirection));
+    float sky = normal.y * 0.18 + 0.22;
+    float3 lit = albedo.rgb * (sky + diffuse * 0.82) * lightDirectionExposure.w;
+    float3 viewDirection = normalize(cameraPosition.xyz - input.worldPosition);
+    float3 halfVector = normalize(viewDirection - lightDirection);
+    float specularPower = lerp(10.0, 80.0, saturate(1.0 - baseColor.a * 0.15));
+    float specular = pow(saturate(dot(normal, halfVector)), specularPower) * 0.12;
+    lit += specular.xxx;
+    if (materialParameters.w > 0.5) lit += albedo.rgb * 1.8;
+    return float4(lit, albedo.a);
+}

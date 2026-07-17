@@ -128,6 +128,7 @@ commands for benchmark automation.
 The project contains:
 
 - [`native/win64_demo`](./native/win64_demo/README.md) — standalone 64-bit Win32/Direct3D 11 rotating-cube demo with live BPAL, BPLM, DCTBS2, BPDH, and WIC texture loading;
+- [`native/win32-directx-viewer`](./native/win32-directx-viewer/README.md) — native Win32/Direct3D 11 Barcelona Pavilion viewer that obtains BPAL, DCTBS2, and restricted ASTC texels directly from compressed `ByteAddressBuffer` streams in its pixel shaders;
 - [`codec-lab.html`](https://witali.github.io/block-palette-compression/codec-lab.html) — the shared BPAL, DCTBS2, and BPDH encoder laboratory with settings search, synchronized comparison, format diagrams, coordinate inspection, PNG export, and encoded-file downloads;
 - [`bpal-viewer.html`](https://witali.github.io/block-palette-compression/bpal-viewer.html) — BPAL, BPLM, BPDH, and regular image viewer;
 - [`scene-viewer.html`](https://witali.github.io/block-palette-compression/scene-viewer.html) — Barcelona Pavilion Blender scene with live switching between BPAL, DCTBS2, and ASTC texture sets;

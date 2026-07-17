@@ -8,3 +8,4 @@ benchmark/work/
 assets/bpal/manifest.json
 .tmp/
 tools/cuda/
+native/win32-directx-viewer/build/

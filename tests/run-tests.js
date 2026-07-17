@@ -8,6 +8,7 @@ async function runTests() {
   require("./cube-grid-layout.test.js");
   require("./cube-wheel-zoom.test.js");
   require("./scene-viewer-page.test.js");
+  require("./native-scene-texture-streams.test.js");
   require("./palette-quantizer.test.js");
   require("./block-palette-codec.test.js");
   require("./block-palette-format.test.js");
