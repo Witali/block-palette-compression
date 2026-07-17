@@ -71,6 +71,17 @@ test("shows a format-specific expandable binary layout reference", () => {
   assert.match(script, /formatGuide: createDctFormatGuide/);
   assert.match(script, /formatGuide: createBpdhFormatGuide/);
   assert.match(script, /function renderFormatGuide\(\)[\s\S]*?renderFileMap\(guide\.sections\)[\s\S]*?renderHeaderTable\(guide\.header\)[\s\S]*?renderPackingList\(guide\.packing\)/);
+  assert.match(script, /formatGuideSection\(t\("lab\.formatGuideBlockLayout"\), renderCodecBlockDiagram\(guide\.diagram\)\)/);
+  assert.match(script, /function renderCodecBlockDiagram\(diagram\)/);
+  assert.match(script, /function renderDctMcuDiagram\(diagram\)/);
+  assert.match(script, /function renderBpdhMcuDiagram\(diagram\)/);
+  assert.match(script, /function renderDctBlockDiagram\(diagram\)/);
+  assert.match(script, /button\.dataset\.guideComponent = name/);
+  assert.match(script, /function getGuideZigzagPositions\(width, height\)/);
+  assert.match(script, /function getGuideRowMajorPositions\(width, height\)/);
+  assert.match(script, /coefficientCodingKey: info\?\.coefficientCodingKey \|\| defaultDctGuideCoding\(presetKey\)/);
+  assert.match(script, /if \(coding\.includes\("implicit2"\) && \(\(u === 1 && v === 0\) \|\| \(u === 0 && v === 1\)\)\) return "implicit"/);
+  assert.match(script, /if \(rank <= 62\) return "mask-tail"/);
   assert.match(script, /guideHeaderField\("bits 32–35", 4, "version", "5"\)/);
   assert.match(script, /guideHeaderField\("52–55 B", 32, "flags"/);
   assert.match(script, /guideHeaderField\("44–47 B", 32, "dctBits"/);
@@ -82,6 +93,11 @@ test("shows a format-specific expandable binary layout reference", () => {
   assert.match(styles, /\.lab-format-table/);
   assert.match(styles, /\.lab-bit-strip/);
   assert.match(styles, /\.lab-file-segment\.is-dct/);
+  assert.match(styles, /\.lab-codec-layout-diagrams \{[\s\S]*?grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/);
+  assert.match(styles, /\.lab-mcu-spatial/);
+  assert.match(styles, /\.lab-dct-frequency-grid/);
+  assert.match(styles, /\.lab-dct-zigzag polyline/);
+  assert.match(styles, /@media \(max-width: 1000px\) \{[\s\S]*?\.lab-codec-layout-diagrams \{[\s\S]*?grid-template-columns: minmax\(0, 1fr\);/);
 });
 
 test("shows selected and shared BPAL palettes only in BPAL mode", () => {

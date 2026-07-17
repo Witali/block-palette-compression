@@ -18,6 +18,7 @@
     sourceKey: null,
     pendingFile: null,
     busy: false,
+    guideComponent: "y",
   };
 
   const QUALITY_PRESETS = Object.freeze({
@@ -182,6 +183,12 @@
       cancelProcessing();
     });
     elements.showOverlay.addEventListener("change", () => comparison.drawOverlay());
+    elements.formatGuideBody.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-guide-component]");
+      if (!button || !elements.formatGuideBody.contains(button)) return;
+      state.guideComponent = button.dataset.guideComponent;
+      renderFormatGuide();
+    });
     elements.bpalQualityPreset.addEventListener("change", applyBpalPreset);
     elements.bpalBlockSize.addEventListener("change", () => {
       updateBpalLocalColorOptions();
@@ -880,6 +887,7 @@
     elements.formatGuideBody.replaceChildren(
       intro,
       formatGuideSection(t("lab.formatGuideMap"), renderFileMap(guide.sections)),
+      formatGuideSection(t("lab.formatGuideBlockLayout"), renderCodecBlockDiagram(guide.diagram)),
       formatGuideSection(t("lab.formatGuideHeader"), renderHeaderTable(guide.header)),
       formatGuideSection(t("lab.formatGuidePacking"), renderPackingList(guide.packing))
     );
@@ -895,6 +903,13 @@
     return {
       summary: "BPAL · v5 · 14 B",
       intro: t("lab.bpalGuideIntro"),
+      diagram: {
+        kind: "bpal",
+        blockSize: raw?.blockSize ?? Number(elements.bpalBlockSize.value),
+        localColorCount: raw?.localColorCount ?? Number(elements.bpalLocalColors.value),
+        globalColorCount: raw?.globalColorCount ?? Number(elements.bpalGlobalColors.value),
+        paletteCount: raw?.paletteCount ?? Number(elements.bpalPaletteCount.value),
+      },
       sections: [
         guideMapEntry(t("lab.guideHeader"), "14 B", t("lab.bpalGuideHeaderDetail"), 112, "header"),
         guideMapEntry(t("lab.guideSharedPalettes"), guideSize(layout?.globalPaletteBits, variable), t("lab.bpalGuidePaletteDetail"), layout?.globalPaletteBits, "palette"),
@@ -942,12 +957,27 @@
 
   function createDctFormatGuide(result) {
     const info = result?.info;
-    const preset = info || root.DctImageFormat.getDctPreset(elements.dctPreset.value);
+    const presetKey = elements.dctPreset.value;
+    const selectedPreset = root.DctImageFormat.getDctPreset(presetKey);
+    const preset = info || selectedPreset;
+    const presetBpp = Number(presetKey);
     const splitLuma = info ? info.splitLuma8x8 : preset.bpp >= 3;
     const variable = t("lab.formatGuideVariable");
     return {
       summary: `DCTBS2 · v2 · 64 B · ${preset.bytesPerMcu} B/MCU`,
       intro: t("lab.dctGuideIntro"),
+      diagram: {
+        kind: "dct",
+        presetKey,
+        bpp: presetBpp,
+        bytesPerMcu: preset.bytesPerMcu,
+        yBytes: preset.yBytes,
+        cbBytes: preset.cbBytes,
+        crBytes: preset.crBytes,
+        splitLuma,
+        coefficientCodingKey: info?.coefficientCodingKey || defaultDctGuideCoding(presetKey),
+        zigzagOrder: info?.zigzagOrder ?? true,
+      },
       sections: [
         guideMapEntry(t("lab.guideHeader"), "64 B", t("lab.dctGuideHeaderDetail"), 512, "header"),
         guideMapEntry(t("lab.guideMcuRecords"), info ? formatBytes(info.payloadBytes) : `N × ${preset.bytesPerMcu} B`, t("lab.dctGuideMcuDetail"), info?.payloadBytes * 8, "dct"),
@@ -997,9 +1027,26 @@
     const globalBits = decoded?.globalIndexBits ?? Math.log2(Number(elements.bpdhGlobalColors.value));
     const paletteBits = decoded?.paletteIndexBits ?? Math.log2(Number(elements.bpdhPaletteCount.value));
     const variable = t("lab.formatGuideVariable");
+    const requestedMode = elements.bpdhMode.value;
+    const actualMode = decoded
+      ? decoded.bpalBlockCount > 0 && decoded.dctBlockCount > 0
+        ? "auto"
+        : decoded.dctBlockCount > 0 ? "dct" : "bpal"
+      : requestedMode;
     return {
       summary: "BPDH · v1 · 48 B · MCU 16×16",
       intro: t("lab.bpdhGuideIntro"),
+      diagram: {
+        kind: "bpdh",
+        mode: actualMode,
+        bpalBlockCount: decoded?.bpalBlockCount,
+        dctBlockCount: decoded?.dctBlockCount,
+        dctQuality: decoded?.dctQuality,
+        localColorCount: decoded?.localColorCount ?? Number(elements.bpdhLocalColors.value),
+        globalColorCount: decoded?.globalColorCount ?? Number(elements.bpdhGlobalColors.value),
+        coefficientCodingKey: "exp-golomb-rle",
+        zigzagOrder: true,
+      },
       sections: [
         guideMapEntry(t("lab.guideHeader"), "48 B", t("lab.bpdhGuideHeaderDetail"), 384, "header"),
         guideMapEntry(t("lab.guideSharedPalettes"), storage ? formatBytes(storage.paletteBytes) : variable, t("lab.bpdhGuidePaletteDetail"), storage?.paletteBytes * 8, "palette"),
@@ -1137,6 +1184,348 @@
       list.append(card);
     }
     return list;
+  }
+
+  function renderCodecBlockDiagram(diagram) {
+    const layout = document.createElement("div");
+    layout.className = "lab-codec-layout-diagrams";
+
+    if (diagram.kind === "bpal") {
+      layout.append(renderBpalBlockDiagram(diagram), renderNoDctDiagram());
+      return layout;
+    }
+
+    if (diagram.kind === "bpdh") {
+      layout.append(renderBpdhMcuDiagram(diagram));
+      layout.append(diagram.mode === "bpal"
+        ? renderNoDctDiagram()
+        : renderDctBlockDiagram(diagram));
+      return layout;
+    }
+
+    layout.append(renderDctMcuDiagram(diagram), renderDctBlockDiagram(diagram));
+    return layout;
+  }
+
+  function renderBpalBlockDiagram(diagram) {
+    const figure = createCodecDiagramPanel(
+      t("lab.diagramBpalBlockTitle"),
+      `${diagram.blockSize}×${diagram.blockSize} px · L ${diagram.localColorCount} · G ${diagram.globalColorCount}`
+    );
+    const flow = document.createElement("div");
+    flow.className = "lab-bpal-block-flow";
+    flow.append(
+      codecDiagramStep(t("lab.diagramSelector"), `${diagram.paletteCount}`),
+      codecDiagramArrow(),
+      codecDiagramStep(t("lab.diagramLocalMap"), `${diagram.localColorCount} × ${Math.log2(diagram.globalColorCount)} bit`),
+      codecDiagramArrow(),
+      codecDiagramStep(t("lab.diagramPixelIndices"), `${diagram.blockSize ** 2} × ${Math.log2(diagram.localColorCount)} bit`)
+    );
+    const note = document.createElement("p");
+    note.className = "lab-codec-diagram-note";
+    note.textContent = t("lab.diagramBpalNote");
+    figure.append(flow, note);
+    return figure;
+  }
+
+  function renderNoDctDiagram() {
+    const figure = createCodecDiagramPanel(t("lab.diagramDctBlockTitle"), t("lab.diagramNotUsed"));
+    const empty = document.createElement("div");
+    empty.className = "lab-no-dct-diagram";
+    const mark = document.createElement("strong");
+    const note = document.createElement("p");
+    mark.textContent = "DCT ×";
+    note.textContent = t("lab.diagramBpalNoDctNote");
+    empty.append(mark, note);
+    figure.append(empty);
+    return figure;
+  }
+
+  function renderDctMcuDiagram(diagram) {
+    const figure = createCodecDiagramPanel(
+      t("lab.diagramMcuTitle"),
+      `${diagram.bytesPerMcu} B/MCU · 4:2:0 · ${diagram.bpp} bpp`
+    );
+    const spatial = document.createElement("div");
+    const luma = document.createElement("div");
+    const chroma = document.createElement("div");
+    spatial.className = "lab-mcu-spatial";
+    luma.className = `lab-mcu-luma${diagram.splitLuma ? " is-split" : ""}`;
+    chroma.className = "lab-mcu-chroma";
+
+    if (diagram.splitLuma) {
+      for (let block = 0; block < 4; block += 1) {
+        luma.append(codecLayoutTile("y", `Y${block}\n8×8`));
+      }
+    } else {
+      luma.append(codecLayoutTile("y", "Y\n16×16"));
+    }
+    chroma.append(codecLayoutTile("cb", "Cb\n8×8"), codecLayoutTile("cr", "Cr\n8×8"));
+    spatial.append(luma, chroma);
+
+    const bytes = document.createElement("div");
+    bytes.className = "lab-mcu-byte-bar";
+    bytes.append(
+      codecByteSegment("y", diagram.yBytes, `Y · ${diagram.yBytes} B`),
+      codecByteSegment("cb", diagram.cbBytes, `Cb · ${diagram.cbBytes} B`),
+      codecByteSegment("cr", diagram.crBytes, `Cr · ${diagram.crBytes} B`)
+    );
+    const note = document.createElement("p");
+    note.className = "lab-codec-diagram-note";
+    note.textContent = t(diagram.splitLuma ? "lab.diagramDctMcuSplitNote" : "lab.diagramDctMcuSingleNote");
+    figure.append(spatial, bytes, note);
+    return figure;
+  }
+
+  function renderBpdhMcuDiagram(diagram) {
+    const counts = Number.isInteger(diagram.bpalBlockCount) && Number.isInteger(diagram.dctBlockCount)
+      ? `BPAL ${diagram.bpalBlockCount} · DCT ${diagram.dctBlockCount}`
+      : t(`lab.diagramBpdhMode${diagram.mode === "auto" ? "Auto" : diagram.mode === "dct" ? "Dct" : "Bpal"}`);
+    const figure = createCodecDiagramPanel(t("lab.diagramCodingUnitTitle"), `16×16 px · ${counts}`);
+    const mode = document.createElement("div");
+    const branches = document.createElement("div");
+    mode.className = "lab-bpdh-mode-bit";
+    const modeLabel = document.createElement("strong");
+    const bpalBit = document.createElement("span");
+    const dctBit = document.createElement("span");
+    modeLabel.textContent = t("lab.diagramModeBit");
+    bpalBit.textContent = "0 = BPAL";
+    dctBit.textContent = "1 = DCT";
+    mode.append(modeLabel, bpalBit, dctBit);
+    branches.className = "lab-bpdh-branches";
+    branches.append(
+      codecHybridBranch("bpal", diagram.mode !== "dct", t("lab.diagramBpalBranch"), [
+        `L ${diagram.localColorCount}`, `G ${diagram.globalColorCount}`, `16×16 · ${t("lab.diagramPixelIndices")}`,
+      ]),
+      codecHybridBranch("dct", diagram.mode !== "bpal", t("lab.diagramDctBranch"), [
+        "Y0 · Y1 · Y2 · Y3", "Cb · Cr", `Q ${diagram.dctQuality ?? t("lab.diagramSearch")}`,
+      ])
+    );
+    const note = document.createElement("p");
+    note.className = "lab-codec-diagram-note";
+    note.textContent = t(`lab.diagramBpdh${diagram.mode === "auto" ? "Auto" : diagram.mode === "dct" ? "Dct" : "Bpal"}Note`);
+    figure.append(mode, branches, note);
+    return figure;
+  }
+
+  function renderDctBlockDiagram(diagram) {
+    const component = ["y", "cb", "cr"].includes(state.guideComponent)
+      ? state.guideComponent : "y";
+    const shape = getGuideDctShape(diagram, component);
+    const coding = diagram.coefficientCodingKey || "DCT";
+    const summary = shape.bytes === null
+      ? `${component.toUpperCase()} · ${shape.width}×${shape.height} · ${t("lab.formatGuideVariable")} · ${coding}`
+      : `${component.toUpperCase()} · ${shape.width}×${shape.height} · ${shape.bytes} B · ${coding}`;
+    const figure = createCodecDiagramPanel(t("lab.diagramDctBlockTitle"), summary);
+    const controls = document.createElement("div");
+    controls.className = "lab-dct-component-controls";
+    for (const name of ["y", "cb", "cr"]) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.dataset.guideComponent = name;
+      button.classList.toggle("is-selected", name === component);
+      button.setAttribute("aria-pressed", String(name === component));
+      button.textContent = t(`lab.diagramComponent${name === "y" ? "Y" : name === "cb" ? "Cb" : "Cr"}`);
+      controls.append(button);
+    }
+    const matrix = renderDctFrequencyMatrix(diagram, shape);
+    const legend = renderDctDiagramLegend(diagram);
+    const note = document.createElement("p");
+    note.className = "lab-codec-diagram-note";
+    note.textContent = dctDiagramNote(diagram);
+    figure.append(controls, matrix, legend, note);
+    return figure;
+  }
+
+  function getGuideDctShape(diagram, component) {
+    if (diagram.kind === "bpdh") {
+      return { component, width: 8, height: 8, bytes: null };
+    }
+    if (component === "y") {
+      return {
+        component,
+        width: diagram.splitLuma ? 8 : 16,
+        height: diagram.splitLuma ? 8 : 16,
+        bytes: diagram.splitLuma ? diagram.yBytes / 4 : diagram.yBytes,
+      };
+    }
+    return {
+      component,
+      width: 8,
+      height: 8,
+      bytes: component === "cb" ? diagram.cbBytes : diagram.crBytes,
+    };
+  }
+
+  function renderDctFrequencyMatrix(diagram, shape) {
+    const frame = document.createElement("div");
+    const grid = document.createElement("div");
+    const positions = diagram.zigzagOrder === false
+      ? getGuideRowMajorPositions(shape.width, shape.height)
+      : getGuideZigzagPositions(shape.width, shape.height);
+    const ranks = new Map(positions.map((position, rank) => [`${position.u},${position.v}`, rank]));
+    frame.className = `lab-dct-frequency-frame${shape.width > 8 ? " is-wide" : ""}`;
+    grid.className = "lab-dct-frequency-grid";
+    grid.style.gridTemplateColumns = `repeat(${shape.width}, minmax(0, 1fr))`;
+    grid.setAttribute("role", "img");
+    grid.setAttribute("aria-label", `${shape.component.toUpperCase()} ${shape.width}×${shape.height} · ${t(diagram.zigzagOrder === false
+      ? "lab.diagramRowMajor" : "lab.diagramZigzag")}`);
+
+    for (let v = 0; v < shape.height; v += 1) {
+      for (let u = 0; u < shape.width; u += 1) {
+        const rank = ranks.get(`${u},${v}`);
+        const cell = document.createElement("span");
+        const label = document.createElement("strong");
+        const kind = guideCoefficientKind(diagram, rank, u, v);
+        cell.className = `is-${kind}${rank < 16 || (rank < 100 && rank % 32 === 0) ? " is-major" : ""}`;
+        label.textContent = String(rank);
+        cell.append(label);
+        cell.setAttribute("aria-label", `${rank === 0 ? "DC" : `AC${rank}`} · u ${u}, v ${v}`);
+        grid.append(cell);
+      }
+    }
+
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    const line = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+    svg.classList.add("lab-dct-zigzag");
+    svg.setAttribute("viewBox", `0 0 ${shape.width} ${shape.height}`);
+    svg.setAttribute("aria-hidden", "true");
+    line.setAttribute("points", positions.map(({ u, v }) => `${u + 0.5},${v + 0.5}`).join(" "));
+    svg.append(line);
+    frame.append(grid, svg);
+    return frame;
+  }
+
+  function getGuideZigzagPositions(width, height) {
+    const positions = [];
+    for (let diagonal = 0; diagonal <= width + height - 2; diagonal += 1) {
+      const minimumU = Math.max(0, diagonal - (height - 1));
+      const maximumU = Math.min(width - 1, diagonal);
+      if (diagonal % 2 === 1) {
+        for (let u = maximumU; u >= minimumU; u -= 1) positions.push({ u, v: diagonal - u });
+      } else {
+        for (let u = minimumU; u <= maximumU; u += 1) positions.push({ u, v: diagonal - u });
+      }
+    }
+    return positions;
+  }
+
+  function getGuideRowMajorPositions(width, height) {
+    return Array.from({ length: width * height }, (_, rank) => ({
+      u: rank % width,
+      v: Math.floor(rank / width),
+    }));
+  }
+
+  function guideCoefficientKind(diagram, rank, u, v) {
+    if (rank === 0) return "dc";
+    const coding = diagram.coefficientCodingKey || "";
+    if (!coding.startsWith("masked-tail")) return "ac";
+    if (coding.includes("implicit2") && ((u === 1 && v === 0) || (u === 0 && v === 1))) return "implicit";
+    if (rank <= 62) return "mask-tail";
+    return "tail";
+  }
+
+  function renderDctDiagramLegend(diagram) {
+    const legend = document.createElement("div");
+    legend.className = "lab-dct-diagram-legend";
+    legend.append(codecDiagramLegend("dc", t("lab.diagramDc")));
+    const coding = diagram.coefficientCodingKey || "";
+    if (!coding.startsWith("masked-tail")) {
+      legend.append(codecDiagramLegend("ac", t("lab.diagramAc")));
+    } else {
+      if (coding.includes("implicit2")) legend.append(codecDiagramLegend("implicit", t("lab.diagramImplicit")));
+      legend.append(
+        codecDiagramLegend("mask-tail", t("lab.diagramMaskTail")),
+        codecDiagramLegend("tail", t("lab.diagramTail"))
+      );
+    }
+    legend.append(codecDiagramLegend("zigzag", t(diagram.zigzagOrder === false
+      ? "lab.diagramRowMajor" : "lab.diagramZigzag")));
+    return legend;
+  }
+
+  function dctDiagramNote(diagram) {
+    if (diagram.kind === "bpdh") return t("lab.diagramBpdhDctPackingNote");
+    const coding = diagram.coefficientCodingKey || "";
+    if (coding.includes("implicit2")) return t("lab.diagramDctImplicit2Note");
+    return t(coding.startsWith("masked-tail") ? "lab.diagramDctMaskedNote" : "lab.diagramDctGroupedNote");
+  }
+
+  function defaultDctGuideCoding(presetKey) {
+    if (presetKey === "0.75") return "skip-rle-equal-2";
+    if (presetKey === "1" || presetKey === "2") return "dual-scale-skip-equal-2";
+    if (presetKey === "1.5" || presetKey === "3" || presetKey === "4.5") return "dual-scale-skip-front";
+    return "grouped-5-front";
+  }
+
+  function createCodecDiagramPanel(title, summary) {
+    const figure = document.createElement("figure");
+    const caption = document.createElement("figcaption");
+    const heading = document.createElement("strong");
+    const detail = document.createElement("span");
+    figure.className = "lab-codec-diagram";
+    heading.textContent = title;
+    detail.textContent = summary;
+    caption.append(heading, detail);
+    figure.append(caption);
+    return figure;
+  }
+
+  function codecDiagramStep(label, detail) {
+    const step = document.createElement("span");
+    const strong = document.createElement("strong");
+    const small = document.createElement("small");
+    strong.textContent = label;
+    small.textContent = detail;
+    step.append(strong, small);
+    return step;
+  }
+
+  function codecDiagramArrow() {
+    const arrow = document.createElement("b");
+    arrow.textContent = "→";
+    arrow.setAttribute("aria-hidden", "true");
+    return arrow;
+  }
+
+  function codecLayoutTile(component, label) {
+    const tile = document.createElement("span");
+    tile.className = `is-${component}`;
+    tile.textContent = label;
+    return tile;
+  }
+
+  function codecByteSegment(component, bytes, label) {
+    const segment = document.createElement("span");
+    segment.className = `is-${component}`;
+    segment.style.flexGrow = String(bytes);
+    segment.textContent = label;
+    return segment;
+  }
+
+  function codecHybridBranch(kind, active, title, details) {
+    const branch = document.createElement("section");
+    const heading = document.createElement("strong");
+    const list = document.createElement("div");
+    branch.className = `is-${kind}${active ? " is-active" : ""}`;
+    heading.textContent = title;
+    for (const detail of details) {
+      const item = document.createElement("span");
+      item.textContent = detail;
+      list.append(item);
+    }
+    branch.append(heading, list);
+    return branch;
+  }
+
+  function codecDiagramLegend(kind, label) {
+    const entry = document.createElement("span");
+    const swatch = document.createElement("i");
+    swatch.className = `is-${kind}`;
+    swatch.setAttribute("aria-hidden", "true");
+    entry.append(swatch, label);
+    return entry;
   }
 
   function formatGuideSection(title, content) {
