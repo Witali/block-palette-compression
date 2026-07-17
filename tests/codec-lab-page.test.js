@@ -46,6 +46,7 @@ test("keeps encoding in format-specific workers", () => {
 
 test("styles the unified settings, comparison, structure, and inspector", () => {
   assert.match(styles, /\.format-picker/);
+  assert.match(styles, /\.format-picker select option \{[\s\S]*?background: #171d25;[\s\S]*?color: #eef3f8;/);
   assert.match(styles, /\.lab-header \{[\s\S]*?width: 100%;[\s\S]*?justify-content: stretch;/);
   assert.match(styles, /\.lab-controls \{[\s\S]*?width: 100%;[\s\S]*?justify-self: stretch;/);
   assert.match(styles, /\.format-settings/);

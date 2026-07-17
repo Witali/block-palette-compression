@@ -35,8 +35,14 @@
   border-color: #4e88bf;
   background: linear-gradient(180deg, #172738, #111a24);
   color: #eaf4ff;
+  color-scheme: dark;
   font-size: 16px;
   font-weight: 800;
+}
+
+.format-picker select option {
+  background: #171d25;
+  color: #eef3f8;
 }
 
 .lab-controls {
