@@ -141,6 +141,7 @@
       bpalDithering: byId("bpal-dithering"),
       bpalRefinement: byId("bpal-refinement"),
       dctPreset: byId("dct-preset"),
+      dctComponentBudget: byId("dct-component-budget"),
       dctQuality: byId("dct-quality"),
       dctQualityValue: byId("dct-quality-value"),
       dctAutoQuality: byId("dct-auto-quality"),
@@ -199,6 +200,7 @@
     }
     elements.bpalDiversity.addEventListener("input", updateRangeLabels);
     elements.dctQuality.addEventListener("input", updateRangeLabels);
+    elements.dctPreset.addEventListener("change", syncDctControls);
     elements.dctJpegImport.addEventListener("change", syncDctControls);
     elements.dctLibrary.addEventListener("change", () => {
       if (elements.dctLibrary.value !== "none") elements.dctJpegImport.checked = false;
@@ -482,6 +484,7 @@
           width: source.width,
           height: source.height,
           preset: elements.dctPreset.value,
+          componentBudget: elements.dctComponentBudget.value,
           quality: Number(elements.dctQuality.value),
           autoQuality: !jpegImport && elements.dctAutoQuality.checked,
           jpegImport,
@@ -739,6 +742,8 @@
     const importing = jpeg && elements.dctJpegImport.checked;
     elements.dctAutoQuality.disabled = importing;
     elements.dctLibrary.disabled = importing;
+    elements.dctComponentBudget.disabled = Number(elements.dctPreset.value) > 3 ||
+      elements.dctLibrary.value !== "none";
     if (importing) elements.dctAutoQuality.checked = false;
   }
 

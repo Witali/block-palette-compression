@@ -77,6 +77,7 @@
           <fieldset class="format-settings" data-format-panel="dct" hidden>
             <legend data-i18n="lab.dctSettings">DCTBS2 settings</legend>
             <label><span data-i18n="dct.rate">Target rate</span><select id="dct-preset"><option value="9">9 bpp · 288 B/MCU</option><option value="7.5">7.5 bpp · 240 B/MCU</option><option value="6">6 bpp · 192 B/MCU</option><option value="4.5">4.5 bpp · 144 B/MCU</option><option value="3">3 bpp · 96 B/MCU</option><option value="2">2 bpp · 64 B/MCU</option><option value="1.5" selected>1.5 bpp · 48 B/MCU</option><option value="1">1 bpp · 32 B/MCU</option><option value="0.75">0.75 bpp · 24 B/MCU</option></select></label>
+            <label><span data-i18n="dct.componentBudget">Component budget</span><select id="dct-component-budget"><option value="fixed" data-i18n="dct.componentBudgetFixed">Fixed Y/C allocation</option><option value="fast" selected data-i18n="dct.componentBudgetFast">Adaptive Y/C · fast</option><option value="expanded" data-i18n="dct.componentBudgetExpanded">Adaptive Y/C · expanded</option></select></label>
             <label class="range-label"><span><span data-i18n="dct.quality">Quantization quality</span><output id="dct-quality-value">72</output></span><input id="dct-quality" type="range" min="1" max="100" value="72"></label>
             <label class="check-option"><input id="dct-auto-quality" type="checkbox"><span data-i18n="dct.autoQuality">Find quantization automatically</span></label>
             <label class="check-option"><input id="dct-jpeg-import" type="checkbox" checked><span data-i18n="dct.jpegImport">Fast JPEG DCT import</span></label>
@@ -227,7 +228,7 @@
     </dialog>
 
     <script src="./src/palette/block-palette-format.js?v=direct-block-colors-1"></script>
-    <script src="./src/dct/dct-format.js?v=codec-lab-2"></script>
+    <script src="./src/dct/dct-format.js?v=codec-lab-3"></script>
     <script src="./src/hybrid/dct420.js?v=hybrid-1"></script>
     <script src="./src/hybrid/bpdh-format.js?v=hybrid-1"></script>
     <script src="./src/i18n/en.js?v=codec-layout-diagram-1"></script>
@@ -235,7 +236,7 @@
     <script src="./src/i18n/i18n.js"></script>
     <script src="./src/pages/codec-comparison-view.js?v=codec-lab-3"></script>
     <script src="./src/encoders/codec-encoder-runtime.js?v=shared-encoder-runtime-1"></script>
-    <script src="./src/pages/codec-lab-page.js?v=codec-layout-diagram-1"></script>
+    <script src="./src/pages/codec-lab-page.js?v=adaptive-yc-1"></script>
     <script src="./src/pwa/register-service-worker.js?v=1"></script>
   </body>
 </html>

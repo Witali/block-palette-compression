@@ -17,9 +17,6 @@ const int HEADER_SIZE = 64;
 const int LIBRARY_HEADER_SIZE = 32;
 const uint EXPECTED_MODE = 750u;
 const uint EXPECTED_MCU_BYTES = 24u;
-const uint EXPECTED_Y_BYTES = 12u;
-const uint EXPECTED_CB_BYTES = 6u;
-const uint EXPECTED_CR_BYTES = 6u;
 const bool ALLOW_SPLIT_LUMA = false;
 const uint FLAG_SPLIT_LUMA = 2u;
 const uint FLAG_LIBRARY = 4u;
@@ -970,10 +967,15 @@ vec3 yCbCrToRgb(float y, float cb, float cr) {
 }
 
 bool validMainHeader(uint flags) {
+    uint yBytes = u32le(36);
+    uint cbBytes = u32le(40);
+    uint crBytes = u32le(44);
+    bool splitLuma = (flags & FLAG_SPLIT_LUMA) != 0u;
     return u32le(0) == 0x42544344u && u32le(4) == 0x00003253u &&
         u32le(8) == 2u && u32le(12) == EXPECTED_MODE &&
-        u32le(32) == EXPECTED_MCU_BYTES && u32le(36) == EXPECTED_Y_BYTES &&
-        u32le(40) == EXPECTED_CB_BYTES && u32le(44) == EXPECTED_CR_BYTES &&
+        u32le(32) == EXPECTED_MCU_BYTES && yBytes + cbBytes + crBytes == EXPECTED_MCU_BYTES &&
+        cbBytes >= 3u && crBytes >= 3u && yBytes >= (splitLuma ? 12u : 3u) &&
+        (!splitLuma || yBytes % 4u == 0u) &&
         (flags & ~0x00000f1fu) == 0u && ((flags >> 8u) & 15u) <= 7u &&
         (((flags & FLAG_LIBRARY) == 0u) ||
             (((flags >> 8u) & 15u) != 6u && ((flags >> 8u) & 15u) != 7u)) &&
@@ -999,6 +1001,9 @@ void main() {
     bool zigzagOrder = (flags & 16u) != 0u;
     bool splitLuma = (flags & FLAG_SPLIT_LUMA) != 0u;
     bool chroma420 = (flags & FLAG_CHROMA_420) != 0u;
+    int yBytes = int(u32le(36));
+    int cbBytes = int(u32le(40));
+    int crBytes = int(u32le(44));
 
     int libraryVersion = 0;
     int yPrototypeCount = 0;
@@ -1037,14 +1042,14 @@ void main() {
         cbReferenceBase = yReferenceBase + yReferenceBytes;
         crReferenceBase = cbReferenceBase + cbReferenceBytes;
         yPrototypeBase = crReferenceBase + crReferenceBytes;
-        int yRecordBytes = splitLuma ? int(EXPECTED_Y_BYTES) / 4 : int(EXPECTED_Y_BYTES);
+        int yRecordBytes = splitLuma ? yBytes / 4 : yBytes;
         cbPrototypeBase = yPrototypeBase + yPrototypeCount * yRecordBytes;
-        crPrototypeBase = cbPrototypeBase + cbPrototypeCount * int(EXPECTED_CB_BYTES);
+        crPrototypeBase = cbPrototypeBase + cbPrototypeCount * cbBytes;
     }
 
     ivec2 local = pixel & 15;
     int yRecordOffset = mcuOffset;
-    int yRecordBytes = int(EXPECTED_Y_BYTES);
+    int yRecordBytes = yBytes;
     int yKind = 0;
     int yReferenceOrdinal = mcuIndex;
     ivec2 yLocal = local;
@@ -1071,20 +1076,20 @@ void main() {
         yKind, yLocal.x, yLocal.y, quality, coding, libraryVersion, zigzagOrder
     );
     float cb = chroma420 ? sampleChroma420WithPrototype(
-        mcuOffset + int(EXPECTED_Y_BYTES), int(EXPECTED_CB_BYTES),
+        mcuOffset + yBytes, cbBytes,
         cbPrototypeBase, cbPrototypeCount, cbSidecarIndex,
         local.x, local.y, quality, coding, libraryVersion, zigzagOrder
     ) : sampleWithPrototype(
-        mcuOffset + int(EXPECTED_Y_BYTES), int(EXPECTED_CB_BYTES),
+        mcuOffset + yBytes, cbBytes,
         cbPrototypeBase, cbPrototypeCount, cbSidecarIndex,
         2, local.x >> 1, local.y, quality, coding, libraryVersion, zigzagOrder
     );
     float cr = chroma420 ? sampleChroma420WithPrototype(
-        mcuOffset + int(EXPECTED_Y_BYTES + EXPECTED_CB_BYTES), int(EXPECTED_CR_BYTES),
+        mcuOffset + yBytes + cbBytes, crBytes,
         crPrototypeBase, crPrototypeCount, crSidecarIndex,
         local.x, local.y, quality, coding, libraryVersion, zigzagOrder
     ) : sampleWithPrototype(
-        mcuOffset + int(EXPECTED_Y_BYTES + EXPECTED_CB_BYTES), int(EXPECTED_CR_BYTES),
+        mcuOffset + yBytes + cbBytes, crBytes,
         crPrototypeBase, crPrototypeCount, crSidecarIndex,
         2, local.x >> 1, local.y, quality, coding, libraryVersion, zigzagOrder
     );

@@ -1,6 +1,6 @@
 "use strict";
 
-importScripts("../decoders/gpu-jpeg.js", "./dct-format.js?v=dct-page-19");
+importScripts("../decoders/gpu-jpeg.js", "./dct-format.js?v=dct-page-20");
 
 self.addEventListener("message", ({ data }) => {
   if (!data || data.type !== "encode") {
@@ -15,6 +15,7 @@ self.addEventListener("message", ({ data }) => {
     const options = {
       preset: data.preset,
       quality: data.quality,
+      componentBudget: data.componentBudget,
       dctLibrary: Boolean(data.dctLibrary),
       librarySize: data.librarySize,
       libraryComponents: data.libraryComponents,
@@ -56,6 +57,7 @@ self.addEventListener("message", ({ data }) => {
         data.height,
         {
           preset: data.preset,
+          componentBudget: data.componentBudget,
           sampleMcuCount: data.sampleMcuCount,
           dctLibrary: Boolean(data.dctLibrary),
           librarySize: data.librarySize,

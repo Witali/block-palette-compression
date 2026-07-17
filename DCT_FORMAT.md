@@ -29,7 +29,7 @@ localizes ringing from strong edges without changing the fixed MCU size or
 the random-access layout. Each high-rate Y block receives 16, 24, 32, 40,
 or 48 bytes at 3, 4.5, 6, 7.5, or 9 bpp respectively.
 
-| Preset | Bytes/MCU | Y | Cb | Cr |
+| Preset | Bytes/MCU | Default Y | Default Cb | Default Cr |
 | ---: | ---: | ---: | ---: | ---: |
 | 0.75 bpp | 24 | 12 | 6 | 6 |
 | 1 bpp | 32 | 16 | 8 | 8 |
@@ -40,6 +40,22 @@ or 48 bytes at 3, 4.5, 6, 7.5, or 9 bpp respectively.
 | 6 bpp | 192 | 128 | 32 | 32 |
 | 7.5 bpp | 240 | 160 | 40 | 40 |
 | 9 bpp | 288 | 192 | 48 | 48 |
+
+For the 0.75, 1, 1.5, 2, and 3 bpp modes the encoder uses adaptive component
+budgets by default. It encodes and fully decodes several equal-size Y/Cb/Cr
+allocations, measures RGB squared error, and writes the best complete file.
+The fast search includes the default allocation, so it cannot regress RGB
+quality relative to the previous fixed budget. The expanded search checks the
+complete useful chroma range supported by the component records. At 3 bpp its
+principal candidates are `Y84 + Cb6 + Cr6`, `Y72 + Cb12 + Cr12`,
+`Y64 + Cb16 + Cr16`, and `Y56 + Cb20 + Cr20`.
+
+Header fields at offsets 36, 40, and 44 are authoritative; the mode code fixes
+only the total MCU byte count. Their sum must equal `bytes per MCU`. When luma
+is split, Y bytes must divide evenly into four records. Every component record
+must contain at least three bytes. This keeps MCU addressing fixed while letting
+one file favor luma and another favor chroma. Modes above 3 bpp and prototype-
+library encodes keep their default allocation.
 
 The actual whole-file bpp can be slightly higher for non-multiple-of-16 image
 dimensions because the edge MCUs are stored at their complete fixed size.

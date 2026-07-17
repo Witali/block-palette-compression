@@ -5,6 +5,7 @@ const codec = window.DctImageFormat;
 const controls = document.getElementById("controls");
 const imageSelect = document.getElementById("image-url");
 const presetSelect = document.getElementById("preset");
+const componentBudgetSelect = document.getElementById("component-budget");
 const qualityInput = document.getElementById("quality");
 const qualityValue = document.getElementById("quality-value");
 const autoQualityInput = document.getElementById("auto-quality");
@@ -86,6 +87,7 @@ const MAX_ZOOM = 32;
 const VIEWPORT_PADDING = 28;
 
 populatePresetOptions();
+updateComponentBudgetAvailability();
 renderDctLayoutDiagram();
 
 controls.addEventListener("submit", (event) => {
@@ -99,10 +101,12 @@ imageSelect.addEventListener("change", () => {
 });
 
 presetSelect.addEventListener("change", () => {
+  updateComponentBudgetAvailability();
   renderDctLayoutDiagram();
   setBusy(false);
   processImage();
 });
+componentBudgetSelect.addEventListener("change", () => processImage());
 layoutComponentControls.addEventListener("click", (event) => {
   const button = event.target.closest("[data-dct-layout-component]");
   if (!button || !layoutComponentControls.contains(button)) return;
@@ -131,6 +135,7 @@ prototypeLibrarySelect.addEventListener("change", () => {
   if (prototypeLibrarySelect.value !== "none") {
     jpegImportInput.checked = false;
   }
+  updateComponentBudgetAvailability();
   setBusy(false);
   processImage();
 });
@@ -201,7 +206,9 @@ function populatePresetOptions() {
 
 function renderDctLayoutDiagram() {
   const selectedKey = presetSelect.value || "1.5";
-  const selected = codec.PRESETS[selectedKey] || codec.PRESETS["1.5"];
+  const defaultSelected = codec.PRESETS[selectedKey] || codec.PRESETS["1.5"];
+  const encodedInfo = state.encoded ? codec.inspectDctFile(state.encoded) : null;
+  const selected = encodedInfo?.key === selectedKey ? encodedInfo : defaultSelected;
   const profiles = Object.entries(codec.PRESETS)
     .sort((left, right) => left[1].bpp - right[1].bpp);
   const maxBytes = Math.max(...profiles.map(([, profile]) => profile.bytesPerMcu));
@@ -213,6 +220,7 @@ function renderDctLayoutDiagram() {
   );
 
   const rows = profiles.map(([key, profile]) => {
+    const displayedProfile = key === selectedKey ? selected : profile;
     const row = document.createElement("div");
     const rate = document.createElement("span");
     const track = document.createElement("span");
@@ -225,9 +233,9 @@ function renderDctLayoutDiagram() {
     row.setAttribute("aria-label", t("dct.layoutModeAria", {
       rate: key,
       bytes: profile.bytesPerMcu,
-      y: profile.yBytes,
-      cb: profile.cbBytes,
-      cr: profile.crBytes,
+      y: displayedProfile.yBytes,
+      cb: displayedProfile.cbBytes,
+      cr: displayedProfile.crBytes,
     }));
     if (selectedRow) {
       row.setAttribute("aria-current", "true");
@@ -238,9 +246,9 @@ function renderDctLayoutDiagram() {
     fill.className = "dct-layout-rate-fill";
     fill.style.width = `${profile.bytesPerMcu / maxBytes * 100}%`;
     fill.append(
-      createDctLayoutSegment("y", profile.yBytes, `Y ${profile.yBytes}`),
-      createDctLayoutSegment("cb", profile.cbBytes, `Cb ${profile.cbBytes}`),
-      createDctLayoutSegment("cr", profile.crBytes, `Cr ${profile.crBytes}`)
+      createDctLayoutSegment("y", displayedProfile.yBytes, `Y ${displayedProfile.yBytes}`),
+      createDctLayoutSegment("cb", displayedProfile.cbBytes, `Cb ${displayedProfile.cbBytes}`),
+      createDctLayoutSegment("cr", displayedProfile.crBytes, `Cr ${displayedProfile.crBytes}`)
     );
     track.append(fill);
     bytes.textContent = t("dct.layoutByteLabel", { bytes: profile.bytesPerMcu });
@@ -956,6 +964,7 @@ function processImage() {
       );
       qualityInput.value = String(data.quality);
       updateQualityLabel();
+      renderDctLayoutDiagram();
       drawImageData(resultCanvas, state.decodedImageData);
       renderMetrics(data.squaredError);
       readPixelAt(0, 0);
@@ -983,6 +992,7 @@ function processImage() {
       width: source.width,
       height: source.height,
       preset: presetSelect.value,
+      componentBudget: componentBudgetSelect.value,
       quality: Number(qualityInput.value),
       autoQuality,
       jpegImport,
@@ -1057,10 +1067,20 @@ function renderProgress(progress) {
   const searching = progress.stage === "sample" || progress.stage === "refine";
   progressBar.value = percent;
   progressPercent.value = `${percent}%`;
-  progressStage.textContent = progress.stage === "full"
+  progressStage.textContent = progress.stage === "allocation"
+    ? t("dct.progressAllocation")
+    : progress.stage === "full"
     ? t("dct.progressFinalists")
     : t(searching ? "dct.progressSearching" : "dct.progressEncoding");
-  progressDetail.textContent = t("dct.progressQuality", {
+  progressDetail.textContent = progress.stage === "allocation"
+    ? t("dct.progressAllocationDetail", {
+      current: progress.allocationIndex,
+      total: progress.allocationCount,
+      y: progress.yBytes,
+      cb: progress.cbBytes,
+      cr: progress.crBytes,
+    })
+    : t("dct.progressQuality", {
     quality: progress.quality,
     completed: progress.phaseCompleted ?? progress.completed,
     total: progress.phaseTotal ?? total,
@@ -1342,6 +1362,8 @@ function enableViewControls(enabled) {
 function setBusy(busy) {
   processButton.disabled = busy;
   presetSelect.disabled = busy;
+  componentBudgetSelect.disabled = busy || Number(presetSelect.value) > 3 ||
+    prototypeLibrarySelect.value !== "none";
   qualityInput.disabled = busy || autoQualityInput.checked;
   autoQualityInput.disabled = busy || jpegImportInput.checked;
   jpegImportInput.disabled = busy || !state.sourceJpegBytes;
@@ -1351,6 +1373,11 @@ function setBusy(busy) {
   downloadDctButton.disabled = busy || !state.encoded;
   downloadPngButton.disabled = busy || !state.decodedImageData;
   pixelReadButton.disabled = busy || !state.encoded;
+}
+
+function updateComponentBudgetAvailability() {
+  componentBudgetSelect.disabled = Number(presetSelect.value) > 3 || Boolean(state.worker) ||
+    prototypeLibrarySelect.value !== "none";
 }
 
 function updateQualityLabel() {

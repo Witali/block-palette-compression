@@ -41,6 +41,9 @@ test("matches DCTBS2 v2 MCU layouts instead of the attached legacy dctb layout",
     );
     assert.match(source, /const int HEADER_SIZE = 64;/);
     assert.match(source, /u32le\(8\) == 2u/);
+    assert.match(source, /uint yBytes = u32le\(36\)/);
+    assert.match(source, /yBytes \+ cbBytes \+ crBytes == EXPECTED_MCU_BYTES/);
+    assert.doesNotMatch(source, /EXPECTED_Y_BYTES/);
     assert.match(source, /int mcuOffset = HEADER_SIZE \+ mcuIndex \* int\(EXPECTED_MCU_BYTES\)/);
     assert.doesNotMatch(source, /HEADER_SIZE = 256/);
   }

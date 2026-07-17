@@ -53,6 +53,15 @@
             <input id="quality" name="quality" type="range" min="1" max="100" step="1" value="72">
           </label>
 
+          <label>
+            <span data-i18n="dct.componentBudget">Component budget</span>
+            <select id="component-budget" name="componentBudget">
+              <option value="fixed" data-i18n="dct.componentBudgetFixed">Fixed Y/C allocation</option>
+              <option value="fast" selected data-i18n="dct.componentBudgetFast">Adaptive Y/C · fast</option>
+              <option value="expanded" data-i18n="dct.componentBudgetExpanded">Adaptive Y/C · expanded</option>
+            </select>
+          </label>
+
           <label class="dct-check-option" title="Measure candidate qualities and keep the highest RGB PSNR" data-i18n-title="dct.autoQualityTitle">
             <input id="auto-quality" name="autoQuality" type="checkbox" checked>
             <span data-i18n="dct.autoQuality">Find quantization automatically</span>
@@ -255,12 +264,12 @@
       <button id="progress-cancel" type="button" data-i18n="common.cancel">Cancel</button>
     </dialog>
 
-    <script src="./src/dct/dct-format.js?v=dct-page-19"></script>
+    <script src="./src/dct/dct-format.js?v=dct-page-20"></script>
     <script src="./src/i18n/en.js?v=dct-page-18"></script>
     <script src="./src/i18n/ru.js?v=dct-page-18"></script>
     <script src="./src/i18n/i18n.js"></script>
     <script src="./src/encoders/codec-encoder-runtime.js?v=shared-encoder-runtime-1"></script>
-    <script src="./src/pages/dct-compression-page.js?v=shared-encoder-runtime-1"></script>
+    <script src="./src/pages/dct-compression-page.js?v=adaptive-yc-1"></script>
     <script src="./src/pwa/register-service-worker.js?v=1"></script>
   </body>
 </html>

@@ -106,6 +106,20 @@
     "1": freezePreset(1000, 1, 32, 16, 8, 8),
     "0.75": freezePreset(750, 0.75, 24, 12, 6, 6),
   });
+  const FAST_COMPONENT_BUDGETS = Object.freeze({
+    "3": Object.freeze([6, 12, 20]),
+    "2": Object.freeze([6, 5]),
+    "1.5": Object.freeze([5, 4]),
+    "1": Object.freeze([5, 4]),
+    "0.75": Object.freeze([4, 3]),
+  });
+  const EXPANDED_COMPONENT_BUDGETS = Object.freeze({
+    "3": Object.freeze([4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24]),
+    "2": Object.freeze([3, 4, 5, 6, 7, 8, 9, 10]),
+    "1.5": Object.freeze([4, 5, 6, 7, 8, 9]),
+    "1": Object.freeze([3, 4, 5, 6, 7, 8]),
+    "0.75": Object.freeze([3, 4, 5, 6]),
+  });
   const MODE_TO_PRESET = new Map(
     Object.entries(PRESETS).map(([key, preset]) => [preset.modeCode, key])
   );
@@ -228,12 +242,85 @@
     };
   }
 
+  function withComponentAllocation(layout, allocation, splitLuma8x8) {
+    const yBytes = Number(allocation.yBytes);
+    const cbBytes = Number(allocation.cbBytes);
+    const crBytes = Number(allocation.crBytes);
+    const yRecordBytes = splitLuma8x8 ? yBytes / 4 : yBytes;
+
+    if (!Number.isInteger(yBytes) || !Number.isInteger(cbBytes) ||
+        !Number.isInteger(crBytes) || yBytes + cbBytes + crBytes !== layout.bytesPerMcu ||
+        yRecordBytes < 3 || !Number.isInteger(yRecordBytes) || cbBytes < 3 || crBytes < 3) {
+      throw new RangeError("Invalid DCTBS2 component allocation");
+    }
+
+    return { ...layout, yBytes, cbBytes, crBytes };
+  }
+
+  function normalizeComponentBudget(value, presetKey) {
+    const defaultMode = FAST_COMPONENT_BUDGETS[presetKey] ? "fast" : "fixed";
+    const normalized = String(value === undefined ? defaultMode : value);
+    if (!["fixed", "fast", "expanded"].includes(normalized)) {
+      throw new RangeError(`Unsupported DCT component budget mode: ${value}`);
+    }
+    return FAST_COMPONENT_BUDGETS[presetKey] ? normalized : "fixed";
+  }
+
+  function componentAllocationLayouts(layout, mode, splitLuma8x8) {
+    if (mode === "fixed") return [layout];
+    const chromaBudgets = mode === "expanded"
+      ? EXPANDED_COMPONENT_BUDGETS[layout.key]
+      : FAST_COMPONENT_BUDGETS[layout.key];
+    const allocations = [{
+      yBytes: layout.yBytes,
+      cbBytes: layout.cbBytes,
+      crBytes: layout.crBytes,
+    }];
+    for (const chromaBytes of chromaBudgets || []) {
+      allocations.push({
+        yBytes: layout.bytesPerMcu - chromaBytes * 2,
+        cbBytes: chromaBytes,
+        crBytes: chromaBytes,
+      });
+    }
+    const seen = new Set();
+    return allocations.flatMap((allocation) => {
+      const key = `${allocation.yBytes}:${allocation.cbBytes}:${allocation.crBytes}`;
+      if (seen.has(key)) return [];
+      seen.add(key);
+      try {
+        return [withComponentAllocation(layout, allocation, splitLuma8x8)];
+      } catch (error) {
+        if (error instanceof RangeError) return [];
+        throw error;
+      }
+    });
+  }
+
   function encodeDctFile(pixels, width, height, options = {}) {
     validatePixels(pixels, width, height);
     const quality = validateQuality(options.quality === undefined ? 72 : options.quality);
-    const layout = getDctFileLayout(width, height, options.preset);
+    const baseLayout = getDctFileLayout(width, height, options.preset);
     const chroma420 = resolveChroma420(options);
     const chromaHeight = chroma420 ? CHROMA_HEIGHT_420 : CHROMA_HEIGHT_422;
+    const splitLuma8x8 = shouldSplitLuma(baseLayout, options);
+    const layout = options.componentAllocation
+      ? withComponentAllocation(baseLayout, options.componentAllocation, splitLuma8x8)
+      : baseLayout;
+    const componentBudget = normalizeComponentBudget(options.componentBudget, layout.key);
+
+    if (!options.componentAllocation && !options.dctLibrary && componentBudget !== "fixed") {
+      return selectBetterComponentAllocationEncoding(
+        pixels,
+        width,
+        height,
+        layout,
+        splitLuma8x8,
+        componentBudget,
+        options,
+        (candidateOptions) => encodeDctFile(pixels, width, height, candidateOptions)
+      );
+    }
 
     if (shouldAutoSelectMaskedTail(layout.key, options)) {
       return selectBetterHighRateEncoding(
@@ -246,7 +333,6 @@
     }
 
     const coefficientCoding = resolveCoefficientCoding(options.coefficientCoding, layout.key, options);
-    const splitLuma8x8 = shouldSplitLuma(layout, options);
 
     if (options.dctLibrary) {
       return encodeDctFileWithLibrary(
@@ -496,9 +582,28 @@
   function importJpegDctFile(jpeg, options = {}) {
     const metadata = getJpegDctMetadata(jpeg);
     const quality = validateQuality(options.quality === undefined ? 72 : options.quality);
-    const layout = getDctFileLayout(metadata.width, metadata.height, options.preset);
+    const baseLayout = getDctFileLayout(metadata.width, metadata.height, options.preset);
     const chroma420 = resolveChroma420(options);
     const chromaHeight = chroma420 ? CHROMA_HEIGHT_420 : CHROMA_HEIGHT_422;
+    const splitLuma8x8 = shouldSplitLuma(baseLayout, options);
+    const layout = options.componentAllocation
+      ? withComponentAllocation(baseLayout, options.componentAllocation, splitLuma8x8)
+      : baseLayout;
+    const componentBudget = normalizeComponentBudget(options.componentBudget, layout.key);
+
+    if (!options.componentAllocation && componentBudget !== "fixed" && options.referencePixels) {
+      validatePixels(options.referencePixels, metadata.width, metadata.height);
+      return selectBetterComponentAllocationEncoding(
+        options.referencePixels,
+        metadata.width,
+        metadata.height,
+        layout,
+        splitLuma8x8,
+        componentBudget,
+        options,
+        (candidateOptions) => importJpegDctFile(jpeg, candidateOptions)
+      );
+    }
 
     if (shouldAutoSelectMaskedTail(layout.key, options) && options.referencePixels) {
       validatePixels(options.referencePixels, metadata.width, metadata.height);
@@ -512,7 +617,6 @@
     }
 
     const coefficientCoding = resolveCoefficientCoding(options.coefficientCoding, layout.key, options);
-    const splitLuma8x8 = shouldSplitLuma(layout, options);
     const directCoefficients = canUseDirectJpegDctCoefficients(
       metadata,
       layout,
@@ -720,6 +824,55 @@
 
   function shouldAutoSelectMaskedTail(presetKey, options) {
     return options.coefficientCoding === undefined && !options.dctLibrary && Number(presetKey) >= 6;
+  }
+
+  function selectBetterComponentAllocationEncoding(
+    pixels,
+    width,
+    height,
+    layout,
+    splitLuma8x8,
+    componentBudget,
+    options,
+    encodeCandidate
+  ) {
+    const onProgress = typeof options.onProgress === "function" ? options.onProgress : null;
+    const candidates = componentAllocationLayouts(layout, componentBudget, splitLuma8x8);
+    let best = null;
+
+    for (let phase = 0; phase < candidates.length; phase += 1) {
+      const candidateLayout = candidates[phase];
+      const encoded = encodeCandidate({
+        ...options,
+        componentBudget: "fixed",
+        componentAllocation: candidateLayout,
+        onProgress: onProgress ? (progress) => {
+          onProgress({
+            ...progress,
+            stage: "allocation",
+            allocationIndex: phase + 1,
+            allocationCount: candidates.length,
+            yBytes: candidateLayout.yBytes,
+            cbBytes: candidateLayout.cbBytes,
+            crBytes: candidateLayout.crBytes,
+            completed: phase * progress.total + progress.completed,
+            total: progress.total * candidates.length,
+          });
+        } : undefined,
+      });
+      const cached = getCachedDctEncodingResult(encoded);
+      const decoded = cached ? cached.decoded : decodeDctFile(encoded);
+      const error = cached ? cached.squaredError : calculateSquaredError(pixels, decoded.pixels);
+      if (!best || error < best.error) {
+        best = { encoded, decoded, error };
+      }
+    }
+
+    dctEncodingResultCache.set(best.encoded, {
+      decoded: best.decoded,
+      squaredError: best.error,
+    });
+    return best.encoded;
   }
 
   function selectBetterHighRateEncoding(pixels, width, height, options, encodeCandidate) {
@@ -1367,9 +1520,20 @@
       throw new RangeError("Unsupported DCTBS2 version or mode");
     }
 
-    const layout = getDctFileLayout(width, height, presetKey);
+    const baseLayout = getDctFileLayout(width, height, presetKey);
     const quality = readUint32(view, 48);
     const flags = readUint32(view, 52);
+    const splitLuma8x8 = (flags & FLAG_SPLIT_LUMA_8X8) !== 0;
+    let layout;
+    try {
+      layout = withComponentAllocation(baseLayout, {
+        yBytes: readUint32(view, 36),
+        cbBytes: readUint32(view, 40),
+        crBytes: readUint32(view, 44),
+      }, splitLuma8x8);
+    } catch (error) {
+      throw new RangeError("Invalid DCTBS2 layout");
+    }
     const coefficientCodingIndex = (flags & COEFFICIENT_CODING_MASK) >> COEFFICIENT_CODING_SHIFT;
     const baseCoefficientCoding = COEFFICIENT_CODINGS[coefficientCodingIndex];
     const zigzagOrder = (flags & FLAG_ZIGZAG_ORDER) !== 0;
@@ -1385,9 +1549,6 @@
       readUint32(view, 24) !== layout.mcuColumns ||
       readUint32(view, 28) !== layout.mcuRows ||
       readUint32(view, 32) !== layout.bytesPerMcu ||
-      readUint32(view, 36) !== layout.yBytes ||
-      readUint32(view, 40) !== layout.cbBytes ||
-      readUint32(view, 44) !== layout.crBytes ||
       payloadBytes !== layout.payloadBytes ||
       bytes.length !== HEADER_BYTES + payloadBytes + libraryBytes ||
       quality < 1 || quality > 100 ||
@@ -1399,7 +1560,6 @@
       throw new RangeError("Invalid DCTBS2 layout");
     }
 
-    const splitLuma8x8 = (flags & FLAG_SPLIT_LUMA_8X8) !== 0;
     const library = libraryEnabled
       ? inspectDctLibrary(bytes, layout, splitLuma8x8, coefficientCoding, libraryBytes)
       : null;
@@ -1419,6 +1579,8 @@
       library,
       coefficientCoding,
       coefficientCodingKey: coefficientCoding.key,
+      componentAllocationAdaptive: layout.yBytes !== baseLayout.yBytes ||
+        layout.cbBytes !== baseLayout.cbBytes || layout.crBytes !== baseLayout.crBytes,
       searchCandidateCount: libraryEnabled ? 0 : metadata,
       totalBpp: bytes.length * 8 / (width * height),
       ...layout,
@@ -1540,6 +1702,10 @@
         resolveCoefficientCoding(candidate.coefficientCoding, preset.key, candidate))
       : [coefficientCoding];
     const layout = getDctFileLayout(width, height, preset.key);
+    const splitLuma8x8 = shouldSplitLuma(layout, options);
+    const componentBudget = options.dctLibrary
+      ? "fixed" : normalizeComponentBudget(options.componentBudget, preset.key);
+    const sampleLayouts = componentAllocationLayouts(layout, componentBudget, splitLuma8x8);
     const onProgress = typeof options.onProgress === "function" ? options.onProgress : () => {};
     const finalistCount = normalizeFinalistCount(options.finalistCount);
     const coarse = [];
@@ -1556,16 +1722,9 @@
     for (const quality of coarse) {
       sampleResults.push({
         quality,
-        error: Math.min(...sampleCodings.map((coding) => measureSampleError(
-          pixels,
-          width,
-          height,
-          layout,
-          quality,
-          sampleIndices,
-          coding,
-          chroma420
-        ))),
+        error: measureBestSampleError(
+          pixels, width, height, sampleLayouts, quality, sampleIndices, sampleCodings, chroma420
+        ),
       });
       completed += 1;
       onProgress({ stage: "sample", completed, total: estimatedTotal, quality });
@@ -1583,16 +1742,9 @@
       if (!sampleResults.some((result) => result.quality === quality)) {
         sampleResults.push({
           quality,
-          error: Math.min(...sampleCodings.map((coding) => measureSampleError(
-            pixels,
-            width,
-            height,
-            layout,
-            quality,
-            sampleIndices,
-            coding,
-            chroma420
-          ))),
+          error: measureBestSampleError(
+            pixels, width, height, sampleLayouts, quality, sampleIndices, sampleCodings, chroma420
+          ),
         });
       }
       completed += 1;
@@ -1616,6 +1768,7 @@
         libraryFrequencySplit: options.libraryFrequencySplit,
         libraryClusterSamples: options.libraryClusterSamples,
         libraryCandidateCount: options.libraryCandidateCount,
+        componentBudget,
         chromaSubsampling: chroma420 ? "4:2:0" : "4:2:2",
         ...(autoSelectMaskedTail ? {} : {
           coefficientCoding: coefficientCoding.key,
@@ -3867,6 +4020,28 @@
     }
 
     return quantizationStepCache.get(key);
+  }
+
+  function measureBestSampleError(
+    pixels,
+    width,
+    height,
+    layouts,
+    quality,
+    mcuIndices,
+    codings,
+    chroma420
+  ) {
+    return Math.min(...layouts.flatMap((layout) => codings.map((coding) => measureSampleError(
+      pixels,
+      width,
+      height,
+      layout,
+      quality,
+      mcuIndices,
+      coding,
+      chroma420
+    ))));
   }
 
   function measureSampleError(

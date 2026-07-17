@@ -300,6 +300,50 @@ int default_coefficient_coding(const Preset &preset) {
     return COEFFICIENT_CODING_GROUPED_FRONT;
 }
 
+std::vector<Preset> component_budget_presets(
+    const Preset &base,
+    const std::string &mode
+) {
+    std::vector<Preset> result{base};
+    if (mode == "fixed" || base.nominal_bpp > 3.0) {
+        return result;
+    }
+    std::vector<uint32_t> chroma_budgets;
+    if (mode == "fast") {
+        if (base.mode_code == 3000u) chroma_budgets = {6u, 12u, 20u};
+        else if (base.mode_code == 2000u) chroma_budgets = {6u, 5u};
+        else if (base.mode_code == 1500u) chroma_budgets = {5u, 4u};
+        else if (base.mode_code == 1000u) chroma_budgets = {5u, 4u};
+        else if (base.mode_code == 750u) chroma_budgets = {4u, 3u};
+    } else if (mode == "expanded") {
+        if (base.mode_code == 3000u) chroma_budgets = {4u, 6u, 8u, 10u, 12u, 14u, 16u, 18u, 20u, 22u, 24u};
+        else if (base.mode_code == 2000u) chroma_budgets = {3u, 4u, 5u, 6u, 7u, 8u, 9u, 10u};
+        else if (base.mode_code == 1500u) chroma_budgets = {4u, 5u, 6u, 7u, 8u, 9u};
+        else if (base.mode_code == 1000u) chroma_budgets = {3u, 4u, 5u, 6u, 7u, 8u};
+        else if (base.mode_code == 750u) chroma_budgets = {3u, 4u, 5u, 6u};
+    } else {
+        throw std::runtime_error("Component budget must be fixed, fast, or expanded");
+    }
+    for (const uint32_t chroma_bytes : chroma_budgets) {
+        Preset candidate = base;
+        candidate.y_bytes = base.bytes_per_mcu - chroma_bytes * 2u;
+        candidate.cb_bytes = chroma_bytes;
+        candidate.cr_bytes = chroma_bytes;
+        const uint32_t y_record_bytes = candidate.nominal_bpp >= 3.0
+            ? candidate.y_bytes / 4u : candidate.y_bytes;
+        if (y_record_bytes < 3u || candidate.cb_bytes < 3u ||
+            (candidate.nominal_bpp >= 3.0 && candidate.y_bytes % 4u != 0u)) {
+            continue;
+        }
+        const bool duplicate = std::any_of(result.begin(), result.end(), [&](const Preset &item) {
+            return item.y_bytes == candidate.y_bytes && item.cb_bytes == candidate.cb_bytes &&
+                item.cr_bytes == candidate.cr_bytes;
+        });
+        if (!duplicate) result.push_back(candidate);
+    }
+    return result;
+}
+
 double scan_score(int profile, int u, int v) {
     if (profile == 1) {
         return static_cast<double>(u) + static_cast<double>(v) * 2.4;
@@ -2504,7 +2548,6 @@ DctInfo inspect_header(const uint8_t *bytes, uint64_t file_size) {
         throw std::runtime_error("Unsupported DCTBS2 mode");
     }
     DctInfo info;
-    info.preset = preset;
     info.width = read_u32(bytes, 16u);
     info.height = read_u32(bytes, 20u);
     info.mcu_columns = read_u32(bytes, 24u);
@@ -2524,6 +2567,10 @@ DctInfo inspect_header(const uint8_t *bytes, uint64_t file_size) {
     info.coefficient_coding = static_cast<int>(
         (flags & COEFFICIENT_CODING_MASK) >> COEFFICIENT_CODING_SHIFT
     );
+    const uint32_t y_bytes = read_u32(bytes, 36u);
+    const uint32_t cb_bytes = read_u32(bytes, 40u);
+    const uint32_t cr_bytes = read_u32(bytes, 44u);
+    const uint32_t y_record_bytes = info.split_luma_8x8 ? y_bytes / 4u : y_bytes;
 
     if (info.width == 0u || info.height == 0u || info.quality < 1u || info.quality > 100u ||
         (flags & ~SUPPORTED_FLAGS) != 0u || info.mcu_columns != (info.width + 15u) / 16u ||
@@ -2534,11 +2581,15 @@ DctInfo inspect_header(const uint8_t *bytes, uint64_t file_size) {
         info.mcu_rows != (info.height + 15u) / 16u ||
         (info.split_luma_8x8 && preset.nominal_bpp < 3.0) ||
         read_u32(bytes, 32u) != preset.bytes_per_mcu ||
-        read_u32(bytes, 36u) != preset.y_bytes ||
-        read_u32(bytes, 40u) != preset.cb_bytes ||
-        read_u32(bytes, 44u) != preset.cr_bytes) {
+        y_bytes + cb_bytes + cr_bytes != preset.bytes_per_mcu ||
+        y_record_bytes < 3u || (info.split_luma_8x8 && y_bytes % 4u != 0u) ||
+        cb_bytes < 3u || cr_bytes < 3u) {
         throw std::runtime_error("Invalid DCTBS2 layout");
     }
+    preset.y_bytes = y_bytes;
+    preset.cb_bytes = cb_bytes;
+    preset.cr_bytes = cr_bytes;
+    info.preset = preset;
     const uint64_t count = static_cast<uint64_t>(info.mcu_columns) * info.mcu_rows;
     const uint64_t expected_payload = count * preset.bytes_per_mcu;
     if (count > UINT32_MAX || expected_payload != payload ||
@@ -2916,6 +2967,7 @@ struct RatedEncoding {
     uint64_t error = UINT64_MAX;
     int coefficient_coding = COEFFICIENT_CODING_LEGACY;
     bool zigzag_order = false;
+    Preset preset{};
 };
 
 RatedEncoding encode_best_coding(
@@ -2926,33 +2978,37 @@ RatedEncoding encode_best_coding(
     uint32_t quality,
     bool auto_quality,
     uint32_t candidate_count,
-    int requested_coding
+    int requested_coding,
+    const std::string &component_budget
 ) {
-    const int first_coding = requested_coding >= 0
-        ? requested_coding : default_coefficient_coding(preset);
     const bool compare_masked = requested_coding < 0 && preset.nominal_bpp >= 6.0;
     const int coding_count = compare_masked
         ? (preset.mode_code == 9000u ? 5 : 3) : 1;
     RatedEncoding best;
 
-    for (int coding_index = 0; coding_index < coding_count; ++coding_index) {
-        const int coding = coding_index == 0 ? first_coding
-            : coding_index <= 2 ? COEFFICIENT_CODING_MASKED_TAIL_8X8
-            : COEFFICIENT_CODING_MASKED_TAIL_IMPLICIT2_48;
-        const bool zigzag_order = coding_index == 0 || (coding_index & 1) != 0;
-        GpuResult encoded = encode_gpu(
-            rgb, width, height, preset, quality, auto_quality, candidate_count,
-            coding, zigzag_order
-        );
-        const DctInfo info = inspect_file(encoded.bytes);
-        GpuResult decoded = decode_gpu(encoded.bytes, info);
-        const uint64_t error = squared_error(rgb, decoded.bytes);
-        if (error < best.error) {
-            best.encoded = std::move(encoded);
-            best.decoded = std::move(decoded);
-            best.error = error;
-            best.coefficient_coding = coding;
-            best.zigzag_order = zigzag_order;
+    for (const Preset &allocation : component_budget_presets(preset, component_budget)) {
+        const int first_coding = requested_coding >= 0
+            ? requested_coding : default_coefficient_coding(allocation);
+        for (int coding_index = 0; coding_index < coding_count; ++coding_index) {
+            const int coding = coding_index == 0 ? first_coding
+                : coding_index <= 2 ? COEFFICIENT_CODING_MASKED_TAIL_8X8
+                : COEFFICIENT_CODING_MASKED_TAIL_IMPLICIT2_48;
+            const bool zigzag_order = coding_index == 0 || (coding_index & 1) != 0;
+            GpuResult encoded = encode_gpu(
+                rgb, width, height, allocation, quality, auto_quality, candidate_count,
+                coding, zigzag_order
+            );
+            const DctInfo info = inspect_file(encoded.bytes);
+            GpuResult decoded = decode_gpu(encoded.bytes, info);
+            const uint64_t error = squared_error(rgb, decoded.bytes);
+            if (error < best.error) {
+                best.encoded = std::move(encoded);
+                best.decoded = std::move(decoded);
+                best.error = error;
+                best.coefficient_coding = coding;
+                best.zigzag_order = zigzag_order;
+                best.preset = allocation;
+            }
         }
     }
     return best;
@@ -3009,6 +3065,7 @@ void print_usage(const char *program) {
         "  --quality N        Quantization quality 1..100 (default 72)\n"
         "  --find-quality     Search CUDA candidates and maximize RGB PSNR\n"
         "  --find-settings    Alias for --find-quality\n"
+        "  --component-budget MODE  fixed, fast, or expanded (default fast)\n"
         "  --coefficient-coding NAME  auto, grouped-5-front, masked-tail-8x8,\n"
         "                             or masked-tail-implicit2-48\n"
         "  --device N         CUDA device ordinal (default 0)\n\n"
@@ -3060,6 +3117,7 @@ int command_encode(int argc, char **argv) {
     make_balanced_preset(12u, &preset);
     uint32_t quality = 72u;
     bool find_quality = false;
+    std::string component_budget = "fast";
     int requested_coding = -1;
     int device = 0;
     for (int index = 4; index < argc; ++index) {
@@ -3075,6 +3133,12 @@ int command_encode(int argc, char **argv) {
             }
         } else if (option == "--find-quality" || option == "--find-settings") {
             find_quality = true;
+        } else if (option == "--component-budget" && index + 1 < argc) {
+            component_budget = argv[++index];
+            if (component_budget != "fixed" && component_budget != "fast" &&
+                component_budget != "expanded") {
+                throw std::runtime_error("Component budget must be fixed, fast, or expanded");
+            }
         } else if (option == "--coefficient-coding" && index + 1 < argc) {
             requested_coding = parse_coefficient_coding(argv[++index]);
         } else if (option == "--device" && index + 1 < argc) {
@@ -3100,7 +3164,8 @@ int command_encode(int argc, char **argv) {
         uint64_t coarse_error = UINT64_MAX;
         for (uint32_t candidate = 20u; candidate <= 95u; candidate += 5u) {
             RatedEncoding rated = encode_best_coding(
-                rgb, width, height, preset, candidate, true, 0u, requested_coding
+                rgb, width, height, preset, candidate, true, 0u, requested_coding,
+                component_budget
             );
             const uint64_t error = rated.error;
             const double psnr = psnr_from_error(error, static_cast<uint64_t>(width) * height * 3u);
@@ -3123,7 +3188,8 @@ int command_encode(int argc, char **argv) {
                 continue;
             }
             RatedEncoding rated = encode_best_coding(
-                rgb, width, height, preset, candidate, true, 0u, requested_coding
+                rgb, width, height, preset, candidate, true, 0u, requested_coding,
+                component_budget
             );
             const uint64_t error = rated.error;
             const double psnr = psnr_from_error(error, static_cast<uint64_t>(width) * height * 3u);
@@ -3137,14 +3203,16 @@ int command_encode(int argc, char **argv) {
         }
         candidate_count = static_cast<uint32_t>(tested.size());
         RatedEncoding rated = encode_best_coding(
-            rgb, width, height, preset, quality, true, candidate_count, requested_coding
+            rgb, width, height, preset, quality, true, candidate_count, requested_coding,
+            component_budget
         );
         selected = std::move(rated.encoded);
         selected_decoded = std::move(rated.decoded);
         selected_error = rated.error;
     } else {
         RatedEncoding rated = encode_best_coding(
-            rgb, width, height, preset, quality, false, 0u, requested_coding
+            rgb, width, height, preset, quality, false, 0u, requested_coding,
+            component_budget
         );
         selected = std::move(rated.encoded);
         selected_decoded = std::move(rated.decoded);
@@ -3166,6 +3234,9 @@ int command_encode(int argc, char **argv) {
     const DctInfo selected_info = inspect_file(selected.bytes);
     std::cout << ", " << coefficient_coding_name(selected_info.coefficient_coding)
               << ", " << (selected_info.zigzag_order ? "zigzag order" : "legacy order")
+              << ", Y" << selected_info.preset.y_bytes
+              << "+Cb" << selected_info.preset.cb_bytes
+              << "+Cr" << selected_info.preset.cr_bytes
               << ", chroma 4:2:0"
               << ", " << selected.bytes.size() << " bytes, " << std::fixed
               << std::setprecision(3) << actual_bpp << " actual bpp, PSNR "
@@ -3264,7 +3335,9 @@ int command_info(int argc, char **argv) {
               << ", " << info.mcu_columns << 'x' << info.mcu_rows << " MCUs, "
               << info.preset.bytes_per_mcu << " bytes/MCU, " << file.size()
               << " bytes, " << std::fixed << std::setprecision(3) << actual_bpp
-              << " actual bpp, chroma "
+              << " actual bpp, Y" << info.preset.y_bytes
+              << "+Cb" << info.preset.cb_bytes << "+Cr" << info.preset.cr_bytes
+              << ", chroma "
               << (info.chroma_420 ? "4:2:0" : "4:2:2 (legacy)") << ", "
               << coefficient_coding_name(info.coefficient_coding) << ", "
               << (info.zigzag_order ? "zigzag order" : "legacy order");

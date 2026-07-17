@@ -30,6 +30,12 @@ libraries, and spectral-split sidecar libraries. The shader calculates the
 MCU, sidecar index, and prototype address directly; it never reads another
 image MCU.
 
+The complete shaders read Y, Cb, and Cr record sizes from header offsets 36,
+40, and 44. They therefore decode both fixed and adaptively selected component
+budgets without a shader variant; the rate-specific shader still validates the
+total MCU size and mode. The specialized Cube shaders remain fixed-layout
+baseline programs by design.
+
 ## Input texture
 
 Upload the complete `.dctbs2` file, including its 64-byte header and optional

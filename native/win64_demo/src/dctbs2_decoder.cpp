@@ -514,6 +514,11 @@ bool DecodeDctbs2(
     const std::uint32_t rows = (height + 15u) / 16u;
     const std::uint32_t quality = ReadU32Le(bytes + 48);
     const std::uint32_t flags = ReadU32Le(bytes + 52);
+    const bool split = (flags & kFlagSplitLuma) != 0;
+    const std::uint32_t y_bytes = ReadU32Le(bytes + 36);
+    const std::uint32_t cb_bytes = ReadU32Le(bytes + 40);
+    const std::uint32_t cr_bytes = ReadU32Le(bytes + 44);
+    const std::uint32_t y_record_bytes = split ? y_bytes / 4u : y_bytes;
     const std::uint32_t payload_bytes = ReadU32Le(bytes + 56);
     const std::uint32_t library_bytes = (flags & kFlagLibrary) != 0 ? ReadU32Le(bytes + 60) : 0;
     const std::uint32_t coding_index = (flags & kCodingMask) >> 8u;
@@ -523,9 +528,9 @@ bool DecodeDctbs2(
         (flags & ~kSupportedFlags) != 0 ||
         ReadU32Le(bytes + 24) != columns || ReadU32Le(bytes + 28) != rows ||
         ReadU32Le(bytes + 32) != preset.bytes_per_mcu ||
-        ReadU32Le(bytes + 36) != preset.y_bytes ||
-        ReadU32Le(bytes + 40) != preset.cb_bytes ||
-        ReadU32Le(bytes + 44) != preset.cr_bytes ||
+        y_bytes + cb_bytes + cr_bytes != preset.bytes_per_mcu ||
+        y_record_bytes < 3u || (split && y_bytes % 4u != 0u) ||
+        cb_bytes < 3u || cr_bytes < 3u ||
         payload_bytes != static_cast<std::uint64_t>(columns) * rows * preset.bytes_per_mcu ||
         byte_count != kHeaderBytes + static_cast<std::uint64_t>(payload_bytes) + library_bytes) {
         error = L"DCTBS2 layout is inconsistent with its header";
@@ -535,7 +540,6 @@ bool DecodeDctbs2(
         error = L"This demo does not yet support DCTBS2 prototype-library records";
         return false;
     }
-    const bool split = (flags & kFlagSplitLuma) != 0;
     const bool chroma420 = (flags & kFlagChroma420) != 0;
     const bool zigzag_order = (flags & kFlagZigzagOrder) != 0;
     const int chroma_height = chroma420 ? 8 : 16;
@@ -556,11 +560,11 @@ bool DecodeDctbs2(
         std::vector<double> cb_coefficients;
         std::vector<double> cr_coefficients;
         if (!DecodeLuma(
-                record, preset.y_bytes, quality, split, coding, zigzag_order,
+                record, y_bytes, quality, split, coding, zigzag_order,
                 y_plane, error) ||
             !DecodeComponent(
-                record + preset.y_bytes,
-                preset.cb_bytes,
+                record + y_bytes,
+                cb_bytes,
                 8,
                 chroma_height,
                 quality,
@@ -570,8 +574,8 @@ bool DecodeDctbs2(
                 cb_coefficients,
                 error) ||
             !DecodeComponent(
-                record + preset.y_bytes + preset.cb_bytes,
-                preset.cr_bytes,
+                record + y_bytes + cb_bytes,
+                cr_bytes,
                 8,
                 chroma_height,
                 quality,

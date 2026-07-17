@@ -119,6 +119,11 @@ Decode to binary PPM P6, inspect the header, or reconstruct one pixel:
 Use `--device N` on GPU commands to select a CUDA device. Run `--version` to
 list visible devices and the CUDA runtime version.
 
+Low-rate encodes use the fast adaptive Y/C component budget by default. Use
+`--component-budget fixed`, `fast`, or `expanded` to control the exact
+full-image RGB comparison. The selected Y, Cb, and Cr byte counts are stored in
+the DCTBS2 header and do not change the fixed MCU size.
+
 ## Compatibility check
 
 After building, run the bidirectional JavaScript/CUDA format test:

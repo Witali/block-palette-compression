@@ -461,7 +461,11 @@ test("uses adaptive skip coding by default while preserving grouped and legacy f
   };
 
   for (const [preset, coefficientCodingKey] of Object.entries(expected)) {
-    const encoded = encodeDctFile(source, 16, 16, { preset, quality: 92 });
+    const encoded = encodeDctFile(source, 16, 16, {
+      preset,
+      quality: 92,
+      componentBudget: "fixed",
+    });
     const info = inspectDctFile(encoded);
     const mcu = inspectDctMcu(encoded, 0);
     const lumaRecords = mcu.components.y.blocks || [mcu.components.y];
@@ -516,7 +520,11 @@ test("uses spare skip-record bits for beneficial fine AC coefficients", () => {
 
   const skipBlocks = [];
   for (const preset of ["0.75", "1", "1.5", "2", "3", "4.5"]) {
-    const encoded = encodeDctFile(source, width, height, { preset, quality: 100 });
+    const encoded = encodeDctFile(source, width, height, {
+      preset,
+      quality: 100,
+      componentBudget: "fixed",
+    });
     const components = inspectDctMcu(encoded, 0).components;
     for (const component of Object.values(components)) {
       const records = component.blocks || [component];
@@ -527,6 +535,42 @@ test("uses spare skip-record bits for beneficial fine AC coefficients", () => {
   assert.ok(skipBlocks.length > 0);
   assert.ok(skipBlocks.every((block) => block.tailAcCount > 0));
   assert.ok(skipBlocks.some((block) => block.tailStoredCoefficientCount > 0));
+});
+
+test("selects the best fixed-size Y/C allocation without regressing RGB quality", () => {
+  const width = 16;
+  const height = 16;
+  const source = makePixels(width, height);
+
+  for (const preset of ["0.75", "1", "1.5", "2", "3"]) {
+    const fixed = encodeDctFile(source, width, height, {
+      preset,
+      quality: 88,
+      componentBudget: "fixed",
+    });
+    const fast = encodeDctFile(source, width, height, {
+      preset,
+      quality: 88,
+      componentBudget: "fast",
+    });
+    const expanded = encodeDctFile(source, width, height, {
+      preset,
+      quality: 88,
+      componentBudget: "expanded",
+    });
+    const fixedError = calculateSquaredError(source, decodeDctFile(fixed).pixels);
+    const fastError = calculateSquaredError(source, decodeDctFile(fast).pixels);
+    const expandedError = calculateSquaredError(source, decodeDctFile(expanded).pixels);
+    const info = inspectDctFile(expanded);
+
+    assert.equal(fixed.byteLength, fast.byteLength);
+    assert.equal(fast.byteLength, expanded.byteLength);
+    assert.ok(fastError <= fixedError, `${preset} bpp fast adaptive allocation regressed`);
+    assert.ok(expandedError <= fastError, `${preset} bpp expanded allocation regressed`);
+    assert.equal(info.yBytes + info.cbBytes + info.crBytes, info.bytesPerMcu);
+    assert.ok(info.yBytes >= 3 && info.cbBytes >= 3 && info.crBytes >= 3);
+    if (info.splitLuma8x8) assert.equal(info.yBytes % 4, 0);
+  }
 });
 
 test("selects the lower-error high-rate coding without regressing RGB quality", () => {
@@ -741,11 +785,13 @@ test("uses one full-image quality finalist by default", () => {
   const fastProgress = [];
   const fast = findBestDctQuality(source, width, height, {
     preset: "1.5",
+    componentBudget: "fixed",
     sampleMcuCount: 4,
     onProgress: (entry) => fastProgress.push(entry),
   });
   const exhaustive = findBestDctQuality(source, width, height, {
     preset: "1.5",
+    componentBudget: "fixed",
     sampleMcuCount: 4,
     finalistCount: 3,
   });
@@ -771,6 +817,7 @@ test("reports fixed-quality encoding progress with and without a prototype libra
     encodeDctFile(source, width, height, {
       preset: "2",
       quality: 75,
+      componentBudget: "fixed",
       dctLibrary,
       librarySize: 3,
       onProgress: (entry) => progress.push(entry),

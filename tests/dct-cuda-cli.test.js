@@ -19,6 +19,9 @@ test("provides CUDA encode, decode, settings search, and pixel commands", () => 
   assert.match(source, /command == "pixel"/);
   assert.match(source, /preset\.bytes_per_mcu/);
   assert.match(source, /--coefficient-coding/);
+  assert.match(source, /--component-budget/);
+  assert.match(source, /component_budget_presets/);
+  assert.match(source, /y_bytes \+ cb_bytes \+ cr_bytes != preset\.bytes_per_mcu/);
   assert.match(source, /COEFFICIENT_CODING_MASKED_TAIL_8X8 = 6/);
   assert.match(source, /COEFFICIENT_CODING_MASKED_TAIL_IMPLICIT2_48 = 7/);
   assert.match(source, /masked-tail-implicit2-48/);
@@ -33,6 +36,7 @@ test("provides CUDA encode, decode, settings search, and pixel commands", () => 
   assert.match(readme, /bit zero selects\s+zigzag AC1/);
   assert.match(readme, /DC is separate/);
   assert.match(readme, /tie keeps grouped coding/);
+  assert.match(readme, /adaptive Y\/C component budget/);
 });
 
 test("keeps random pixel access bounded to one fixed MCU record and its prototype library", () => {
