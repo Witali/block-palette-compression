@@ -1,6 +1,6 @@
 "use strict";
 
-const CACHE_VERSION = "v31";
+const CACHE_VERSION = "v32";
 const SHELL_CACHE = `bpal-shell-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `bpal-runtime-${CACHE_VERSION}`;
 const SHARED_FILE_CACHE = "bpal-shared-files-v1";
@@ -22,6 +22,7 @@ const APP_SHELL = [
   "./cube-bpal-sampler.html",
   "./app.webmanifest",
   "./home.css",
+  "./typography.css",
   "./block-palette.css",
   "./dct-compression.css",
   "./bpdh.css",

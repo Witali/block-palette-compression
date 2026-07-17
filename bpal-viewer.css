@@ -119,7 +119,7 @@ h1 {
 
 .example-picker span {
   color: #9cabbc;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   font-weight: 650;
 }
 
@@ -160,14 +160,14 @@ h1 {
 
 .file-info h2 {
   margin: 0 0 2px;
-  font-size: 16px;
+  font-size: var(--font-size-lg);
 }
 
 #status {
   display: block;
   max-width: 760px;
   color: #91a1b3;
-  font-size: 13px;
+  font-size: var(--font-size-md);
   line-height: 1.35;
 }
 
@@ -208,7 +208,7 @@ h1 {
   min-height: 38px;
   padding: 0 6px;
   color: #91a1b3;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   font-weight: 600;
   white-space: nowrap;
 }
@@ -289,11 +289,11 @@ h1 {
 
 .empty-state strong {
   color: #e4ebf2;
-  font-size: 18px;
+  font-size: var(--font-size-lg);
 }
 
 .empty-state span {
-  font-size: 13px;
+  font-size: var(--font-size-md);
 }
 
 .image-stage {
@@ -319,7 +319,7 @@ h1 {
   padding: 9px 16px 11px;
   border-top: 1px solid #293440;
   color: #7f8d9d;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   text-align: center;
 }
 

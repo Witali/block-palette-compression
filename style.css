@@ -33,7 +33,7 @@ canvas {
   border-radius: 6px;
   background: rgba(18, 20, 24, 0.78);
   color: #eef2f5;
-  font: 13px/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font: var(--font-size-md)/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   text-decoration: none;
 }
 
@@ -48,7 +48,7 @@ canvas {
   border-radius: 6px;
   background: rgba(18, 20, 24, 0.72);
   color: #f1f4f8;
-  font: 13px/1.2 Consolas, "Courier New", monospace;
+  font: var(--font-size-md)/1.2 Consolas, "Courier New", monospace;
   text-align: right;
   pointer-events: none;
 }
@@ -68,7 +68,7 @@ canvas {
   border-radius: 6px;
   background: rgba(18, 20, 24, 0.78);
   color: #eef2f5;
-  font: 12px/1.2 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font: var(--font-size-sm)/1.2 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
 .material-controls fieldset {
@@ -85,7 +85,7 @@ canvas {
 .bpal-example-control > span {
   margin-bottom: 5px;
   color: #aeb8c4;
-  font-size: 11px;
+  font-size: var(--font-size-sm);
 }
 
 .material-option {

@@ -19,7 +19,7 @@
   padding: 5px 8px;
   color: #eef6ff;
   background: #17212d;
-  font: 600 13px/1 system-ui, sans-serif;
+  font: 600 var(--font-size-md)/1 system-ui, sans-serif;
   cursor: pointer;
 }
 

@@ -47,7 +47,7 @@
   display: grid;
   gap: 6px;
   color: #8794a3;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   font-weight: 700;
   text-transform: uppercase;
 }
@@ -72,7 +72,7 @@
   border-radius: 7px;
   background: #191f27;
   color: #dce7f2;
-  font: 700 13px/18px ui-monospace, Consolas, monospace;
+  font: 700 var(--font-size-md)/18px ui-monospace, Consolas, monospace;
   font-variant-numeric: tabular-nums;
 }
 
@@ -87,7 +87,7 @@
 
 .reference-link {
   color: #83b8ff;
-  font-size: 13px;
+  font-size: var(--font-size-md);
   text-decoration: none;
   white-space: nowrap;
 }
@@ -110,7 +110,7 @@
   border-radius: 7px;
   background: #10151b;
   color: #b9d8ff;
-  font-size: 13px;
+  font-size: var(--font-size-md);
   white-space: nowrap;
 }
 
@@ -130,7 +130,7 @@
   border-radius: 6px;
   background: #17263a;
   color: #b9d8ff;
-  font: 700 12px/1.4 ui-monospace, Consolas, monospace;
+  font: 700 var(--font-size-sm)/1.4 ui-monospace, Consolas, monospace;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -145,7 +145,7 @@
 .dct-layout-panel h3 {
   margin: 0 0 13px;
   color: #cbd4de;
-  font-size: 13px;
+  font-size: var(--font-size-md);
 }
 
 .dct-layout-panel-heading {
@@ -161,7 +161,7 @@
   gap: 14px;
   margin-bottom: 13px;
   color: #9da9b7;
-  font: 700 11px/1 ui-monospace, Consolas, monospace;
+  font: 700 var(--font-size-sm)/1 ui-monospace, Consolas, monospace;
 }
 
 .dct-layout-legend span {
@@ -201,7 +201,7 @@
   gap: 10px;
   min-height: 23px;
   color: #8794a3;
-  font: 650 11px/1 ui-monospace, Consolas, monospace;
+  font: 650 var(--font-size-sm)/1 ui-monospace, Consolas, monospace;
   font-variant-numeric: tabular-nums;
 }
 
@@ -234,7 +234,7 @@
   min-width: 0;
   overflow: hidden;
   color: #071018;
-  font: 800 10px/1 ui-monospace, Consolas, monospace;
+  font: 800 var(--font-size-sm)/1 ui-monospace, Consolas, monospace;
   text-overflow: clip;
   white-space: nowrap;
 }
@@ -257,7 +257,7 @@
 }
 
 .dct-layout-mcu-bar .dct-layout-segment {
-  font-size: 11px;
+  font-size: var(--font-size-sm);
 }
 
 .dct-layout-spatial {
@@ -285,7 +285,7 @@
   padding: 7px;
   border: 1px solid rgba(238, 243, 248, 0.22);
   color: #071018;
-  font: 800 11px/1.25 ui-monospace, Consolas, monospace;
+  font: 800 var(--font-size-sm)/1.25 ui-monospace, Consolas, monospace;
   text-align: center;
 }
 
@@ -307,7 +307,7 @@
   border-radius: 6px;
   background: #161d25;
   color: #aeb9c5;
-  font: 700 12px/1.2 ui-monospace, Consolas, monospace;
+  font: 700 var(--font-size-sm)/1.2 ui-monospace, Consolas, monospace;
   cursor: pointer;
 }
 
@@ -333,7 +333,7 @@
 .dct-layout-inline-summary {
   flex: 0 0 auto;
   color: #8fa0b2;
-  font: 700 11px/1.3 ui-monospace, Consolas, monospace;
+  font: 700 var(--font-size-sm)/1.3 ui-monospace, Consolas, monospace;
   white-space: nowrap;
 }
 
@@ -353,13 +353,13 @@
 
 .dct-layout-record-heading strong {
   color: #e6edf5;
-  font: 750 12px/1.25 ui-monospace, Consolas, monospace;
+  font: 750 var(--font-size-sm)/1.25 ui-monospace, Consolas, monospace;
 }
 
 .dct-layout-record-heading span,
 .dct-layout-record-note {
   color: #8794a3;
-  font: 600 11px/1.35 ui-monospace, Consolas, monospace;
+  font: 600 var(--font-size-sm)/1.35 ui-monospace, Consolas, monospace;
 }
 
 .dct-layout-bit-strip {
@@ -376,7 +376,7 @@
   min-width: 2px;
   overflow: hidden;
   color: #071018;
-  font: 800 10px/1 ui-monospace, Consolas, monospace;
+  font: 800 var(--font-size-sm)/1 ui-monospace, Consolas, monospace;
   white-space: nowrap;
 }
 
@@ -422,7 +422,7 @@
   align-items: center;
   gap: 5px;
   color: #9aa7b5;
-  font: 600 10px/1.3 ui-monospace, Consolas, monospace;
+  font: 600 var(--font-size-sm)/1.3 ui-monospace, Consolas, monospace;
 }
 
 .dct-layout-bit-swatch,
@@ -451,7 +451,7 @@
 
 .dct-layout-axis {
   color: #8794a3;
-  font: 650 10px/1 ui-monospace, Consolas, monospace;
+  font: 650 var(--font-size-sm)/1 ui-monospace, Consolas, monospace;
   text-align: center;
 }
 
@@ -544,7 +544,7 @@
   border-bottom: 1px solid #36414d;
   background: rgba(77, 150, 237, var(--dct-frequency-alpha, 0.08));
   color: #eaf3fd;
-  font: 800 7px/1 ui-monospace, Consolas, monospace;
+  font: 800 var(--font-size-sm)/1 ui-monospace, Consolas, monospace;
   cursor: help;
 }
 
@@ -587,7 +587,7 @@
   gap: 6px;
   margin-bottom: 13px;
   color: #8794a3;
-  font: 650 10px/1.2 ui-monospace, Consolas, monospace;
+  font: 650 var(--font-size-sm)/1.2 ui-monospace, Consolas, monospace;
 }
 
 .dct-layout-current-mark i {
@@ -623,15 +623,15 @@
 .dct-layout-coding-id {
   grid-row: 1 / span 2;
   color: #b9d8ff;
-  font: 800 11px/1.3 ui-monospace, Consolas, monospace;
+  font: 800 var(--font-size-sm)/1.3 ui-monospace, Consolas, monospace;
 }
 
 .dct-layout-coding-item strong {
-  font: 750 11px/1.25 ui-monospace, Consolas, monospace;
+  font: 750 var(--font-size-sm)/1.25 ui-monospace, Consolas, monospace;
 }
 
 .dct-layout-coding-item span:last-child {
-  font: 550 10px/1.35 ui-monospace, Consolas, monospace;
+  font: 550 var(--font-size-sm)/1.35 ui-monospace, Consolas, monospace;
 }
 
 .dct-layout-pixel-panel {
@@ -653,14 +653,14 @@
   border: 1px solid #315f96;
   background: #17263a;
   color: #dceafb;
-  font: 700 12px/1.25 ui-monospace, Consolas, monospace;
+  font: 700 var(--font-size-sm)/1.25 ui-monospace, Consolas, monospace;
   text-align: center;
 }
 
 .dct-layout-path b {
   align-self: center;
   color: #627080;
-  font-size: 17px;
+  font-size: var(--font-size-lg);
 }
 
 @media (max-width: 920px) {
@@ -737,7 +737,7 @@
 
   .dct-layout-block {
     padding: 4px;
-    font-size: 9px;
+    font-size: var(--font-size-sm);
   }
 
   .dct-layout-component-controls button {

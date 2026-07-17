@@ -42,6 +42,7 @@ test("uses one comparison and coordinate inspector for every codec", () => {
   assert.match(script, /a: color\.a \?\? 255/);
   assert.match(script, /cell\.textContent = formatCoefficient\(value\)/);
   assert.match(script, /function formatCoefficient\(value\)[\s\S]*?toPrecision\(4\)/);
+  assert.match(script, /figure\.classList\.toggle\("is-wide", matrix\.width > 8\)/);
 });
 
 test("keeps encoding in format-specific workers", () => {
@@ -76,7 +77,7 @@ test("styles the unified settings, comparison, structure, and inspector", () => 
   assert.match(styles, /\.lab-controls \{[\s\S]*?width: 100%;[\s\S]*?justify-self: stretch;/);
   assert.match(styles, /\.format-settings/);
   assert.match(styles, /column-gap: 14px;[\s\S]*?row-gap: 14px;/);
-  assert.match(styles, /color: #aab5c2;[\s\S]*?font-size: 12px;[\s\S]*?font-weight: 650;[\s\S]*?letter-spacing: 0\.035em;[\s\S]*?text-transform: uppercase;/);
+  assert.match(styles, /color: #aab5c2;[\s\S]*?font-size: var\(--font-size-sm\);[\s\S]*?font-weight: 650;[\s\S]*?letter-spacing: 0\.035em;[\s\S]*?text-transform: uppercase;/);
   assert.match(styles, /\.format-settings > label\.check-option > span \{[\s\S]*?letter-spacing: normal;[\s\S]*?text-transform: none;/);
   assert.match(styles, /\.format-settings select,[\s\S]*?\.format-settings input \{[\s\S]*?width: 100%;[\s\S]*?min-width: 0;/);
   assert.match(styles, /\.lab-comparison/);
@@ -86,9 +87,10 @@ test("styles the unified settings, comparison, structure, and inspector", () => 
   assert.match(styles, /\.lab-block-details-body/);
   assert.match(styles, /\.lab-block-details-body \{[\s\S]*?padding: 18px;/);
   assert.match(styles, /\.lab-coefficient-matrix/);
-  assert.match(styles, /\.lab-coefficient-grid span \{[\s\S]*?font: 750 10px\/1 ui-monospace/);
+  assert.match(styles, /\.lab-coefficient-grid span \{[\s\S]*?font: 750 var\(--font-size-sm\)\/1 ui-monospace/);
   assert.match(styles, /\.lab-matrix-list \{[\s\S]*?grid-template-columns: repeat\(4, minmax\(0, 1fr\)\);/);
-  assert.match(styles, /@media \(max-width: 1200px\)[\s\S]*?grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/);
+  assert.match(styles, /\.lab-coefficient-matrix\.is-wide \{[\s\S]*?grid-column: span 2;/);
+  assert.match(styles, /@media \(max-width: 1500px\)[\s\S]*?grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/);
 });
 
 test("links and caches the unified laboratory", () => {

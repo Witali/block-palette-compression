@@ -2,6 +2,7 @@
 
 async function runTests() {
   require("./i18n.test.js");
+  require("./typography.test.js");
   require("./bpal-viewer-page.test.js");
   require("./cube-default-texture.test.js");
   require("./cube-grid-layout.test.js");

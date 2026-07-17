@@ -983,6 +983,7 @@
     for (const matrix of matrices) {
       const figure = document.createElement("figure");
       figure.className = "lab-coefficient-matrix";
+      figure.classList.toggle("is-wide", matrix.width > 8);
       const caption = document.createElement("figcaption");
       caption.textContent = matrix.name;
       const grid = document.createElement("div");
