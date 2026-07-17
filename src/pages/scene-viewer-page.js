@@ -276,6 +276,14 @@ function assignTextures(root, assignments, resources, codec) {
 function configureSceneMaterials(root) {
   for (const material of collectMaterials(root)) {
     const name = material.name.toLowerCase();
+    // Blender marks many image-backed architectural materials as BLEND even
+    // though their decoded pixels are fully opaque. Keep walls, paving, wood,
+    // grass, and stone in the opaque render queue; only the explicit material
+    // overrides below and real alpha masks may opt back into transparency.
+    material.transparent = false;
+    material.opacity = 1;
+    material.alphaTest = 0;
+    material.depthWrite = true;
     material.side = name === "leafs" || name.includes("lotus") || name === "candle_flame"
       ? THREE.DoubleSide
       : THREE.FrontSide;

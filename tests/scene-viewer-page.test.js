@@ -21,6 +21,9 @@ test("provides a Blender scene viewer with the requested codec switch", () => {
   assert.match(source, /elements\.codec\.addEventListener\("change"/);
   assert.match(source, /assignTextures\(sceneRoot, manifest\.materials, resources, codec\)/);
   assert.match(source, /if \(document\.hidden\)/);
+  assert.match(source, /material\.transparent = false/);
+  assert.match(source, /material\.opacity = 1/);
+  assert.match(source, /material\.depthWrite = true/);
 });
 
 test("ships all source textures in BPAL, DCTBS2, and ASTC", () => {
