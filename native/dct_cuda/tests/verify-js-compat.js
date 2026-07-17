@@ -14,6 +14,7 @@ const {
   encodeDctFile,
   importJpegDctFile,
   inspectDctFile,
+  inspectDctMcu,
   sampleDctFilePixel,
 } = require(path.join(root, "src", "dct", "dct-format.js"));
 
@@ -37,6 +38,7 @@ try {
   for (const preset of representativePresets) {
     verifyPreset(preset);
   }
+  verifyAllCoefficientCodings();
   verifyJpegDctImport();
   verifyMaskedTailCoding();
   verifyLegacyHighRate();
@@ -45,6 +47,71 @@ try {
   console.log("ok - CUDA and JavaScript DCTBS2 codecs are bidirectionally compatible");
 } finally {
   fs.rmSync(temporary, { recursive: true, force: true });
+}
+
+function verifyAllCoefficientCodings() {
+  const variants = [
+    ["legacy", "4.5"],
+    ["grouped-5-equal-2", "4.5"],
+    ["grouped-5-front", "4.5"],
+    ["skip-rle-equal-2", "4.5"],
+    ["dual-scale-skip-equal-2", "4.5"],
+    ["dual-scale-skip-front", "4.5"],
+    ["masked-tail-8x8", "9"],
+    ["masked-tail-implicit2-48", "9"],
+  ];
+
+  for (const [coding, preset] of variants) {
+    const cudaFile = path.join(temporary, `cuda-${coding}.dctbs2`);
+    const cudaPpm = path.join(temporary, `cuda-${coding}.ppm`);
+    const jsFile = path.join(temporary, `js-${coding}.dctbs2`);
+    const jsPpm = path.join(temporary, `js-${coding}.ppm`);
+
+    run([
+      "encode", inputPpm, cudaFile,
+      "--preset", preset,
+      "--quality", "91",
+      "--component-budget", "fixed",
+      "--coefficient-coding", coding,
+    ]);
+    const cudaEncoded = fs.readFileSync(cudaFile);
+    const cudaInfo = inspectDctFile(cudaEncoded);
+    assert.equal(cudaInfo.coefficientCodingKey, coding, `CUDA coding ${coding}`);
+    assert.equal(cudaInfo.zigzagOrder, true, `CUDA zigzag ${coding}`);
+    run(["decode", cudaFile, cudaPpm]);
+    assertRgbMatchesRgba(
+      readPpm(cudaPpm),
+      decodeDctFile(cudaEncoded).pixels,
+      `CUDA explicit ${coding}`
+    );
+
+    if (coding.includes("skip")) {
+      const components = inspectDctMcu(cudaEncoded, 0).components;
+      const records = Object.values(components).flatMap((component) =>
+        component.blocks || [component]
+      );
+      assert.ok(records.some((record) => record.tailAcCount > 0), `${coding} spare AC tail`);
+    }
+
+    const jsEncoded = encodeDctFile(rgba, width, height, {
+      preset,
+      quality: 91,
+      componentBudget: "fixed",
+      coefficientCoding: coding,
+    });
+    const jsInfo = inspectDctFile(jsEncoded);
+    assert.equal(jsInfo.coefficientCodingKey, coding, `JavaScript coding ${coding}`);
+    assert.equal(jsInfo.zigzagOrder, true, `JavaScript zigzag ${coding}`);
+    fs.writeFileSync(jsFile, jsEncoded);
+    run(["decode", jsFile, jsPpm]);
+    assertRgbMatchesRgba(
+      readPpm(jsPpm),
+      decodeDctFile(jsEncoded).pixels,
+      `JavaScript explicit ${coding}`
+    );
+  }
+
+  console.log("ok - every JavaScript coefficient coding is selectable and compatible in CUDA");
 }
 
 function verifyJpegDctImport() {

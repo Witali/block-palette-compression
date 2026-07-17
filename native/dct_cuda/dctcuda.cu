@@ -2950,14 +2950,20 @@ const char *coefficient_coding_name(int coding) {
 
 int parse_coefficient_coding(const std::string &name) {
     if (name == "auto") return -1;
+    if (name == "legacy") return COEFFICIENT_CODING_LEGACY;
+    if (name == "grouped-5-equal-2") return COEFFICIENT_CODING_GROUPED_EQUAL_2;
     if (name == "grouped-5-front") return COEFFICIENT_CODING_GROUPED_FRONT;
+    if (name == "skip-rle-equal-2") return COEFFICIENT_CODING_SKIP_RLE_EQUAL_2;
+    if (name == "dual-scale-skip-equal-2") return COEFFICIENT_CODING_DUAL_SKIP_EQUAL_2;
+    if (name == "dual-scale-skip-front") return COEFFICIENT_CODING_DUAL_SKIP_FRONT;
     if (name == "masked-tail-8x8") return COEFFICIENT_CODING_MASKED_TAIL_8X8;
     if (name == "masked-tail-implicit2-48") {
         return COEFFICIENT_CODING_MASKED_TAIL_IMPLICIT2_48;
     }
     throw std::runtime_error(
-        "Coefficient coding must be auto, grouped-5-front, masked-tail-8x8, "
-        "or masked-tail-implicit2-48"
+        "Coefficient coding must be auto, legacy, grouped-5-equal-2, grouped-5-front, "
+        "skip-rle-equal-2, dual-scale-skip-equal-2, dual-scale-skip-front, "
+        "masked-tail-8x8, or masked-tail-implicit2-48"
     );
 }
 
@@ -3066,8 +3072,10 @@ void print_usage(const char *program) {
         "  --find-quality     Search CUDA candidates and maximize RGB PSNR\n"
         "  --find-settings    Alias for --find-quality\n"
         "  --component-budget MODE  fixed, fast, or expanded (default fast)\n"
-        "  --coefficient-coding NAME  auto, grouped-5-front, masked-tail-8x8,\n"
-        "                             or masked-tail-implicit2-48\n"
+        "  --coefficient-coding NAME  auto or any JavaScript DCT coding key:\n"
+        "      legacy, grouped-5-equal-2, grouped-5-front, skip-rle-equal-2,\n"
+        "      dual-scale-skip-equal-2, dual-scale-skip-front, masked-tail-8x8,\n"
+        "      or masked-tail-implicit2-48\n"
         "  --device N         CUDA device ordinal (default 0)\n\n"
         "Images: JPEG, PNG, TGA, BMP, PSD, GIF, HDR, PIC, and binary PNM.\n"
         "Decode output is binary PPM P6. The pixel command uploads only one MCU record.\n",

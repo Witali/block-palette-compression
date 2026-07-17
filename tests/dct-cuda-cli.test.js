@@ -21,6 +21,18 @@ test("provides CUDA encode, decode, settings search, and pixel commands", () => 
   assert.match(source, /command == "pixel"/);
   assert.match(source, /preset\.bytes_per_mcu/);
   assert.match(source, /--coefficient-coding/);
+  for (const coding of [
+    "legacy",
+    "grouped-5-equal-2",
+    "grouped-5-front",
+    "skip-rle-equal-2",
+    "dual-scale-skip-equal-2",
+    "dual-scale-skip-front",
+    "masked-tail-8x8",
+    "masked-tail-implicit2-48",
+  ]) {
+    assert.match(source, new RegExp(`name == "${coding}"`));
+  }
   assert.match(source, /--component-budget/);
   assert.match(source, /component_budget_presets/);
   assert.match(source, /y_bytes \+ cb_bytes \+ cr_bytes != preset\.bytes_per_mcu/);
@@ -41,6 +53,8 @@ test("provides CUDA encode, decode, settings search, and pixel commands", () => 
   assert.match(readme, /tie keeps grouped coding/);
   assert.doesNotMatch(readme, /natural-position mask/);
   assert.match(readme, /adaptive Y\/C component budget/);
+  assert.match(readme, /same coefficient-coding keys as the canonical\s+JavaScript encoder/);
+  assert.match(readme, /spare\s+record bits for additional 4-bit fine AC tail coefficients/);
 });
 
 test("keeps random pixel access bounded to one fixed MCU record and its prototype library", () => {

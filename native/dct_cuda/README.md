@@ -98,12 +98,17 @@ dimensions that are not multiples of 16. List all layouts with:
 .\.tmp\dctcuda-build\dctcuda.exe presets
 ```
 
-Use `--coefficient-coding masked-tail-8x8`,
-`--coefficient-coding masked-tail-implicit2-48`, or
-`--coefficient-coding grouped-5-front` to force one high-rate representation.
+The CUDA encoder accepts the same coefficient-coding keys as the canonical
+JavaScript encoder: `legacy`, `grouped-5-equal-2`, `grouped-5-front`,
+`skip-rle-equal-2`, `dual-scale-skip-equal-2`, `dual-scale-skip-front`,
+`masked-tail-8x8`, and `masked-tail-implicit2-48`. Pass one through
+`--coefficient-coding` to force that representation.
 The implicit-2 form applies its special record layout only to 48-byte 8x8
 components and otherwise uses the grouped fallback.
 The default `--coefficient-coding auto` keeps the lower-error RGB result.
+Every newly encoded mode uses zigzag coefficient order. Skip modes use spare
+record bits for additional 4-bit fine AC tail coefficients; the 48-byte
+implicit-2 layout uses the former mask/padding bits for one more 8-bit AC slot.
 
 Search all CUDA quality candidates and keep the one with the best full-image
 RGB PSNR:
