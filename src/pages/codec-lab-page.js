@@ -170,10 +170,10 @@
     });
     elements.imageUrl.addEventListener("change", () => {
       clearPendingFile();
-      markSourceChanged(t("lab.sourceChanged"));
+      previewSelectedSource(t("lab.sourceChanged")).catch(showError);
     });
     elements.uploadButton.addEventListener("click", () => elements.imageFile.click());
-    elements.imageFile.addEventListener("change", handleUpload);
+    elements.imageFile.addEventListener("change", () => handleUpload().catch(showError));
     elements.downloadFile.addEventListener("click", downloadEncoded);
     elements.downloadPng.addEventListener("click", downloadPng);
     elements.progressCancel.addEventListener("click", cancelProcessing);
@@ -259,14 +259,24 @@
 
     const source = selectedSource();
     if (!state.sourceImageData || state.sourceKey !== source.key) {
-      if (source.file) {
-        await loadBlob(source.file, source.name, source.key);
-      } else {
-        await loadUrl(source.url, source.name, source.key);
-      }
+      await loadSelectedSource(source);
     }
 
     await processCurrentFormat();
+  }
+
+  async function previewSelectedSource(message) {
+    markSourceChanged(message);
+    await loadSelectedSource(selectedSource());
+  }
+
+  async function loadSelectedSource(source) {
+    setBusy(true, t("dynamic.loadingImage"));
+    if (source.file) {
+      await loadBlob(source.file, source.name, source.key);
+    } else {
+      await loadUrl(source.url, source.name, source.key);
+    }
   }
 
   function selectedSource() {
@@ -287,7 +297,6 @@
   }
 
   async function loadUrl(url, name, sourceKey) {
-    setBusy(true, t("dynamic.loadingImage"));
     const response = await fetch(url);
     if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
     await loadBlob(await response.blob(), name || fileStem(url), sourceKey);
@@ -318,7 +327,7 @@
     setBusy(false, t("common.ready"));
   }
 
-  function handleUpload() {
+  async function handleUpload() {
     const file = elements.imageFile.files && elements.imageFile.files[0];
     if (!file) return;
 
@@ -328,7 +337,7 @@
     localOption.dataset.pendingFile = "true";
     elements.imageUrl.append(localOption);
     elements.imageUrl.value = "";
-    markSourceChanged(t("lab.fileSelected", { name: file.name }));
+    await previewSelectedSource(t("lab.fileSelected", { name: file.name }));
   }
 
   async function processCurrentFormat() {
@@ -1564,6 +1573,8 @@
     state.busy = busy;
     elements.processButton.disabled = busy;
     elements.codecFormat.disabled = busy;
+    elements.imageUrl.disabled = busy;
+    elements.uploadButton.disabled = busy;
     elements.status.classList.toggle("is-busy", busy);
     elements.status.classList.remove("is-error");
     if (message) elements.status.textContent = message;
@@ -1581,6 +1592,8 @@
     state.busy = false;
     elements.processButton.disabled = false;
     elements.codecFormat.disabled = false;
+    elements.imageUrl.disabled = false;
+    elements.uploadButton.disabled = false;
     elements.status.classList.remove("is-busy");
     elements.status.classList.add("is-error");
     elements.status.textContent = error && error.message ? error.message : String(error);

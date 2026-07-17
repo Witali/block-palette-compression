@@ -107,7 +107,7 @@ test("keeps the BPAL quality preset synchronized with its component fields", () 
   assert.match(script, /elements\.bpalQualityPreset\.value = match \? match\[0\] : ""/);
 });
 
-test("loads and converts only after the encode button is pressed", () => {
+test("previews a changed source immediately and converts only after the encode button is pressed", () => {
   const startup = script.slice(0, script.indexOf("function collectElements"));
   const bindings = script.slice(script.indexOf("function bindEvents"), script.indexOf("function selectInitialFormat"));
   const upload = script.slice(script.indexOf("function handleUpload"), script.indexOf("function processCurrentFormat"));
@@ -115,10 +115,14 @@ test("loads and converts only after the encode button is pressed", () => {
 
   assert.doesNotMatch(startup, /loadUrl\(|loadBlob\(|processCurrentFormat\(/);
   assert.match(bindings, /controls\.addEventListener\("submit"[\s\S]*?processSelection\(\)/);
-  assert.doesNotMatch(bindings, /loadUrl\(|loadBlob\(|processCurrentFormat\(/);
-  assert.match(script, /async function processSelection\(\)[\s\S]*?await loadBlob\([\s\S]*?await loadUrl\([\s\S]*?await processCurrentFormat\(\)/);
-  assert.doesNotMatch(upload, /loadUrl\(|loadBlob\(|processCurrentFormat\(/);
+  assert.match(bindings, /imageUrl\.addEventListener\("change"[\s\S]*?previewSelectedSource\(t\("lab\.sourceChanged"\)\)/);
+  assert.doesNotMatch(bindings, /processCurrentFormat\(/);
+  assert.match(script, /async function processSelection\(\)[\s\S]*?await loadSelectedSource\(source\)[\s\S]*?await processCurrentFormat\(\)/);
+  assert.match(script, /async function previewSelectedSource\(message\)[\s\S]*?markSourceChanged\(message\)[\s\S]*?await loadSelectedSource\(selectedSource\(\)\)/);
+  assert.match(script, /async function loadSelectedSource\(source\)[\s\S]*?await loadBlob\([\s\S]*?await loadUrl\(/);
+  assert.doesNotMatch(upload, /processCurrentFormat\(/);
   assert.match(upload, /localOption\.dataset\.pendingFile = "true"/);
+  assert.match(upload, /await previewSelectedSource\(t\("lab\.fileSelected"/);
   assert.doesNotMatch(formatUi, /processCurrentFormat\(/);
   assert.match(formatUi, /resetMetrics\(false\)/);
 });
