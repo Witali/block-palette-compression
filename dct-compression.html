@@ -39,10 +39,10 @@
               <option value="9">9 bpp · 48 B/DCT · 288 B/MCU</option>
               <option value="7.5">7.5 bpp · 40 B/DCT · 240 B/MCU</option>
               <option value="6">6 bpp · 192 B/MCU</option>
-              <option value="4.5">4.5 bpp · 144 B/MCU</option>
+              <option value="4.5" selected>4.5 bpp · 144 B/MCU</option>
               <option value="3">3 bpp · 96 B/MCU</option>
               <option value="2">2 bpp · 64 B/MCU</option>
-              <option value="1.5" selected>1.5 bpp · 48 B/MCU</option>
+              <option value="1.5">1.5 bpp · 48 B/MCU</option>
               <option value="1">1 bpp · 32 B/MCU</option>
               <option value="0.75">0.75 bpp · 24 B/MCU</option>
             </select>
@@ -56,8 +56,8 @@
           <label>
             <span data-i18n="dct.componentBudget">Component budget</span>
             <select id="component-budget" name="componentBudget">
-              <option value="fixed" data-i18n="dct.componentBudgetFixed">Fixed Y/C allocation</option>
-              <option value="fast" selected data-i18n="dct.componentBudgetFast">Adaptive Y/C · fast</option>
+              <option value="fixed" selected data-i18n="dct.componentBudgetFixed">Fixed Y/C allocation</option>
+              <option value="fast" data-i18n="dct.componentBudgetFast">Adaptive Y/C · fast</option>
               <option value="expanded" data-i18n="dct.componentBudgetExpanded">Adaptive Y/C · expanded</option>
             </select>
           </label>
@@ -264,12 +264,12 @@
       <button id="progress-cancel" type="button" data-i18n="common.cancel">Cancel</button>
     </dialog>
 
-    <script src="./src/dct/dct-format.js?v=dct-page-20"></script>
+    <script src="./src/dct/dct-format.js?v=dct-default-45-1"></script>
     <script src="./src/i18n/en.js?v=dct-page-18"></script>
     <script src="./src/i18n/ru.js?v=dct-page-18"></script>
     <script src="./src/i18n/i18n.js"></script>
     <script src="./src/encoders/codec-encoder-runtime.js?v=shared-encoder-runtime-1"></script>
-    <script src="./src/pages/dct-compression-page.js?v=adaptive-yc-1"></script>
+    <script src="./src/pages/dct-compression-page.js?v=dct-default-45-1"></script>
     <script src="./src/pwa/register-service-worker.js?v=1"></script>
   </body>
 </html>

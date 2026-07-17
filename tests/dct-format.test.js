@@ -7,6 +7,7 @@ const { GpuJpegDecoder } = require("../src/decoders/gpu-jpeg.js");
 const {
   HEADER_BYTES,
   PRESETS,
+  getDctPreset,
   encodeDctFile,
   importJpegDctFile,
   decodeJpegDctPixels,
@@ -170,6 +171,7 @@ test("writes 4:2:0 by default and keeps legacy 4:2:2 files readable", () => {
 
 test("covers every rate from the preserved reference converter", () => {
   assert.equal(Object.keys(PRESETS).length, 9);
+  assert.equal(getDctPreset().key, "4.5");
 
   for (const preset of ["0.75", "1", "1.5", "2", "3", "4.5", "6", "7.5", "9"]) {
     assert.ok(PRESETS[preset], `missing ${preset} bpp`);

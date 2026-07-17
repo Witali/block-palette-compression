@@ -32,6 +32,10 @@ test("offers every fixed MCU rate from the preserved converter", () => {
   assert.match(page, /9 bpp · 48 B\/DCT · 288 B\/MCU/);
   assert.match(page, /7\.5 bpp · 40 B\/DCT · 240 B\/MCU/);
   assert.match(page, /0\.75 bpp · 24 B\/MCU/);
+  assert.match(page, /<option value="4\.5" selected>4\.5 bpp/);
+  assert.doesNotMatch(page, /<option value="1\.5" selected>/);
+  assert.match(page, /<option value="fixed" selected data-i18n="dct\.componentBudgetFixed"/);
+  assert.match(pageScript, /presetSelect\.value \|\| "4\.5"/);
   assert.match(page, /dctbs_converter_with_edge_dictionary\.html/);
   assert.match(page, /four 8×8 luma transforms at high rates/);
   assert.match(page, /two 8×8 chroma transforms/);

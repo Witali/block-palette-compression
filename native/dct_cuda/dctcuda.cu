@@ -3061,7 +3061,7 @@ void print_usage(const char *program) {
         "  %s presets\n"
         "  %s --version\n\n"
         "Encode options:\n"
-        "  --preset BPP       0.75, 1, 1.5, 2, 3, 4.5, 6, 7.5, or 9 (default 1.5)\n"
+        "  --preset BPP       0.75, 1, 1.5, 2, 3, 4.5, 6, 7.5, or 9 (default 4.5)\n"
         "  --quality N        Quantization quality 1..100 (default 72)\n"
         "  --find-quality     Search CUDA candidates and maximize RGB PSNR\n"
         "  --find-settings    Alias for --find-quality\n"
@@ -3114,7 +3114,7 @@ int command_encode(int argc, char **argv) {
         return 2;
     }
     Preset preset;
-    make_balanced_preset(12u, &preset);
+    make_balanced_preset(36u, &preset);
     uint32_t quality = 72u;
     bool find_quality = false;
     std::string component_budget = "fast";

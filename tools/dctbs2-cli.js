@@ -24,7 +24,7 @@ Input formats:
   Raw RGB/RGBA input requires --width and --height.
 
 Encoder options:
-  --preset <0.75|1|1.5|2|3|4.5|6|7.5|9>     default: 3
+  --preset <0.75|1|1.5|2|3|4.5|6|7.5|9>     default: 4.5
   --quality <1..100>                          default: 72
   --auto-quality                              use the web encoder's quality search
   --sample-mcu-count <n>                      quality-search sample count
@@ -209,7 +209,7 @@ function presetsCommand(positionals, options) {
 
 function createCodecOptions(options) {
   const codecOptions = {
-    preset: stringOption(options, "preset", "3"),
+    preset: stringOption(options, "preset", "4.5"),
     quality: integerOption(options, "quality", 72, 1, 100),
   };
   copyStringOption(options, codecOptions, "component-budget", "componentBudget");

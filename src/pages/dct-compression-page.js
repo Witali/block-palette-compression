@@ -186,7 +186,7 @@ updateQualityLabel();
 loadImage(imageSelect.value, optionLabel(imageSelect.selectedOptions[0])).catch(showError);
 
 function populatePresetOptions() {
-  const selected = presetSelect.value || "1.5";
+  const selected = presetSelect.value || "4.5";
   const options = Object.entries(codec.PRESETS)
     .sort((left, right) => right[1].bpp - left[1].bpp)
     .map(([key, preset]) => new Option(
@@ -200,13 +200,13 @@ function populatePresetOptions() {
 
   presetSelect.replaceChildren(...options);
   if (!codec.PRESETS[selected]) {
-    presetSelect.value = "1.5";
+    presetSelect.value = "4.5";
   }
 }
 
 function renderDctLayoutDiagram() {
-  const selectedKey = presetSelect.value || "1.5";
-  const defaultSelected = codec.PRESETS[selectedKey] || codec.PRESETS["1.5"];
+  const selectedKey = presetSelect.value || "4.5";
+  const defaultSelected = codec.PRESETS[selectedKey] || codec.PRESETS["4.5"];
   const encodedInfo = state.encoded ? codec.inspectDctFile(state.encoded) : null;
   const selected = encodedInfo?.key === selectedKey ? encodedInfo : defaultSelected;
   const profiles = Object.entries(codec.PRESETS)

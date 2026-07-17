@@ -209,7 +209,7 @@
   }
 
   function getDctPreset(key) {
-    const normalized = String(key === undefined ? "1.5" : key);
+    const normalized = String(key === undefined ? "4.5" : key);
     const preset = PRESETS[normalized];
 
     if (!preset) {
