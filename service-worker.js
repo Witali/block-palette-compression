@@ -1,6 +1,6 @@
 "use strict";
 
-const CACHE_VERSION = "v45";
+const CACHE_VERSION = "v46";
 const SHELL_CACHE = `bpal-shell-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `bpal-runtime-${CACHE_VERSION}`;
 const SHARED_FILE_CACHE = "bpal-shared-files-v1";
@@ -83,7 +83,9 @@ const APP_SHELL = [
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(SHELL_CACHE).then((cache) => cache.addAll(APP_SHELL))
+    caches.open(SHELL_CACHE)
+      .then((cache) => cache.addAll(APP_SHELL))
+      .then(() => self.skipWaiting())
   );
 });
 

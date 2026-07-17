@@ -15,7 +15,7 @@
     bpal: Object.freeze({ url: "./src/palette/block-palette-worker.js?v=palette-256-1", type: "classic" }),
     dct: Object.freeze({ url: "./src/dct/dct-worker.js?v=dct-page-20", type: "classic" }),
     bpdh: Object.freeze({ url: "./src/hybrid/bpdh-worker.js?v=hybrid-2", type: "classic" }),
-    astc: Object.freeze({ url: "./src/texture/astc-texture-codec-worker.mjs?v=1", type: "module" }),
+    astc: Object.freeze({ url: "./src/texture/astc-texture-codec-worker.mjs?v=2", type: "module" }),
     bc1: Object.freeze({ url: "./src/texture/standard-texture-codec-worker.js?v=1", type: "classic" }),
     bc7: Object.freeze({ url: "./src/texture/standard-texture-codec-worker.js?v=1", type: "classic" }),
   });

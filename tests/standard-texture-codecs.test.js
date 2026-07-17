@@ -1,7 +1,10 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 const codecs = require("../src/texture/standard-texture-codecs.js");
+const astcWorkerSource = fs.readFileSync(path.join(__dirname, "..", "src", "texture", "astc-texture-codec-worker.mjs"), "utf8");
 
 test("lists every standard two-dimensional ASTC footprint", () => {
   assert.deepEqual(codecs.ASTC_PROFILES, [
@@ -71,6 +74,12 @@ test("wraps ASTC payloads in the standard 16-byte container header", () => {
   assert.deepEqual(Array.from(file.slice(7, 10)), [64, 1, 0]);
   assert.deepEqual(Array.from(file.slice(10, 13)), [180, 0, 0]);
   assert.equal(file.byteLength, 32);
+});
+
+test("cache-busts both ASTC module and WASM resources", () => {
+  assert.match(astcWorkerSource, /astcenc\.mjs\?v=2/);
+  assert.match(astcWorkerSource, /locateFile\(path\)/);
+  assert.match(astcWorkerSource, /\$\{path\}\?v=2/);
 });
 
 function gradientBlock() {

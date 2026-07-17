@@ -19,6 +19,7 @@ test("defines one canonical JS worker entry point for every encoder", () => {
   assert.match(runtime.getWorkerUrl("bc1"), /src\/texture\/standard-texture-codec-worker\.js/);
   assert.equal(runtime.getWorkerUrl("bc1"), runtime.getWorkerUrl("bc7"));
   assert.equal(runtime.getWorkerType("astc"), "module");
+  assert.match(runtime.getWorkerUrl("astc"), /astc-texture-codec-worker\.mjs\?v=2$/);
   assert.equal(runtime.getWorkerType("bc7"), "classic");
   assert.throws(() => runtime.getWorkerUrl("unknown"), /Unsupported JS codec encoder/);
   assert.equal((runtimeSource.match(/block-palette-worker\.js/g) || []).length, 1);

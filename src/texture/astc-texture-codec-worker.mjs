@@ -1,5 +1,5 @@
-import createASTCModule from "../../vendor/astc-encoder-wasm/astcenc.mjs";
-import "./standard-texture-codecs.js";
+import createASTCModule from "../../vendor/astc-encoder-wasm/astcenc.mjs?v=2";
+import "./standard-texture-codecs.js?v=2";
 
 let modulePromise;
 
@@ -17,7 +17,11 @@ async function encodeAstc(message) {
   const requestId = message.requestId;
   const source = new Uint8ClampedArray(message.pixels);
   self.postMessage({ type: "progress", requestId, stage: "loading-astc", completed: 0, total: 2 });
-  modulePromise ||= createASTCModule();
+  modulePromise ||= createASTCModule({
+    locateFile(path) {
+      return new URL(`../../vendor/astc-encoder-wasm/${path}?v=2`, import.meta.url).href;
+    },
+  });
   const module = await modulePromise;
   self.postMessage({ type: "progress", requestId, stage: "encoding-blocks", completed: 1, total: 2 });
   await new Promise((resolve) => setTimeout(resolve, 0));
