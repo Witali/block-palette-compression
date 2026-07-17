@@ -11,12 +11,14 @@ const USER_PAGES = [
   "codec-lab.html",
   "bpal-viewer.html",
   "cube.html",
+  "scene-viewer.html",
   "cube-bpal-sampler.html",
 ];
 const LOCALIZED_SCRIPTS = [
   "src/pages/codec-lab-page.js",
   "src/pages/bpal-viewer-page.js",
   "src/pages/cube-page.js",
+  "src/pages/scene-viewer-page.js",
   "src/pages/cube-bpal-sampler-page.js",
 ];
 

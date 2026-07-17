@@ -1,6 +1,6 @@
 "use strict";
 
-const CACHE_VERSION = "v46";
+const CACHE_VERSION = "v47";
 const SHELL_CACHE = `bpal-shell-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `bpal-runtime-${CACHE_VERSION}`;
 const SHARED_FILE_CACHE = "bpal-shared-files-v1";
@@ -16,6 +16,7 @@ const APP_SHELL = [
   "./codec-lab.html",
   "./bpal-viewer.html",
   "./cube.html",
+  "./scene-viewer.html",
   "./cube-bpal-sampler.html",
   "./app.webmanifest",
   "./home.css",
@@ -27,6 +28,7 @@ const APP_SHELL = [
   "./bpal-viewer.css",
   "./style.css",
   "./bpal-sampler.css",
+  "./scene-viewer.css",
   "./i18n.css",
   "./assets/icons/app-icon.svg",
   "./assets/icons/app-icon-192.png",
@@ -60,6 +62,7 @@ const APP_SHELL = [
   "./src/pages/cube-bpal-sampler-page.js",
   "./src/pages/cube-grid-layout.js",
   "./src/pages/cube-page.js",
+  "./src/pages/scene-viewer-page.js",
   "./src/pages/cube-wheel-zoom.js",
   "./src/palette/block-palette-codec.js",
   "./src/palette/block-palette-format.js",
@@ -78,7 +81,13 @@ const APP_SHELL = [
   "./src/shaders/cube.frag.glsl",
   "./src/shaders/cube.vert.glsl",
   "./src/shaders/jpeg-idct.frag.glsl",
-  "./src/shaders/jpeg-idct.vert.glsl"
+  "./src/shaders/jpeg-idct.vert.glsl",
+  "./vendor/three/three.module.min.js",
+  "./vendor/three/three.core.min.js",
+  "./vendor/three/addons/controls/OrbitControls.js",
+  "./vendor/three/addons/loaders/GLTFLoader.js",
+  "./vendor/three/addons/utils/BufferGeometryUtils.js",
+  "./vendor/three/addons/utils/SkeletonUtils.js"
 ];
 
 self.addEventListener("install", (event) => {

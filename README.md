@@ -130,6 +130,7 @@ The project contains:
 - [`native/win64_demo`](./native/win64_demo/README.md) — standalone 64-bit Win32/Direct3D 11 rotating-cube demo with live BPAL, BPLM, DCTBS2, BPDH, and WIC texture loading;
 - [`codec-lab.html`](https://witali.github.io/block-palette-compression/codec-lab.html) — the shared BPAL, DCTBS2, and BPDH encoder laboratory with settings search, synchronized comparison, format diagrams, coordinate inspection, PNG export, and encoded-file downloads;
 - [`bpal-viewer.html`](https://witali.github.io/block-palette-compression/bpal-viewer.html) — BPAL, BPLM, BPDH, and regular image viewer;
+- [`scene-viewer.html`](https://witali.github.io/block-palette-compression/scene-viewer.html) — Barcelona Pavilion Blender scene with live switching between BPAL, DCTBS2, and ASTC texture sets;
 - [`cube.html`](https://witali.github.io/block-palette-compression/cube.html) — WebGL cube with BPAL/BPLM double indexing,
   fast cached-YCbCr or low-memory direct DCTBS2 rendering, and coordinate-based
   BPDH decoding in the fragment shader;
@@ -139,6 +140,7 @@ The project contains:
 Detailed documentation:
 
 - [dependency setup](./docs/SETUP.md);
+- [Blender scene viewer asset pipeline](./docs/BLENDER_SCENE_VIEWER.md);
 - [codec and implementation](./BLOCK_PALETTE_README.md)
   ([Russian](./BLOCK_PALETTE_README_ru.md));
 - [BPAL v5 file format](./BLOCK_PALETTE_FORMAT.md)

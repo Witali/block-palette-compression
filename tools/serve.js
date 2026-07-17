@@ -9,6 +9,7 @@ const port = Number(process.env.PORT || 8000);
 const mimeTypes = new Map([
   [".css", "text/css; charset=utf-8"],
   [".glsl", "text/plain; charset=utf-8"],
+  [".gltf", "model/gltf+json; charset=utf-8"],
   [".html", "text/html; charset=utf-8"],
   [".jpg", "image/jpeg"],
   [".js", "text/javascript; charset=utf-8"],

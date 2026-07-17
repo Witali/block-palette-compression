@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#101318">
+    <title data-i18n="scene.title">Barcelona Pavilion · Texture codec viewer</title>
+    <link rel="manifest" href="./app.webmanifest">
+    <link rel="icon" href="./assets/icons/app-icon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="./assets/icons/app-icon-192.png">
+    <link rel="stylesheet" href="./typography.css?v=type-scale-1">
+    <link rel="stylesheet" href="./scene-viewer.css?v=2">
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "./vendor/three/three.module.min.js",
+          "three/addons/": "./vendor/three/addons/"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <main class="scene-viewer-shell" aria-labelledby="scene-title">
+      <header class="scene-toolbar">
+        <a class="scene-home-link" href="./index.html" data-i18n-aria-label="common.home">
+          <span aria-hidden="true">←</span>
+          <span data-i18n="common.homeShort">Home</span>
+        </a>
+        <div class="scene-heading">
+          <h1 id="scene-title" data-i18n="scene.title">Barcelona Pavilion</h1>
+          <p data-i18n="scene.description">Blender scene with switchable compressed textures</p>
+        </div>
+        <label class="scene-format-control" for="scene-texture-format">
+          <span data-i18n="scene.textureFormat">Texture format</span>
+          <select id="scene-texture-format" disabled>
+            <option value="bpal">BPAL · ≈ 4 bpp</option>
+            <option value="dct">DCTBS2 · 3 bpp</option>
+            <option value="astc">ASTC · 6 × 6</option>
+          </select>
+        </label>
+      </header>
+
+      <section class="scene-stage" aria-label="3D scene" data-i18n-aria-label="scene.canvasAria">
+        <canvas id="scene-canvas"></canvas>
+        <div id="scene-loading" class="scene-loading" role="status" aria-live="polite">
+          <div class="scene-loading-mark" aria-hidden="true"></div>
+          <p id="scene-loading-label" data-i18n="scene.loadingScene">Loading Blender scene…</p>
+          <div class="scene-progress" aria-hidden="true"><span id="scene-progress-value"></span></div>
+        </div>
+        <div id="scene-error" class="scene-error" role="alert" hidden></div>
+        <div class="scene-hint" data-i18n="scene.interactionHint">Drag to orbit · wheel to zoom · right-drag to pan</div>
+      </section>
+
+      <footer class="scene-statusbar">
+        <div class="scene-stats" aria-label="Scene texture statistics" data-i18n-aria-label="scene.statsAria">
+          <span><strong id="scene-codec-name">BPAL</strong><small data-i18n="scene.activeCodec">active codec</small></span>
+          <span><strong id="scene-texture-count">17</strong><small data-i18n="scene.textures">textures</small></span>
+          <span><strong id="scene-compressed-size">—</strong><small data-i18n="scene.compressedSize">compressed</small></span>
+          <span><strong id="scene-decode-time">—</strong><small data-i18n="scene.decodeTime">decode time</small></span>
+        </div>
+        <p id="scene-status" aria-live="polite" data-i18n="scene.preparing">Preparing viewer…</p>
+      </footer>
+    </main>
+
+    <script src="./src/i18n/en.js?v=scene-1"></script>
+    <script src="./src/i18n/ru.js?v=scene-1"></script>
+    <script src="./src/i18n/i18n.js"></script>
+    <script src="./src/palette/block-palette-format.js"></script>
+    <script src="./src/decoders/bpal-texture.js"></script>
+    <script src="./src/dct/dct-format.js"></script>
+    <script type="module" src="./src/pages/scene-viewer-page.js?v=2"></script>
+    <script src="./src/pwa/register-service-worker.js?v=1"></script>
+  </body>
+</html>

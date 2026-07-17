@@ -237,7 +237,7 @@ test("links and caches the unified laboratory", () => {
   assert.match(serviceWorker, /"\.\/src\/pages\/codec-lab-page\.js"/);
   assert.match(serviceWorker, /"\.\/src\/texture\/standard-texture-codecs\.js"/);
   assert.match(serviceWorker, /"\.\/vendor\/astc-encoder-wasm\/astcenc\.wasm"/);
-  assert.match(serviceWorker, /const CACHE_VERSION = "v46"/);
+  assert.match(serviceWorker, /const CACHE_VERSION = "v47"/);
   assert.match(serviceWorker, /self\.skipWaiting\(\)/);
   assert.match(server, /\["\.mjs", "text\/javascript; charset=utf-8"\]/);
   assert.match(server, /\["\.wasm", "application\/wasm"\]/);

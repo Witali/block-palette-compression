@@ -16,6 +16,7 @@ const htmlPages = [
   "codec-lab.html",
   "bpal-viewer.html",
   "cube.html",
+  "scene-viewer.html",
   "cube-bpal-sampler.html",
 ];
 

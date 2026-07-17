@@ -1,0 +1,459 @@
+{
+  "version": 1,
+  "scene": "barcelona-pavilion",
+  "source": "pavillon_barcelone_v1.2.blend",
+  "textureCount": 17,
+  "maxDimension": 1024,
+  "codecs": {
+    "bpal": {
+      "label": "BPAL",
+      "settings": "8x8 blocks, 8 local / 256 global colors"
+    },
+    "dct": {
+      "label": "DCTBS2",
+      "settings": "3 bpp, quality 88, 4:2:0"
+    },
+    "astc": {
+      "label": "ASTC",
+      "settings": "6x6 blocks, medium quality"
+    }
+  },
+  "codecTotals": {
+    "bpal": 5026204,
+    "dct": 3775408,
+    "astc": 4186864
+  },
+  "materials": {
+    "candle_flame": {
+      "baseColor": "candle-flame-2"
+    },
+    "concrete": {
+      "baseColor": "mies-bcn-m121"
+    },
+    "grass": {
+      "baseColor": "grass-mid-seamless"
+    },
+    "leafs": {
+      "baseColor": "tree-leafs"
+    },
+    "marble": {
+      "baseColor": "mies-bcn-m01"
+    },
+    "marmol verde": {
+      "baseColor": "mies-bcn-m11"
+    },
+    "pavet": {
+      "baseColor": "mies-bcn-m081",
+      "bump": "mies-bcn-m081bump"
+    },
+    "pebbles.ground": {
+      "baseColor": "rocks"
+    },
+    "water": {
+      "bump": "water-raindrop"
+    },
+    "white_lotus_leafs": {
+      "baseColor": "lotus"
+    },
+    "wood": {
+      "baseColor": "wood"
+    }
+  },
+  "textures": [
+    {
+      "id": "candle-flame-2",
+      "source": "candle flame 2.png",
+      "sourceWidth": 500,
+      "sourceHeight": 747,
+      "width": 500,
+      "height": 747,
+      "hasAlpha": true,
+      "variants": {
+        "bpal": {
+          "color": "textures/candle-flame-2.bpal",
+          "bytes": 299568,
+          "alpha": "textures/candle-flame-2-alpha.bpal"
+        },
+        "dct": {
+          "color": "textures/candle-flame-2.dctbs2",
+          "bytes": 216704,
+          "alpha": "textures/candle-flame-2-alpha.dctbs2"
+        },
+        "astc": {
+          "color": "textures/candle-flame-2.astc",
+          "bytes": 168016
+        }
+      }
+    },
+    {
+      "id": "dsc-8129",
+      "source": "DSC_8129.JPG",
+      "sourceWidth": 4928,
+      "sourceHeight": 3264,
+      "width": 1024,
+      "height": 678,
+      "hasAlpha": false,
+      "variants": {
+        "bpal": {
+          "color": "textures/dsc-8129.bpal",
+          "bytes": 348174
+        },
+        "dct": {
+          "color": "textures/dsc-8129.dctbs2",
+          "bytes": 264256
+        },
+        "astc": {
+          "color": "textures/dsc-8129.astc",
+          "bytes": 309184
+        }
+      }
+    },
+    {
+      "id": "dsc-8980",
+      "source": "DSC_8980.JPG",
+      "sourceWidth": 4928,
+      "sourceHeight": 3264,
+      "width": 1024,
+      "height": 678,
+      "hasAlpha": false,
+      "variants": {
+        "bpal": {
+          "color": "textures/dsc-8980.bpal",
+          "bytes": 348174
+        },
+        "dct": {
+          "color": "textures/dsc-8980.dctbs2",
+          "bytes": 264256
+        },
+        "astc": {
+          "color": "textures/dsc-8980.astc",
+          "bytes": 309184
+        }
+      }
+    },
+    {
+      "id": "dsc-9126",
+      "source": "DSC_9126.JPG",
+      "sourceWidth": 4928,
+      "sourceHeight": 3264,
+      "width": 1024,
+      "height": 678,
+      "hasAlpha": false,
+      "variants": {
+        "bpal": {
+          "color": "textures/dsc-9126.bpal",
+          "bytes": 348155
+        },
+        "dct": {
+          "color": "textures/dsc-9126.dctbs2",
+          "bytes": 264256
+        },
+        "astc": {
+          "color": "textures/dsc-9126.astc",
+          "bytes": 309184
+        }
+      }
+    },
+    {
+      "id": "grass-mid-seamless",
+      "source": "grass_mid_seamless.jpg",
+      "sourceWidth": 600,
+      "sourceHeight": 600,
+      "width": 600,
+      "height": 600,
+      "hasAlpha": false,
+      "variants": {
+        "bpal": {
+          "color": "textures/grass-mid-seamless.bpal",
+          "bytes": 180782
+        },
+        "dct": {
+          "color": "textures/grass-mid-seamless.dctbs2",
+          "bytes": 138688
+        },
+        "astc": {
+          "color": "textures/grass-mid-seamless.astc",
+          "bytes": 160016
+        }
+      }
+    },
+    {
+      "id": "lotus",
+      "source": "lotus.jpg",
+      "sourceWidth": 1260,
+      "sourceHeight": 1192,
+      "width": 1024,
+      "height": 969,
+      "hasAlpha": false,
+      "variants": {
+        "bpal": {
+          "color": "textures/lotus.bpal",
+          "bytes": 497806
+        },
+        "dct": {
+          "color": "textures/lotus.dctbs2",
+          "bytes": 374848
+        },
+        "astc": {
+          "color": "textures/lotus.astc",
+          "bytes": 443248
+        }
+      }
+    },
+    {
+      "id": "mies-bcn-m01",
+      "source": "Mies-BCN_M01.jpg",
+      "sourceWidth": 800,
+      "sourceHeight": 500,
+      "width": 800,
+      "height": 500,
+      "hasAlpha": false,
+      "variants": {
+        "bpal": {
+          "color": "textures/mies-bcn-m01.bpal",
+          "bytes": 201182
+        },
+        "dct": {
+          "color": "textures/mies-bcn-m01.dctbs2",
+          "bytes": 153664
+        },
+        "astc": {
+          "color": "textures/mies-bcn-m01.astc",
+          "bytes": 180112
+        }
+      }
+    },
+    {
+      "id": "mies-bcn-m081",
+      "source": "Mies-BCN_M081.jpg",
+      "sourceWidth": 600,
+      "sourceHeight": 600,
+      "width": 600,
+      "height": 600,
+      "hasAlpha": false,
+      "variants": {
+        "bpal": {
+          "color": "textures/mies-bcn-m081.bpal",
+          "bytes": 180782
+        },
+        "dct": {
+          "color": "textures/mies-bcn-m081.dctbs2",
+          "bytes": 138688
+        },
+        "astc": {
+          "color": "textures/mies-bcn-m081.astc",
+          "bytes": 160016
+        }
+      }
+    },
+    {
+      "id": "mies-bcn-m081bump",
+      "source": "Mies-BCN_M081bump.jpg",
+      "sourceWidth": 600,
+      "sourceHeight": 600,
+      "width": 600,
+      "height": 600,
+      "hasAlpha": false,
+      "variants": {
+        "bpal": {
+          "color": "textures/mies-bcn-m081bump.bpal",
+          "bytes": 180782
+        },
+        "dct": {
+          "color": "textures/mies-bcn-m081bump.dctbs2",
+          "bytes": 138688
+        },
+        "astc": {
+          "color": "textures/mies-bcn-m081bump.astc",
+          "bytes": 160016
+        }
+      }
+    },
+    {
+      "id": "mies-bcn-m11",
+      "source": "Mies-BCN_M11.jpg",
+      "sourceWidth": 1500,
+      "sourceHeight": 600,
+      "width": 1024,
+      "height": 410,
+      "hasAlpha": false,
+      "variants": {
+        "bpal": {
+          "color": "textures/mies-bcn-m11.bpal",
+          "bytes": 211470
+        },
+        "dct": {
+          "color": "textures/mies-bcn-m11.dctbs2",
+          "bytes": 159808
+        },
+        "astc": {
+          "color": "textures/mies-bcn-m11.astc",
+          "bytes": 188800
+        }
+      }
+    },
+    {
+      "id": "mies-bcn-m121",
+      "source": "Mies-BCN_M121.jpg",
+      "sourceWidth": 700,
+      "sourceHeight": 500,
+      "width": 700,
+      "height": 500,
+      "hasAlpha": false,
+      "variants": {
+        "bpal": {
+          "color": "textures/mies-bcn-m121.bpal",
+          "bytes": 176384
+        },
+        "dct": {
+          "color": "textures/mies-bcn-m121.dctbs2",
+          "bytes": 135232
+        },
+        "astc": {
+          "color": "textures/mies-bcn-m121.astc",
+          "bytes": 157264
+        }
+      }
+    },
+    {
+      "id": "rocks",
+      "source": "rocks.jpg",
+      "sourceWidth": 800,
+      "sourceHeight": 590,
+      "width": 800,
+      "height": 590,
+      "hasAlpha": false,
+      "variants": {
+        "bpal": {
+          "color": "textures/rocks.bpal",
+          "bytes": 236982
+        },
+        "dct": {
+          "color": "textures/rocks.dctbs2",
+          "bytes": 177664
+        },
+        "astc": {
+          "color": "textures/rocks.astc",
+          "bytes": 212272
+        }
+      }
+    },
+    {
+      "id": "tree-leafs",
+      "source": "tree_leafs.png",
+      "sourceWidth": 1000,
+      "sourceHeight": 710,
+      "width": 1000,
+      "height": 710,
+      "hasAlpha": true,
+      "variants": {
+        "bpal": {
+          "color": "textures/tree-leafs.bpal",
+          "bytes": 567113,
+          "alpha": "textures/tree-leafs-alpha.bpal"
+        },
+        "dct": {
+          "color": "textures/tree-leafs.dctbs2",
+          "bytes": 408368,
+          "alpha": "textures/tree-leafs-alpha.dctbs2"
+        },
+        "astc": {
+          "color": "textures/tree-leafs.astc",
+          "bytes": 317984
+        }
+      }
+    },
+    {
+      "id": "url",
+      "source": "url.jpeg",
+      "sourceWidth": 1600,
+      "sourceHeight": 1200,
+      "width": 1024,
+      "height": 768,
+      "hasAlpha": false,
+      "variants": {
+        "bpal": {
+          "color": "textures/url.bpal",
+          "bytes": 393915
+        },
+        "dct": {
+          "color": "textures/url.dctbs2",
+          "bytes": 294976
+        },
+        "astc": {
+          "color": "textures/url.astc",
+          "bytes": 350224
+        }
+      }
+    },
+    {
+      "id": "vignette",
+      "source": "vignette.jpg",
+      "sourceWidth": 4960,
+      "sourceHeight": 3508,
+      "width": 1024,
+      "height": 724,
+      "hasAlpha": false,
+      "variants": {
+        "bpal": {
+          "color": "textures/vignette.bpal",
+          "bytes": 371982
+        },
+        "dct": {
+          "color": "textures/vignette.dctbs2",
+          "bytes": 282688
+        },
+        "astc": {
+          "color": "textures/vignette.astc",
+          "bytes": 331072
+        }
+      }
+    },
+    {
+      "id": "water-raindrop",
+      "source": "water-raindrop.jpg",
+      "sourceWidth": 512,
+      "sourceHeight": 512,
+      "width": 512,
+      "height": 512,
+      "hasAlpha": false,
+      "variants": {
+        "bpal": {
+          "color": "textures/water-raindrop.bpal",
+          "bytes": 131854
+        },
+        "dct": {
+          "color": "textures/water-raindrop.dctbs2",
+          "bytes": 98368
+        },
+        "astc": {
+          "color": "textures/water-raindrop.astc",
+          "bytes": 118352
+        }
+      }
+    },
+    {
+      "id": "wood",
+      "source": "wood.jpg",
+      "sourceWidth": 2400,
+      "sourceHeight": 1600,
+      "width": 1024,
+      "height": 683,
+      "hasAlpha": false,
+      "variants": {
+        "bpal": {
+          "color": "textures/wood.bpal",
+          "bytes": 351099
+        },
+        "dct": {
+          "color": "textures/wood.dctbs2",
+          "bytes": 264256
+        },
+        "astc": {
+          "color": "textures/wood.astc",
+          "bytes": 311920
+        }
+      }
+    }
+  ]
+}

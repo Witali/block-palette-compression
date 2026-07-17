@@ -1,0 +1,39 @@
+{
+  "scene": "barcelona-pavilion",
+  "materials": {
+    "candle_flame": {
+      "baseColor": "candle-flame-2"
+    },
+    "concrete": {
+      "baseColor": "mies-bcn-m121"
+    },
+    "grass": {
+      "baseColor": "grass-mid-seamless"
+    },
+    "leafs": {
+      "baseColor": "tree-leafs"
+    },
+    "marble": {
+      "baseColor": "mies-bcn-m01"
+    },
+    "marmol verde": {
+      "baseColor": "mies-bcn-m11"
+    },
+    "pavet": {
+      "baseColor": "mies-bcn-m081",
+      "bump": "mies-bcn-m081bump"
+    },
+    "pebbles.ground": {
+      "baseColor": "rocks"
+    },
+    "water": {
+      "bump": "water-raindrop"
+    },
+    "white_lotus_leafs": {
+      "baseColor": "lotus"
+    },
+    "wood": {
+      "baseColor": "wood"
+    }
+  }
+}
