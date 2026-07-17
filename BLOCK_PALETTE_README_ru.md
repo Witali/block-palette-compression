@@ -5,7 +5,7 @@
 В проекте реализован экспериментальный кодек, который сочетает одну или
 несколько общих палитр изображения с маленькой локальной палитрой в каждом прямоугольном
 блоке. Интерактивная версия доступна на странице
-[`block-palette.html`](./block-palette.html).
+[`codec-lab.html?format=bpal`](./codec-lab.html?format=bpal).
 
 Кодек предназначен для исследования компромисса между размером, качеством и
 стоимостью декодирования. Результат можно сохранить в компактном собственном
@@ -225,7 +225,7 @@ python -m http.server 8000
 После запуска откройте:
 
 ```text
-http://127.0.0.1:8000/block-palette.html
+http://127.0.0.1:8000/codec-lab.html?format=bpal
 ```
 
 Для запуска автоматических тестов:
@@ -240,10 +240,10 @@ npm test
 
 ## Основные файлы
 
-- [`block-palette.html`](./block-palette.html) — интерфейс эксперимента;
+- [`codec-lab.html`](./codec-lab.html?format=bpal) — общий интерфейс экспериментов с кодеками;
 - [`cube-bpal-sampler.html`](./cube-bpal-sampler.html) — 3D-демонстрация
   программного mipmapping и фильтрации BPAL;
-- [`src/pages/block-palette-page.js`](./src/pages/block-palette-page.js) —
+- [`src/pages/codec-lab-page.js`](./src/pages/codec-lab-page.js) —
   управление страницей и предпросмотром;
 - [`src/palette/block-palette-codec.js`](./src/palette/block-palette-codec.js) —
   основной CPU-кодек;

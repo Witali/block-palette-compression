@@ -11,7 +11,6 @@ async function runTests() {
   require("./block-palette-codec.test.js");
   require("./block-palette-format.test.js");
   require("./dct-format.test.js");
-  require("./dct-page.test.js");
   require("./js-codec-runtime.test.js");
   require("./codec-comparison-view.test.js");
   require("./codec-lab-page.test.js");
@@ -22,11 +21,9 @@ async function runTests() {
   require("./adaptive-block-format.test.js");
   require("./adaptive-block-webgl2.test.js");
   require("./bpdh-codec.test.js");
-  require("./bpdh-page.test.js");
   require("./block-pattern-dictionary.test.js");
   require("./block-pattern-dictionary-webgl2.test.js");
   require("./bplm-format.test.js");
-  require("./bplm-compression-page.test.js");
   require("./bplm-webgl-pages.test.js");
   require("./bpal-texture-decoder.test.js");
   require("./block-palette-optimizer.test.js");

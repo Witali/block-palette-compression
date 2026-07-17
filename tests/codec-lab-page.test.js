@@ -134,6 +134,27 @@ test("shows selected and shared BPAL palettes only in BPAL mode", () => {
   assert.match(styles, /\.lab-shared-palettes-body \{[\s\S]*?border-top: 1px solid #303a46;/);
 });
 
+test("retains the useful controls from the retired codec pages", () => {
+  assert.match(page, /id="optimize-bpal"[^>]*data-format-action="bpal"/);
+  assert.match(script, /block-palette-optimizer-worker\.js/);
+  assert.match(script, /async function optimizeBpalSettings\(\)/);
+  assert.match(script, /bitsPerPixelTargets: QUALITY_PRESET_BITS_PER_PIXEL/);
+  assert.match(page, /id="progress-stage-count"/);
+  assert.match(page, /id="progress-primary-value"/);
+  assert.match(page, /id="progress-secondary-value"/);
+  assert.match(script, /function progressStagePresentation\(stage, format\)/);
+  assert.match(page, /id="metric-mode-split" hidden/);
+  assert.match(page, /id="bpdh-mode-legend"[^>]*hidden/);
+  assert.match(script, /result\.decoded\.bpalBlockCount/);
+  assert.match(script, /result\.decoded\.dctBlockCount/);
+  assert.match(page, /id="coordinate-form"/);
+  assert.match(page, /id="coordinate-x" type="number"/);
+  assert.match(page, /id="coordinate-y" type="number"/);
+  assert.match(script, /function renderDctProfileOverview\(\)/);
+  assert.match(script, /Object\.entries\(root\.DctImageFormat\.PRESETS\)/);
+  assert.match(styles, /\.lab-dct-profile-overview/);
+});
+
 test("keeps the BPAL quality preset synchronized with its component fields", () => {
   assert.match(script, /elements\.bpalBlockSize\.addEventListener\("change", \(\) => \{[\s\S]*?updateBpalLocalColorOptions\(\);[\s\S]*?syncBpalPresetFromSettings\(\);/);
   assert.match(script, /\[elements\.bpalLocalColors, elements\.bpalGlobalColors, elements\.bpalPaletteCount\]/);
@@ -189,11 +210,15 @@ test("styles the unified settings, comparison, structure, and inspector", () => 
 
 test("links and caches the unified laboratory", () => {
   assert.match(home, /href="\.\/codec-lab\.html"/);
+  for (const format of ["bpal", "dct", "bpdh"]) {
+    assert.match(home, new RegExp(`href="\\.\\/codec-lab\\.html\\?format=${format}"`));
+  }
   assert.match(home, /data-i18n="home\.lab\.title"/);
   assert.match(serviceWorker, /"\.\/codec-lab\.html"/);
   assert.match(serviceWorker, /"\.\/codec-lab\.css"/);
   assert.match(serviceWorker, /"\.\/src\/pages\/codec-comparison-view\.js"/);
   assert.match(serviceWorker, /"\.\/src\/pages\/codec-lab-page\.js"/);
+  assert.doesNotMatch(serviceWorker, /(?:block-palette|dct-compression|bpdh)\.html/);
 });
 
 function read(fileName) {

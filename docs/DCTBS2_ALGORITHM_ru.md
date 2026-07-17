@@ -2,7 +2,7 @@
 
 [Точная спецификация формата](../DCT_FORMAT.md) ·
 [fragment shaders WebGL2](../src/shaders/DCTBS2_SHADERS.md) ·
-[страница компрессора](../dct-compression.html)
+[страница Codec Laboratory](../codec-lab.html?format=dct)
 
 DCTBS2 — экспериментальный формат с потерями, в котором изображение разбито
 на независимые MCU размером 16×16 пикселей. Каждый MCU занимает заранее

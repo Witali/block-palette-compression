@@ -13,9 +13,6 @@ const viewerSource = read("src/pages/bpal-viewer-page.js");
 const testCases = [];
 const htmlPages = [
   "index.html",
-  "block-palette.html",
-  "dct-compression.html",
-  "bpdh.html",
   "codec-lab.html",
   "bpal-viewer.html",
   "cube.html",

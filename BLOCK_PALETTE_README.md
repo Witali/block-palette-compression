@@ -4,7 +4,7 @@
 
 This project implements an experimental codec that combines one or more shared
 image palettes with a small local palette in every rectangular block. The
-interactive version is available on [`block-palette.html`](./block-palette.html).
+interactive version is available in [`codec-lab.html?format=bpal`](./codec-lab.html?format=bpal).
 
 The codec is intended for exploring the tradeoff between size, quality, and
 decoding cost. The result can be saved in the compact custom BPAL format or
@@ -228,7 +228,7 @@ python -m http.server 8000
 Then open:
 
 ```text
-http://127.0.0.1:8000/block-palette.html
+http://127.0.0.1:8000/codec-lab.html?format=bpal
 ```
 
 Run the automated tests with:
@@ -243,10 +243,10 @@ the optimizer, and WebGL2-to-CPU fallback.
 
 ## Main files
 
-- [`block-palette.html`](./block-palette.html) — experiment interface;
+- [`codec-lab.html`](./codec-lab.html?format=bpal) — shared codec experiment interface;
 - [`cube-bpal-sampler.html`](./cube-bpal-sampler.html) — 3D demonstration of
   programmable BPAL mipmapping and filtering;
-- [`src/pages/block-palette-page.js`](./src/pages/block-palette-page.js) — page
+- [`src/pages/codec-lab-page.js`](./src/pages/codec-lab-page.js) — page
   and preview controls;
 - [`src/palette/block-palette-codec.js`](./src/palette/block-palette-codec.js) —
   main CPU codec;

@@ -128,10 +128,7 @@ commands for benchmark automation.
 The project contains:
 
 - [`native/win64_demo`](./native/win64_demo/README.md) — standalone 64-bit Win32/Direct3D 11 rotating-cube demo with live BPAL, BPLM, DCTBS2, BPDH, and WIC texture loading;
-- [`block-palette.html`](https://witali.github.io/block-palette-compression/block-palette.html) — CPU/WebGL2 encoder, preview,
-  settings search, PNG export, and BPAL download;
-- [`bpdh.html`](https://witali.github.io/block-palette-compression/bpdh.html) — hybrid BPAL/DCT encoder, mode-map preview,
-  coordinate decoder, PNG export, and BPDH download;
+- [`codec-lab.html`](https://witali.github.io/block-palette-compression/codec-lab.html) — the shared BPAL, DCTBS2, and BPDH encoder laboratory with settings search, synchronized comparison, format diagrams, coordinate inspection, PNG export, and encoded-file downloads;
 - [`bpal-viewer.html`](https://witali.github.io/block-palette-compression/bpal-viewer.html) — BPAL, BPLM, BPDH, and regular image viewer;
 - [`cube.html`](https://witali.github.io/block-palette-compression/cube.html) — WebGL cube with BPAL/BPLM double indexing,
   fast cached-YCbCr or low-memory direct DCTBS2 rendering, and coordinate-based

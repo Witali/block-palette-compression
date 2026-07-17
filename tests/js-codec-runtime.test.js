@@ -21,31 +21,16 @@ test("defines one canonical JS worker entry point for every encoder", () => {
   assert.equal((runtimeSource.match(/bpdh-worker\.js/g) || []).length, 1);
 });
 
-test("routes every encoder page through the shared runtime", () => {
-  const pages = [
-    ["block-palette.html", "src/pages/block-palette-page.js", "bpal"],
-    ["dct-compression.html", "src/pages/dct-compression-page.js", "dct"],
-    ["bpdh.html", "src/pages/bpdh-page.js", "bpdh"],
-    ["codec-lab.html", "src/pages/codec-lab-page.js", null],
-  ];
-
-  for (const [htmlFile, controllerFile, format] of pages) {
-    const html = read(htmlFile);
-    const controller = read(controllerFile);
-    const runtimeIndex = html.indexOf("src/encoders/codec-encoder-runtime.js");
-    const controllerIndex = html.indexOf(controllerFile);
-
-    assert.ok(runtimeIndex >= 0 && runtimeIndex < controllerIndex, htmlFile);
-    assert.doesNotMatch(
-      controller,
-      /new Worker\("\.\/src\/(?:palette\/(?:block-palette|block-palette-webgl)-worker|dct\/dct-worker|hybrid\/bpdh-worker)/
-    );
-    if (format) {
-      assert.match(controller, new RegExp(`CodecEncoderRuntime\\.createWorker\\("${format}"\\)`));
-    }
-  }
-
+test("routes every laboratory encoder through the shared runtime", () => {
+  const html = read("codec-lab.html");
   const lab = read("src/pages/codec-lab-page.js");
+  const runtimeIndex = html.indexOf("src/encoders/codec-encoder-runtime.js");
+  const controllerIndex = html.indexOf("src/pages/codec-lab-page.js");
+  assert.ok(runtimeIndex >= 0 && runtimeIndex < controllerIndex);
+  assert.doesNotMatch(
+    lab,
+    /new Worker\("\.\/src\/(?:palette\/(?:block-palette|block-palette-webgl)-worker|dct\/dct-worker|hybrid\/bpdh-worker)/
+  );
   for (const format of runtime.formats) {
     assert.match(lab, new RegExp(`runWorker\\("${format}"`));
   }

@@ -1,6 +1,6 @@
 "use strict";
 
-const CACHE_VERSION = "v40";
+const CACHE_VERSION = "v41";
 const SHELL_CACHE = `bpal-shell-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `bpal-runtime-${CACHE_VERSION}`;
 const SHARED_FILE_CACHE = "bpal-shared-files-v1";
@@ -13,9 +13,6 @@ const SHARED_FILE_DIRECTORY_URL = new URL("./shared-files/", self.registration.s
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./block-palette.html",
-  "./dct-compression.html",
-  "./bpdh.html",
   "./codec-lab.html",
   "./bpal-viewer.html",
   "./cube.html",
@@ -51,8 +48,6 @@ const APP_SHELL = [
   "./src/hybrid/bpdh-format.js",
   "./src/hybrid/bpdh-codec.js",
   "./src/hybrid/bpdh-worker.js",
-  "./src/pages/block-palette-page.js",
-  "./src/pages/bpdh-page.js",
   "./src/pages/codec-comparison-view.js",
   "./src/pages/codec-lab-page.js",
   "./src/pages/bpal-example-catalog.js",
@@ -61,7 +56,6 @@ const APP_SHELL = [
   "./src/pages/cube-grid-layout.js",
   "./src/pages/cube-page.js",
   "./src/pages/cube-wheel-zoom.js",
-  "./src/pages/dct-compression-page.js",
   "./src/palette/block-palette-codec.js",
   "./src/palette/block-palette-format.js",
   "./src/palette/block-palette-optimizer.js",

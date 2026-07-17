@@ -7,10 +7,7 @@ const path = require("node:path");
 const root = path.resolve(__dirname, "..");
 const pageFiles = [
   "index.html",
-  "block-palette.html",
   "bpal-viewer.html",
-  "dct-compression.html",
-  "bpdh.html",
   "codec-lab.html",
   "cube.html",
   "cube-bpal-sampler.html",

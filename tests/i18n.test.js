@@ -8,16 +8,12 @@ const russian = require("../src/i18n/ru.js");
 
 const USER_PAGES = [
   "index.html",
-  "block-palette.html",
-  "bpdh.html",
   "codec-lab.html",
   "bpal-viewer.html",
   "cube.html",
   "cube-bpal-sampler.html",
 ];
 const LOCALIZED_SCRIPTS = [
-  "src/pages/block-palette-page.js",
-  "src/pages/bpdh-page.js",
   "src/pages/codec-lab-page.js",
   "src/pages/bpal-viewer-page.js",
   "src/pages/cube-page.js",
