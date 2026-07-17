@@ -46,6 +46,8 @@ for (const [index, job] of jobs.textures.entries()) {
     quality: 88,
     coefficientCoding: "grouped-5-front",
     chromaSubsampling: "4:2:0",
+    componentBudget: "fixed",
+    splitLuma8x8: false,
   });
   const dctPath = `${job.id}.dctbs2`;
   fs.writeFileSync(path.join(destination, dctPath), dct);
@@ -88,10 +90,12 @@ for (const [index, job] of jobs.textures.entries()) {
     variants.bpal.bytes += alphaBpal.byteLength;
 
     const alphaDct = DctImageFormat.encodeDctFile(alphaPixels, job.width, job.height, {
-      preset: "1.5",
-      quality: 100,
+      preset: "3",
+      quality: 88,
       coefficientCoding: "grouped-5-front",
       chromaSubsampling: "4:2:0",
+      componentBudget: "fixed",
+      splitLuma8x8: false,
     });
     const alphaDctPath = `${job.id}-alpha.dctbs2`;
     fs.writeFileSync(path.join(destination, alphaDctPath), alphaDct);

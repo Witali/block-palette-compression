@@ -20,7 +20,7 @@
   },
   "codecTotals": {
     "bpal": 5026204,
-    "dct": 3775408,
+    "dct": 3983680,
     "astc": 4186864
   },
   "materials": {
@@ -76,7 +76,7 @@
         },
         "dct": {
           "color": "textures/candle-flame-2.dctbs2",
-          "bytes": 216704,
+          "bytes": 288896,
           "alpha": "textures/candle-flame-2-alpha.dctbs2"
         },
         "astc": {
@@ -354,7 +354,7 @@
         },
         "dct": {
           "color": "textures/tree-leafs.dctbs2",
-          "bytes": 408368,
+          "bytes": 544448,
           "alpha": "textures/tree-leafs-alpha.dctbs2"
         },
         "astc": {
