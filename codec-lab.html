@@ -12,7 +12,7 @@
     <link rel="stylesheet" href="./block-palette.css?v=type-scale-1">
     <link rel="stylesheet" href="./bpdh.css?v=type-scale-1">
     <link rel="stylesheet" href="./dct-compression.css?v=type-scale-1">
-    <link rel="stylesheet" href="./codec-lab.css?v=type-scale-2">
+    <link rel="stylesheet" href="./codec-lab.css?v=format-guide-1">
     <link rel="stylesheet" href="./i18n.css?v=type-scale-1">
   </head>
   <body>
@@ -150,6 +150,17 @@
         </figure>
       </section>
 
+      <details id="format-guide" class="storage-section lab-format-guide">
+        <summary>
+          <span class="lab-format-guide-heading">
+            <strong data-i18n="lab.formatGuideTitle">File format reference</strong>
+            <small data-i18n="lab.formatGuideDescription">Header fields, file sections, block records, and bit packing for the selected codec.</small>
+          </span>
+          <output id="format-guide-summary">BPAL · v5 · 14 B header</output>
+        </summary>
+        <div id="format-guide-body" class="lab-format-guide-body"></div>
+      </details>
+
       <section class="storage-section lab-structure" aria-labelledby="structure-title">
         <div class="section-heading">
           <div>
@@ -196,11 +207,11 @@
     <script src="./src/dct/dct-format.js?v=codec-lab-2"></script>
     <script src="./src/hybrid/dct420.js?v=hybrid-1"></script>
     <script src="./src/hybrid/bpdh-format.js?v=hybrid-1"></script>
-    <script src="./src/i18n/en.js?v=codec-lab-4"></script>
-    <script src="./src/i18n/ru.js?v=codec-lab-4"></script>
+    <script src="./src/i18n/en.js?v=format-guide-2"></script>
+    <script src="./src/i18n/ru.js?v=format-guide-2"></script>
     <script src="./src/i18n/i18n.js"></script>
     <script src="./src/pages/codec-comparison-view.js?v=codec-lab-3"></script>
-    <script src="./src/pages/codec-lab-page.js?v=codec-lab-8"></script>
+    <script src="./src/pages/codec-lab-page.js?v=format-guide-2"></script>
     <script src="./src/pwa/register-service-worker.js?v=1"></script>
   </body>
 </html>

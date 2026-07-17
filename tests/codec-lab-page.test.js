@@ -54,6 +54,28 @@ test("keeps encoding in format-specific workers", () => {
   assert.match(page, /id="progress-cancel"/);
 });
 
+test("shows a format-specific expandable binary layout reference", () => {
+  assert.match(page, /<details id="format-guide" class="storage-section lab-format-guide">/);
+  assert.match(page, /id="format-guide-summary"/);
+  assert.match(page, /id="format-guide-body"/);
+  assert.match(page, /data-i18n="lab\.formatGuideTitle"/);
+  assert.match(script, /formatGuide: createBpalFormatGuide/);
+  assert.match(script, /formatGuide: createDctFormatGuide/);
+  assert.match(script, /formatGuide: createBpdhFormatGuide/);
+  assert.match(script, /function renderFormatGuide\(\)[\s\S]*?renderFileMap\(guide\.sections\)[\s\S]*?renderHeaderTable\(guide\.header\)[\s\S]*?renderPackingList\(guide\.packing\)/);
+  assert.match(script, /guideHeaderField\("bits 32–35", 4, "version", "5"\)/);
+  assert.match(script, /guideHeaderField\("52–55 B", 32, "flags"/);
+  assert.match(script, /guideHeaderField\("44–47 B", 32, "dctBits"/);
+  assert.match(script, /guideBit\("mask AC1…AC32", 32/);
+  assert.match(script, /guideBit\("unit 0", 1, "map", "0 \/ 1"\)/);
+  assert.match(script, /function updateFormatUi\(\)[\s\S]*?renderFormatGuide\(\)/);
+  assert.match(script, /function markSettingsChanged\(\)[\s\S]*?renderFormatGuide\(\)/);
+  assert.match(styles, /\.lab-format-guide > summary/);
+  assert.match(styles, /\.lab-format-table/);
+  assert.match(styles, /\.lab-bit-strip/);
+  assert.match(styles, /\.lab-file-segment\.is-dct/);
+});
+
 test("loads and converts only after the encode button is pressed", () => {
   const startup = script.slice(0, script.indexOf("function collectElements"));
   const bindings = script.slice(script.indexOf("function bindEvents"), script.indexOf("function selectInitialFormat"));

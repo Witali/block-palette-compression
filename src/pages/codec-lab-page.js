@@ -99,6 +99,8 @@
       showDifference: byId("show-difference"),
       showOverlay: byId("show-overlay"),
       resultCaption: byId("result-caption"),
+      formatGuideSummary: byId("format-guide-summary"),
+      formatGuideBody: byId("format-guide-body"),
       structureTitle: byId("structure-title"),
       structureDescription: byId("structure-description"),
       structureSummary: byId("structure-summary"),
@@ -225,6 +227,7 @@
     elements.structureTitle.textContent = t(adapter.structureTitleKey);
     elements.structureDescription.textContent = t(adapter.structureDescriptionKey);
     elements.progressEyebrow.textContent = adapter.label;
+    renderFormatGuide();
     elements.structureSummary.textContent = "—";
     elements.structureFlow.replaceChildren(emptyState(t("lab.encodeToInspect")));
     clearInspector();
@@ -328,6 +331,7 @@
     elements.downloadPng.disabled = true;
     resetMetrics(true);
     clearInspector();
+    renderFormatGuide();
     showProgress(adapter.label);
     setBusy(true, t("lab.encodingFormat", { format: adapter.label }));
 
@@ -361,6 +365,7 @@
       resultLabelKey: "lab.bpalResult",
       structureTitleKey: "block.storageTitle",
       structureDescriptionKey: "block.storageDescription",
+      formatGuide: createBpalFormatGuide,
       extension: "bpal",
       mime: "application/vnd.block-palette",
       encode() {
@@ -435,6 +440,7 @@
       resultLabelKey: "dct.restoredPreview",
       structureTitleKey: "dct.formatTitle",
       structureDescriptionKey: "dct.formatDescription",
+      formatGuide: createDctFormatGuide,
       extension: "dctbs2",
       mime: "application/octet-stream",
       encode() {
@@ -528,6 +534,7 @@
       resultLabelKey: "hybrid.restoredPreview",
       structureTitleKey: "hybrid.storageTitle",
       structureDescriptionKey: "hybrid.storageDescription",
+      formatGuide: createBpdhFormatGuide,
       extension: "bpdh",
       mime: "application/octet-stream",
       encode() {
@@ -703,6 +710,7 @@
 
   function markSettingsChanged() {
     updateRangeLabels();
+    renderFormatGuide();
     if (!state.busy) setStatus(t("lab.settingsChanged"));
   }
 
@@ -714,6 +722,7 @@
     elements.metricDimensions.textContent = "—";
     resetMetrics(true);
     clearInspector();
+    renderFormatGuide();
     elements.structureSummary.textContent = "—";
     elements.structureFlow.replaceChildren(emptyState(t("lab.encodeToInspect")));
     if (!state.busy) setStatus(message);
@@ -829,10 +838,312 @@
     }
   }
 
+  function renderFormatGuide() {
+    const guide = currentAdapter().formatGuide(state.result);
+    const intro = document.createElement("p");
+    intro.className = "lab-format-guide-intro";
+    intro.textContent = guide.intro;
+    elements.formatGuideSummary.textContent = guide.summary;
+    elements.formatGuideBody.replaceChildren(
+      intro,
+      formatGuideSection(t("lab.formatGuideMap"), renderFileMap(guide.sections)),
+      formatGuideSection(t("lab.formatGuideHeader"), renderHeaderTable(guide.header)),
+      formatGuideSection(t("lab.formatGuidePacking"), renderPackingList(guide.packing))
+    );
+  }
+
+  function createBpalFormatGuide(result) {
+    const raw = result?.raw;
+    const layout = result?.layout;
+    const localBits = raw?.localIndexBits ?? Math.log2(Number(elements.bpalLocalColors.value));
+    const globalBits = raw?.globalIndexBits ?? Math.log2(Number(elements.bpalGlobalColors.value));
+    const paletteBits = raw?.paletteIndexBits ?? Math.log2(Number(elements.bpalPaletteCount.value));
+    const variable = t("lab.formatGuideVariable");
+    return {
+      summary: "BPAL · v5 · 14 B",
+      intro: t("lab.bpalGuideIntro"),
+      sections: [
+        guideMapEntry(t("lab.guideHeader"), "14 B", t("lab.bpalGuideHeaderDetail"), 112, "header"),
+        guideMapEntry(t("lab.guideSharedPalettes"), guideSize(layout?.globalPaletteBits, variable), t("lab.bpalGuidePaletteDetail"), layout?.globalPaletteBits, "palette"),
+        guideMapEntry(t("lab.guidePaletteSelectors"), guideSize(layout?.blockPaletteSelectorBits, `N × ${paletteBits} ${guideBitUnit()}`), t("lab.bpalGuideSelectorDetail"), layout?.blockPaletteSelectorBits, "map"),
+        guideMapEntry(t("lab.guideLocalMappings"), guideSize(layout?.blockPaletteBits, `N × L × ${globalBits} ${guideBitUnit()}`), t("lab.bpalGuideMappingDetail"), layout?.blockPaletteBits, "index"),
+        guideMapEntry(t("lab.guidePixelIndices"), guideSize(layout?.pixelDataBits, `W × H × ${localBits} ${guideBitUnit()}`), t("lab.bpalGuidePixelsDetail"), layout?.pixelDataBits, "index"),
+      ],
+      header: [
+        guideHeaderField("0–3 B", 32, "magic", 'ASCII "BPAL"'),
+        guideHeaderField("bits 32–35", 4, "version", "5"),
+        guideHeaderField("bits 36–59", 24, "width − 1", "width = value + 1"),
+        guideHeaderField("bits 60–83", 24, "height − 1", "height = value + 1"),
+        guideHeaderField("bits 84–86", 3, "blockSizeExp − 1", "blockSize = 2^(value + 1)"),
+        guideHeaderField("bits 87–88", 2, "localIndexBits − 1", "localColorCount = 2^(value + 1)"),
+        guideHeaderField("bits 89–92", 4, "globalIndexBits − 1", "globalColorCount = 2^(value + 1)"),
+        guideHeaderField("bit 93", 1, "paletteColorBits", "0 = RGB565; 1 = RGB888"),
+        guideHeaderField("bit 94", 1, "paletteMode", "0 = explicit; 1 = vector"),
+        guideHeaderField("bits 95–103", 9, "vectorCount − 1", "paletteMode = vector"),
+        guideHeaderField("bit 104", 1, "vectorColorSpace", "0 = RGB; 1 = OKLab"),
+        guideHeaderField("bits 105–107", 3, "paletteIndexBits", "paletteCount = 2^value"),
+        guideHeaderField("bits 108–109", 2, "channelMode", "0 = RGB; 1 = scalar"),
+        guideHeaderField("bits 110–111", 2, "flags", "b0 = packedPalettes; b1 = 0"),
+      ],
+      packing: [
+        guidePacking(t("lab.bpalHeaderBitsTitle"), t("lab.bpalHeaderPackingNote"), [
+          guideBit("version", 4), guideBit("width−1", 24), guideBit("height−1", 24),
+          guideBit("block exp", 3), guideBit("local bits", 2, "index"), guideBit("global bits", 4, "index"),
+          guideBit("RGB888", 1, "flag"), guideBit("vector", 1, "flag"), guideBit("vectors", 9, "palette"),
+          guideBit("space", 1, "flag"), guideBit("palette bits", 3, "map"), guideBit("channels", 2, "flag"), guideBit("flags", 2, "flag"),
+        ]),
+        guidePacking(t("lab.bpalBodyStreamsTitle"), t("lab.bpalBodyPackingNote"), [
+          guideBit(t("lab.guideSharedPalettes"), null, "palette", variable),
+          guideBit("palette selector", null, "map", `N × ${paletteBits}`),
+          guideBit("local → global", null, "index", `N × L × ${globalBits}`),
+          guideBit("pixel index", null, "index", `W × H × ${localBits}`),
+        ]),
+        guidePacking(t("lab.bpalPackedPaletteTitle"), t("lab.bpalPackedPaletteNote"), [
+          guideBit("sectionBytes", 32), guideBit("offset[P]", 32, "map", "32 × P"),
+          guideBit("mode", 8, "flag"), guideBit("RGB widths", 8, "palette"),
+          guideBit("RGB minima", 24, "palette"), guideBit("residuals", null, "palette", variable),
+        ]),
+      ],
+    };
+  }
+
+  function createDctFormatGuide(result) {
+    const info = result?.info;
+    const preset = info || root.DctImageFormat.getDctPreset(elements.dctPreset.value);
+    const splitLuma = info ? info.splitLuma8x8 : preset.bpp >= 3;
+    const variable = t("lab.formatGuideVariable");
+    return {
+      summary: `DCTBS2 · v2 · 64 B · ${preset.bytesPerMcu} B/MCU`,
+      intro: t("lab.dctGuideIntro"),
+      sections: [
+        guideMapEntry(t("lab.guideHeader"), "64 B", t("lab.dctGuideHeaderDetail"), 512, "header"),
+        guideMapEntry(t("lab.guideMcuRecords"), info ? formatBytes(info.payloadBytes) : `N × ${preset.bytesPerMcu} B`, t("lab.dctGuideMcuDetail"), info?.payloadBytes * 8, "dct"),
+        guideMapEntry(t("lab.guidePrototypeLibrary"), info ? formatBytes(info.libraryBytes) : t("lab.formatGuideOptional"), t("lab.dctGuideLibraryDetail"), info?.libraryBytes * 8, "index"),
+      ],
+      header: [
+        guideHeaderField("0–7 B", 64, "magic", 'ASCII "DCTBS2\\0\\0"'),
+        guideHeaderField("8–11 B", 32, "version", "uint32 LE · 2"),
+        guideHeaderField("12–15 B", 32, "modeCode", "target bpp × 1000"),
+        guideHeaderField("16–19 B", 32, "width", "uint32 LE"),
+        guideHeaderField("20–23 B", 32, "height", "uint32 LE"),
+        guideHeaderField("24–27 B", 32, "mcuColumns", "ceil(width / 16)"),
+        guideHeaderField("28–31 B", 32, "mcuRows", "ceil(height / 16)"),
+        guideHeaderField("32–35 B", 32, "bytesPerMcu", "byteOffset(i) = 64 + i × bytesPerMcu"),
+        guideHeaderField("36–39 B", 32, "yBytes", "Y segment / MCU"),
+        guideHeaderField("40–43 B", 32, "cbBytes", "Cb segment / MCU"),
+        guideHeaderField("44–47 B", 32, "crBytes", "Cr segment / MCU"),
+        guideHeaderField("48–51 B", 32, "quality", "1…100"),
+        guideHeaderField("52–55 B", 32, "flags", "b0 autoQ; b1 4×Y8×8; b2 library; b3 4:2:0; b4 zigzag; b8–11 coding ID"),
+        guideHeaderField("56–59 B", 32, "payloadBytes", "mcuCount × bytesPerMcu"),
+        guideHeaderField("60–63 B", 32, "metadata", "libraryBytes | searchCandidateCount"),
+      ],
+      packing: [
+        guidePacking(t("lab.dctFlagsTitle"), t("lab.dctFlagsNote"), [
+          guideBit("autoQ", 1, "flag"), guideBit("4×Y", 1, "flag"), guideBit("library", 1, "flag"),
+          guideBit("4:2:0", 1, "flag"), guideBit("zigzag", 1, "flag"), guideBit("reserved", 3, "reserved"),
+          guideBit("coding ID", 4, "dct"), guideBit("reserved", 20, "reserved"),
+        ]),
+        guidePacking(t("lab.dctMcuTitle"), t("lab.dctMcuNote"), [
+          guideBit(splitLuma ? "Y0 · Y1 · Y2 · Y3" : "Y 16×16", preset.yBytes * 8, "dct", `${preset.yBytes} B`),
+          guideBit("Cb 8×8", preset.cbBytes * 8, "palette", `${preset.cbBytes} B`),
+          guideBit("Cr 8×8", preset.crBytes * 8, "dct", `${preset.crBytes} B`),
+        ]),
+        guidePacking(t("lab.dctMaskedTitle"), t("lab.dctMaskedNote"), [
+          guideBit("mask AC1…AC32", 32, "map"), guideBit("mask AC33…AC62", 30, "map"),
+          guideBit("scale", 2, "flag"), guideBit("DC", null, "dct", `8/10 ${guideBitUnit()}`),
+          guideBit("explicit AC", null, "dct", variable), guideBit("implicit tail", null, "palette", variable),
+        ]),
+      ],
+    };
+  }
+
+  function createBpdhFormatGuide(result) {
+    const decoded = result?.decoded;
+    const storage = decoded?.storage;
+    const localBits = decoded?.localIndexBits ?? Math.log2(Number(elements.bpdhLocalColors.value));
+    const globalBits = decoded?.globalIndexBits ?? Math.log2(Number(elements.bpdhGlobalColors.value));
+    const paletteBits = decoded?.paletteIndexBits ?? Math.log2(Number(elements.bpdhPaletteCount.value));
+    const variable = t("lab.formatGuideVariable");
+    return {
+      summary: "BPDH · v1 · 48 B · MCU 16×16",
+      intro: t("lab.bpdhGuideIntro"),
+      sections: [
+        guideMapEntry(t("lab.guideHeader"), "48 B", t("lab.bpdhGuideHeaderDetail"), 384, "header"),
+        guideMapEntry(t("lab.guideSharedPalettes"), storage ? formatBytes(storage.paletteBytes) : variable, t("lab.bpdhGuidePaletteDetail"), storage?.paletteBytes * 8, "palette"),
+        guideMapEntry(t("lab.guideQuantTables"), storage ? formatBytes(storage.quantizationTableBytes) : "0 / 128 B", t("lab.bpdhGuideQuantDetail"), storage?.quantizationTableBytes * 8, "dct"),
+        guideMapEntry(t("lab.guideModeMap"), storage ? formatBytes(storage.modeMapBytes) : "ceil(N / 8) B", t("lab.bpdhGuideModeDetail"), storage?.modeMapBytes * 8, "map"),
+        guideMapEntry(t("lab.guideBpalPayload"), storage ? formatBits(storage.bpalBits) : variable, t("lab.bpdhGuideBpalDetail"), storage?.bpalBits, "index"),
+        guideMapEntry(t("lab.guideDctPayload"), storage ? formatBits(storage.dctBits) : variable, t("lab.bpdhGuideDctDetail"), storage?.dctBits, "dct"),
+      ],
+      header: [
+        guideHeaderField("0–3 B", 32, "magic", 'ASCII "BPDH"'),
+        guideHeaderField("4 B", 8, "version", "1"),
+        guideHeaderField("5 B", 8, "flags", "b0 = BPAL; b1 = DCT; b2–7 = 0"),
+        guideHeaderField("6 B", 8, "codingUnitExp", "4 → 16×16 px"),
+        guideHeaderField("7 B", 8, "reserved", "0"),
+        guideHeaderField("8–11 B", 32, "width", "uint32 LE"),
+        guideHeaderField("12–15 B", 32, "height", "uint32 LE"),
+        guideHeaderField("16 B", 8, "localIndexBits", "localColorCount = 2^value"),
+        guideHeaderField("17 B", 8, "globalIndexBits", "globalColorCount = 2^value"),
+        guideHeaderField("18 B", 8, "paletteIndexBits", "paletteCount = 2^value"),
+        guideHeaderField("19 B", 8, "paletteColorBits", "16 = RGB565; 24 = RGB888"),
+        guideHeaderField("20–23 B", 32, "paletteBytes", "uint32 LE"),
+        guideHeaderField("24–27 B", 32, "modeMapBytes", "uint32 LE"),
+        guideHeaderField("28–31 B", 32, "bpalBytes", "ceil(bpalBits / 8)"),
+        guideHeaderField("32–35 B", 32, "bpalBits", "bpalBits ≤ bpalBytes × 8"),
+        guideHeaderField("36–39 B", 32, "quantTableBytes", "0 or 128"),
+        guideHeaderField("40–43 B", 32, "dctBytes", "ceil(dctBits / 8)"),
+        guideHeaderField("44–47 B", 32, "dctBits", "dctBits ≤ dctBytes × 8"),
+      ],
+      packing: [
+        guidePacking(t("lab.bpdhFlagsTitle"), t("lab.bpdhFlagsNote"), [
+          guideBit("BPAL", 1, "index"), guideBit("DCT", 1, "dct"), guideBit("reserved", 6, "reserved"),
+        ]),
+        guidePacking(t("lab.bpdhModeMapTitle"), t("lab.bpdhModeMapNote"), [
+          guideBit("unit 0", 1, "map", "0 / 1"), guideBit("unit 1", 1, "map", "0 / 1"),
+          guideBit("…", 1, "reserved"), guideBit("unit 7", 1, "map", "0 / 1"),
+        ]),
+        guidePacking(t("lab.bpdhBpalRecordTitle"), t("lab.bpdhBpalRecordNote"), [
+          guideBit("palette selector", null, "map", `${paletteBits} ${guideBitUnit()}`),
+          guideBit("local → global", null, "index", `2^${localBits} × ${globalBits}`),
+          guideBit("pixel indices", null, "index", `valid px × ${localBits}`),
+        ]),
+        guidePacking(t("lab.bpdhDctRecordTitle"), t("lab.bpdhDctRecordNote"), [
+          guideBit("DC", null, "dct", "SE(v)"), guideBit("non-zero", 1, "flag", "0"),
+          guideBit("zero run", null, "map", "UE(run)"), guideBit("AC", null, "dct", "SE(v)"),
+          guideBit("EOB", 1, "flag", "1"),
+        ]),
+      ],
+    };
+  }
+
+  function renderFileMap(entries) {
+    const map = document.createElement("div");
+    map.className = "lab-file-map";
+    for (const entry of entries) {
+      const segment = document.createElement("div");
+      segment.className = `lab-file-segment is-${entry.tone}`;
+      segment.classList.toggle("is-empty", entry.bits === 0);
+      const weight = Number.isFinite(entry.bits)
+        ? clamp(Math.log2(entry.bits + 1) / 3, 1, 5)
+        : 1.6;
+      segment.style.setProperty("--segment-weight", String(weight));
+      const label = document.createElement("strong");
+      const size = document.createElement("span");
+      const detail = document.createElement("small");
+      label.textContent = entry.label;
+      size.textContent = entry.size;
+      detail.textContent = entry.detail;
+      segment.append(label, size, detail);
+      map.append(segment);
+    }
+    return map;
+  }
+
+  function renderHeaderTable(fields) {
+    const wrapper = document.createElement("div");
+    wrapper.className = "lab-format-table-wrap";
+    const table = document.createElement("table");
+    table.className = "lab-format-table";
+    const head = document.createElement("thead");
+    const headRow = document.createElement("tr");
+    for (const title of [
+      t("lab.formatGuideOffset"),
+      t("lab.formatGuideBits"),
+      t("lab.formatGuideField"),
+      t("lab.formatGuideMeaning"),
+    ]) {
+      const cell = document.createElement("th");
+      cell.scope = "col";
+      cell.textContent = title;
+      headRow.append(cell);
+    }
+    head.append(headRow);
+    const body = document.createElement("tbody");
+    for (const field of fields) {
+      const row = document.createElement("tr");
+      for (const value of [field.offset, `${field.bits} ${guideBitUnit()}`, field.name, field.meaning]) {
+        const cell = document.createElement("td");
+        cell.textContent = value;
+        row.append(cell);
+      }
+      body.append(row);
+    }
+    table.append(head, body);
+    wrapper.append(table);
+    return wrapper;
+  }
+
+  function renderPackingList(records) {
+    const list = document.createElement("div");
+    list.className = "lab-packing-list";
+    for (const record of records) {
+      const card = document.createElement("figure");
+      card.className = "lab-packing-card";
+      const caption = document.createElement("figcaption");
+      caption.textContent = record.title;
+      const strip = document.createElement("div");
+      strip.className = "lab-bit-strip";
+      for (const field of record.fields) {
+        const cell = document.createElement("span");
+        cell.className = `lab-bit-field is-${field.tone}`;
+        const weight = Number.isFinite(field.bits)
+          ? clamp(Math.sqrt(field.bits), 1, 6)
+          : 2;
+        cell.style.setProperty("--field-weight", String(weight));
+        const label = document.createElement("strong");
+        const bits = document.createElement("small");
+        label.textContent = field.label;
+        bits.textContent = field.bitsLabel || `${field.bits} ${guideBitUnit()}`;
+        cell.append(label, bits);
+        strip.append(cell);
+      }
+      const note = document.createElement("p");
+      note.textContent = record.note;
+      card.append(caption, strip, note);
+      list.append(card);
+    }
+    return list;
+  }
+
+  function formatGuideSection(title, content) {
+    const section = document.createElement("section");
+    section.className = "lab-format-guide-section";
+    const heading = document.createElement("h3");
+    heading.textContent = title;
+    section.append(heading, content);
+    return section;
+  }
+
+  function guideMapEntry(label, size, detail, bits, tone) {
+    return { label, size, detail, bits, tone };
+  }
+
+  function guideHeaderField(offset, bits, name, meaning) {
+    return { offset, bits, name, meaning };
+  }
+
+  function guidePacking(title, note, fields) {
+    return { title, note, fields };
+  }
+
+  function guideBit(label, bits, tone = "header", bitsLabel = "") {
+    return { label, bits, tone, bitsLabel };
+  }
+
+  function guideSize(bits, fallback) {
+    return Number.isFinite(bits) ? formatBits(bits) : fallback;
+  }
+
+  function guideBitUnit() {
+    return t("lab.formatGuideBitUnit");
+  }
+
   function renderStructure(result) {
     const adapter = currentAdapter();
     elements.structureSummary.textContent = `${adapter.label} · ${formatBytes(result.encoded.byteLength)}`;
     elements.structureFlow.replaceChildren(...adapter.renderStructure(result));
+    renderFormatGuide();
   }
 
   function renderInspector(x, y) {
@@ -1105,6 +1416,7 @@
     elements.resultCaption.textContent = t(adapter.resultLabelKey);
     elements.structureTitle.textContent = t(adapter.structureTitleKey);
     elements.structureDescription.textContent = t(adapter.structureDescriptionKey);
+    renderFormatGuide();
     if (state.result) {
       renderMetrics(state.result);
       renderStructure(state.result);
@@ -1218,7 +1530,9 @@
   }
 
   function formatBits(bits) {
-    return bits < 8 ? `${bits} bit` : `${formatBytes(Math.ceil(bits / 8))} · ${formatInteger(bits)} bit`;
+    return bits < 8
+      ? `${bits} ${guideBitUnit()}`
+      : `${formatBytes(Math.ceil(bits / 8))} · ${formatInteger(bits)} ${guideBitUnit()}`;
   }
 
   function formatNumber(value, digits) {
