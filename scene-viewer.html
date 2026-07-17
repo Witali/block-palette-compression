@@ -28,11 +28,12 @@
         </a>
         <div class="scene-heading">
           <h1 id="scene-title" data-i18n="scene.title">Barcelona Pavilion</h1>
-          <p data-i18n="scene.description">Blender scene with switchable compressed textures</p>
+          <p data-i18n="scene.description">Blender scene with switchable texture formats</p>
         </div>
         <label class="scene-format-control" for="scene-texture-format">
           <span data-i18n="scene.textureFormat">Texture format</span>
           <select id="scene-texture-format" disabled>
+            <option value="original">Original · BC1 / BC7</option>
             <option value="bpal">BPAL · ≈ 4 bpp</option>
             <option value="dct">DCTBS2 · 3 bpp</option>
             <option value="astc">ASTC · 6 × 6</option>
@@ -53,10 +54,10 @@
 
       <footer class="scene-statusbar">
         <div class="scene-stats" aria-label="Scene texture statistics" data-i18n-aria-label="scene.statsAria">
-          <span><strong id="scene-codec-name">BPAL</strong><small data-i18n="scene.activeCodec">active codec</small></span>
+          <span><strong id="scene-codec-name">Original</strong><small data-i18n="scene.activeCodec">texture format</small></span>
           <span><strong id="scene-texture-count">17</strong><small data-i18n="scene.textures">textures</small></span>
-          <span><strong id="scene-compressed-size">—</strong><small data-i18n="scene.compressedSize">compressed</small></span>
-          <span><strong id="scene-decode-time">—</strong><small data-i18n="scene.decodeTime">decode time</small></span>
+          <span><strong id="scene-compressed-size">—</strong><small data-i18n="scene.compressedSize">source data</small></span>
+          <span><strong id="scene-decode-time">—</strong><small data-i18n="scene.decodeTime">load / decode</small></span>
         </div>
         <p id="scene-status" aria-live="polite" data-i18n="scene.preparing">Preparing viewer…</p>
       </footer>
@@ -68,7 +69,7 @@
     <script src="./src/palette/block-palette-format.js"></script>
     <script src="./src/decoders/bpal-texture.js"></script>
     <script src="./src/dct/dct-format.js"></script>
-    <script type="module" src="./src/pages/scene-viewer-page.js?v=3"></script>
+    <script type="module" src="./src/pages/scene-viewer-page.js?v=4"></script>
     <script src="./src/pwa/register-service-worker.js?v=1"></script>
   </body>
 </html>

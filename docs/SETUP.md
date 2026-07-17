@@ -13,7 +13,9 @@ does not replace the installed NVIDIA display driver.
   when compiling the native C or CUDA programs.
 
 The project has no npm package dependencies. Visual Studio and Node.js are
-system prerequisites and are not downloaded by the script.
+system prerequisites and are not downloaded by the script. Setup downloads a
+pinned portable Blender and installs Pillow into `.tmp` for scene conversion;
+neither changes the system Python installation.
 
 ## Quick start
 
@@ -34,9 +36,12 @@ The script checks Node.js, downloads the
 [official Barcelona Pavilion demo scene](https://download.blender.org/demo/test/pabellon_barcelona_v1.scene_.zip),
 and calls `tools/setup-local-cuda.ps1`. The scene is extracted to
 `.tmp/barcelona-source`; its downloaded ZIP is deleted immediately and the
-source files remain ignored by Git. Repeated runs skip an already extracted
-scene. Existing CUDA archives are reused only after their SHA-256 hashes match
-the official NVIDIA manifest.
+source files remain ignored by Git. Setup then runs
+`tools/build-blender-scene-assets.py` and `tools/build-win32-scene-assets.mjs`
+to produce original-resolution BC1/BC7, BPAL, DCTBS2, and ASTC textures for the
+web and native viewers. Repeated runs reuse the source scene and portable
+Blender, then rebuild the generated scene assets. Existing CUDA archives are
+reused only after their SHA-256 hashes match the official NVIDIA manifest.
 
 ## Downloaded CUDA components
 
@@ -88,8 +93,10 @@ To keep the environment unchanged and use explicit paths instead:
 
 | Option | Effect |
 | --- | --- |
-| `-SkipCuda` | Skip CUDA while still checking Node.js and preparing the source scene. |
-| `-SkipBarcelonaScene` | Do not download the original Barcelona Pavilion scene. |
+| `-SkipCuda` | Skip CUDA while still checking Node.js and building the scene assets. |
+| `-SkipBarcelonaScene` | Do not download or build the Barcelona Pavilion scene assets. |
+| `-BlenderPath <path>` | Use an existing Blender instead of downloading the pinned portable build. |
+| `-ScenePythonPath <path>` | Use a specific Python for the scene asset builder. |
 | `-NoUserEnvironment` | Download CUDA without changing user environment variables. |
 | `-CudaRelease <version>` | Select the NVIDIA redistributable manifest release. |
 | `-CudaToolkitVersion <version>` | Select the local toolkit directory and environment-variable suffix. |

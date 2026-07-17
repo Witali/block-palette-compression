@@ -5,6 +5,10 @@
   "textureCount": 17,
   "maxDimension": 1024,
   "codecs": {
+    "original": {
+      "label": "Original",
+      "settings": "Original resolution, BC1 opaque / BC7 alpha"
+    },
     "bpal": {
       "label": "BPAL",
       "settings": "8x8 blocks, 8 local / 256 global colors"
@@ -19,6 +23,7 @@
     }
   },
   "codecTotals": {
+    "original": 39279376,
     "bpal": 5026204,
     "dct": 3983680,
     "astc": 4186864
@@ -69,6 +74,13 @@
       "height": 747,
       "hasAlpha": true,
       "variants": {
+        "original": {
+          "color": "textures/candle-flame-2.bc7.dds",
+          "bytes": 374148,
+          "gpuFormat": "BC7",
+          "width": 500,
+          "height": 747
+        },
         "bpal": {
           "color": "textures/candle-flame-2.bpal",
           "bytes": 299568,
@@ -94,6 +106,13 @@
       "height": 678,
       "hasAlpha": false,
       "variants": {
+        "original": {
+          "color": "textures/dsc-8129.bc1.dds",
+          "bytes": 8042624,
+          "gpuFormat": "BC1",
+          "width": 4928,
+          "height": 3264
+        },
         "bpal": {
           "color": "textures/dsc-8129.bpal",
           "bytes": 348174
@@ -117,6 +136,13 @@
       "height": 678,
       "hasAlpha": false,
       "variants": {
+        "original": {
+          "color": "textures/dsc-8980.bc1.dds",
+          "bytes": 8042624,
+          "gpuFormat": "BC1",
+          "width": 4928,
+          "height": 3264
+        },
         "bpal": {
           "color": "textures/dsc-8980.bpal",
           "bytes": 348174
@@ -140,6 +166,13 @@
       "height": 678,
       "hasAlpha": false,
       "variants": {
+        "original": {
+          "color": "textures/dsc-9126.bc1.dds",
+          "bytes": 8042624,
+          "gpuFormat": "BC1",
+          "width": 4928,
+          "height": 3264
+        },
         "bpal": {
           "color": "textures/dsc-9126.bpal",
           "bytes": 348155
@@ -163,6 +196,13 @@
       "height": 600,
       "hasAlpha": false,
       "variants": {
+        "original": {
+          "color": "textures/grass-mid-seamless.bc1.dds",
+          "bytes": 180128,
+          "gpuFormat": "BC1",
+          "width": 600,
+          "height": 600
+        },
         "bpal": {
           "color": "textures/grass-mid-seamless.bpal",
           "bytes": 180782
@@ -186,6 +226,13 @@
       "height": 969,
       "hasAlpha": false,
       "variants": {
+        "original": {
+          "color": "textures/lotus.bc1.dds",
+          "bytes": 751088,
+          "gpuFormat": "BC1",
+          "width": 1260,
+          "height": 1192
+        },
         "bpal": {
           "color": "textures/lotus.bpal",
           "bytes": 497806
@@ -209,6 +256,13 @@
       "height": 500,
       "hasAlpha": false,
       "variants": {
+        "original": {
+          "color": "textures/mies-bcn-m01.bc1.dds",
+          "bytes": 200128,
+          "gpuFormat": "BC1",
+          "width": 800,
+          "height": 500
+        },
         "bpal": {
           "color": "textures/mies-bcn-m01.bpal",
           "bytes": 201182
@@ -232,6 +286,13 @@
       "height": 600,
       "hasAlpha": false,
       "variants": {
+        "original": {
+          "color": "textures/mies-bcn-m081.bc1.dds",
+          "bytes": 180128,
+          "gpuFormat": "BC1",
+          "width": 600,
+          "height": 600
+        },
         "bpal": {
           "color": "textures/mies-bcn-m081.bpal",
           "bytes": 180782
@@ -255,6 +316,13 @@
       "height": 600,
       "hasAlpha": false,
       "variants": {
+        "original": {
+          "color": "textures/mies-bcn-m081bump.bc1.dds",
+          "bytes": 180128,
+          "gpuFormat": "BC1",
+          "width": 600,
+          "height": 600
+        },
         "bpal": {
           "color": "textures/mies-bcn-m081bump.bpal",
           "bytes": 180782
@@ -278,6 +346,13 @@
       "height": 410,
       "hasAlpha": false,
       "variants": {
+        "original": {
+          "color": "textures/mies-bcn-m11.bc1.dds",
+          "bytes": 450128,
+          "gpuFormat": "BC1",
+          "width": 1500,
+          "height": 600
+        },
         "bpal": {
           "color": "textures/mies-bcn-m11.bpal",
           "bytes": 211470
@@ -301,6 +376,13 @@
       "height": 500,
       "hasAlpha": false,
       "variants": {
+        "original": {
+          "color": "textures/mies-bcn-m121.bc1.dds",
+          "bytes": 175128,
+          "gpuFormat": "BC1",
+          "width": 700,
+          "height": 500
+        },
         "bpal": {
           "color": "textures/mies-bcn-m121.bpal",
           "bytes": 176384
@@ -324,6 +406,13 @@
       "height": 590,
       "hasAlpha": false,
       "variants": {
+        "original": {
+          "color": "textures/rocks.bc1.dds",
+          "bytes": 236928,
+          "gpuFormat": "BC1",
+          "width": 800,
+          "height": 590
+        },
         "bpal": {
           "color": "textures/rocks.bpal",
           "bytes": 236982
@@ -347,6 +436,13 @@
       "height": 710,
       "hasAlpha": true,
       "variants": {
+        "original": {
+          "color": "textures/tree-leafs.bc7.dds",
+          "bytes": 712148,
+          "gpuFormat": "BC7",
+          "width": 1000,
+          "height": 710
+        },
         "bpal": {
           "color": "textures/tree-leafs.bpal",
           "bytes": 567113,
@@ -372,6 +468,13 @@
       "height": 768,
       "hasAlpha": false,
       "variants": {
+        "original": {
+          "color": "textures/url.bc1.dds",
+          "bytes": 960128,
+          "gpuFormat": "BC1",
+          "width": 1600,
+          "height": 1200
+        },
         "bpal": {
           "color": "textures/url.bpal",
           "bytes": 393915
@@ -395,6 +498,13 @@
       "height": 724,
       "hasAlpha": false,
       "variants": {
+        "original": {
+          "color": "textures/vignette.bc1.dds",
+          "bytes": 8699968,
+          "gpuFormat": "BC1",
+          "width": 4960,
+          "height": 3508
+        },
         "bpal": {
           "color": "textures/vignette.bpal",
           "bytes": 371982
@@ -418,6 +528,13 @@
       "height": 512,
       "hasAlpha": false,
       "variants": {
+        "original": {
+          "color": "textures/water-raindrop.bc1.dds",
+          "bytes": 131200,
+          "gpuFormat": "BC1",
+          "width": 512,
+          "height": 512
+        },
         "bpal": {
           "color": "textures/water-raindrop.bpal",
           "bytes": 131854
@@ -441,6 +558,13 @@
       "height": 683,
       "hasAlpha": false,
       "variants": {
+        "original": {
+          "color": "textures/wood.bc1.dds",
+          "bytes": 1920128,
+          "gpuFormat": "BC1",
+          "width": 2400,
+          "height": 1600
+        },
         "bpal": {
           "color": "textures/wood.bpal",
           "bytes": 351099

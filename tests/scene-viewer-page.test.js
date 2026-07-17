@@ -13,12 +13,16 @@ test("provides a Blender scene viewer with the requested codec switch", () => {
   const html = read("scene-viewer.html");
   const source = read("src/pages/scene-viewer-page.js");
 
+  assert.match(html, /<option value="original">Original/);
   assert.match(html, /<option value="bpal">BPAL/);
   assert.match(html, /<option value="dct">DCTBS2/);
   assert.match(html, /<option value="astc">ASTC/);
   assert.match(html, /src="\.\/src\/decoders\/bpal-texture\.js"/);
   assert.match(html, /src="\.\/src\/dct\/dct-format\.js"/);
   assert.match(source, /createASTCModule/);
+  assert.match(source, /new THREE\.CompressedTexture/);
+  assert.match(source, /WEBGL_compressed_texture_s3tc/);
+  assert.match(source, /EXT_texture_compression_bptc/);
   assert.match(source, /elements\.codec\.addEventListener\("change"/);
   assert.match(source, /assignTextures\(sceneRoot, manifest\.materials, resources, codec\)/);
   assert.match(source, /if \(document\.hidden\)/);
@@ -37,18 +41,21 @@ test("downloads the original scene from Blender into ignored temporary storage",
   assert.ok(viewerGuide.includes(officialSceneUrl));
   assert.match(setup, /Join-Path \$temporaryDirectory "barcelona-source"/);
   assert.match(setup, /Remove-Item -LiteralPath \$sceneArchivePath/);
+  assert.match(setup, /build-blender-scene-assets\.py/);
+  assert.match(setup, /build-win32-scene-assets\.mjs/);
+  assert.match(setup, /BC1\/BC7, BPAL, DCTBS2, and ASTC/);
   assert.match(read(".gitignore"), /^\.tmp\/$/m);
 });
 
-test("ships all source textures in BPAL, DCTBS2, and ASTC", () => {
+test("ships all source textures in BC1/BC7, BPAL, DCTBS2, and ASTC", () => {
   const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
 
   assert.equal(manifest.textureCount, 17);
   assert.equal(manifest.textures.length, 17);
-  assert.deepEqual(Object.keys(manifest.codecTotals).sort(), ["astc", "bpal", "dct"]);
+  assert.deepEqual(Object.keys(manifest.codecTotals).sort(), ["astc", "bpal", "dct", "original"]);
 
   for (const texture of manifest.textures) {
-    for (const codec of ["bpal", "dct", "astc"]) {
+    for (const codec of ["original", "bpal", "dct", "astc"]) {
       const variant = texture.variants[codec];
       const bytes = fs.readFileSync(path.join(assetDirectory, variant.color));
 
@@ -56,6 +63,13 @@ test("ships all source textures in BPAL, DCTBS2, and ASTC", () => {
       if (codec === "bpal") assert.equal(bytes.subarray(0, 4).toString("ascii"), "BPAL");
       if (codec === "dct") assert.equal(bytes.subarray(0, 6).toString("ascii"), "DCTBS2");
       if (codec === "astc") assert.deepEqual([...bytes.subarray(0, 4)], [0x13, 0xAB, 0xA1, 0x5C]);
+      if (codec === "original") {
+        assert.equal(bytes.subarray(0, 4).toString("ascii"), "DDS ");
+        assert.equal(variant.gpuFormat, texture.hasAlpha ? "BC7" : "BC1");
+        assert.equal(bytes.subarray(84, 88).toString("ascii"), texture.hasAlpha ? "DX10" : "DXT1");
+        assert.equal(variant.width, texture.sourceWidth);
+        assert.equal(variant.height, texture.sourceHeight);
+      }
     }
   }
 });

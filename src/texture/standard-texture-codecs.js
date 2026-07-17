@@ -26,7 +26,9 @@
     const blocksX = Math.ceil(width / 4);
     const blocksY = Math.ceil(height / 4);
     const payload = new Uint8Array(blocksX * blocksY * 8);
-    const decoded = new Uint8ClampedArray(width * height * 4);
+    const decoded = options.includeDecoded === false
+      ? null
+      : new Uint8ClampedArray(width * height * 4);
 
     for (let blockY = 0; blockY < blocksY; blockY += 1) {
       for (let blockX = 0; blockX < blocksX; blockX += 1) {
@@ -34,7 +36,7 @@
         const encoded = encodeBc1Block(block, quality);
         const blockIndex = blockY * blocksX + blockX;
         payload.set(encoded, blockIndex * 8);
-        writeDecodedBlock(decoded, width, height, blockX, blockY, decodeBc1Block(encoded));
+        if (decoded) writeDecodedBlock(decoded, width, height, blockX, blockY, decodeBc1Block(encoded));
       }
     }
 
@@ -56,7 +58,9 @@
     const blocksX = Math.ceil(width / 4);
     const blocksY = Math.ceil(height / 4);
     const payload = new Uint8Array(blocksX * blocksY * 16);
-    const decoded = new Uint8ClampedArray(width * height * 4);
+    const decoded = options.includeDecoded === false
+      ? null
+      : new Uint8ClampedArray(width * height * 4);
 
     for (let blockY = 0; blockY < blocksY; blockY += 1) {
       for (let blockX = 0; blockX < blocksX; blockX += 1) {
@@ -64,7 +68,7 @@
         const encoded = encodeBc7Mode6Block(block, quality);
         const blockIndex = blockY * blocksX + blockX;
         payload.set(encoded, blockIndex * 16);
-        writeDecodedBlock(decoded, width, height, blockX, blockY, decodeBc7Mode6Block(encoded));
+        if (decoded) writeDecodedBlock(decoded, width, height, blockX, blockY, decodeBc7Mode6Block(encoded));
       }
     }
 

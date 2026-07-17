@@ -1,4 +1,4 @@
-"""Build a browser-ready Blender scene and BPAL/DCTBS2/ASTC texture set."""
+"""Build a browser-ready Blender scene with original and compressed textures."""
 
 from __future__ import annotations
 
@@ -68,8 +68,9 @@ def prepare_texture_jobs(
         with Image.open(source_path) as opened:
             image = ImageOps.exif_transpose(opened)
             source_width, source_height = image.size
-            rgba = image.convert("RGBA")
-            has_alpha = "A" in image.getbands() and rgba.getchannel("A").getextrema()[0] < 255
+            source_rgba = image.convert("RGBA")
+            has_alpha = "A" in image.getbands() and source_rgba.getchannel("A").getextrema()[0] < 255
+            rgba = source_rgba.copy()
             if max(rgba.size) > max_dimension:
                 rgba.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
 
@@ -77,6 +78,8 @@ def prepare_texture_jobs(
             if identifier in identifiers:
                 raise ValueError(f"Texture identifier collision: {identifier}")
             identifiers.add(identifier)
+            standard_raw_path = temporary_directory / f"{identifier}-standard.rgba"
+            standard_raw_path.write_bytes(source_rgba.tobytes())
             raw_path = temporary_directory / f"{identifier}.rgba"
             raw_path.write_bytes(rgba.tobytes())
             jobs.append({
@@ -88,6 +91,7 @@ def prepare_texture_jobs(
                 "height": rgba.height,
                 "hasAlpha": has_alpha,
                 "rgba": str(raw_path),
+                "standardRgba": str(standard_raw_path),
             })
 
     return {

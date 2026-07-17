@@ -29,13 +29,18 @@ const astcModule = await createASTCModule({ wasmBinary });
 const textures = [];
 
 for (const [index, job] of jobs.textures.entries()) {
+  process.stdout.write(`[${index + 1}/${jobs.textures.length}] ${job.source}: `);
+  const original = encodeStandardOriginal(job);
+  const originalPath = `${job.id}.${original.format}.dds`;
+  fs.writeFileSync(path.join(destination, originalPath), original.file);
+
   const pixels = new Uint8ClampedArray(fs.readFileSync(job.rgba));
   const expectedLength = job.width * job.height * 4;
   if (pixels.length !== expectedLength) {
     throw new RangeError(`${job.source}: expected ${expectedLength} RGBA bytes, received ${pixels.length}`);
   }
 
-  process.stdout.write(`[${index + 1}/${jobs.textures.length}] ${job.source}: BPAL... `);
+  process.stdout.write("BPAL... ");
   const bpal = encodeBpal(pixels, job.width, job.height);
   const bpalPath = `${job.id}.bpal`;
   fs.writeFileSync(path.join(destination, bpalPath), bpal);
@@ -73,6 +78,13 @@ for (const [index, job] of jobs.textures.entries()) {
   fs.writeFileSync(path.join(destination, astcPath), astc);
 
   const variants = {
+    original: {
+      color: `textures/${originalPath}`,
+      bytes: original.file.byteLength,
+      gpuFormat: original.format.toUpperCase(),
+      width: job.sourceWidth,
+      height: job.sourceHeight,
+    },
     bpal: { color: `textures/${bpalPath}`, bytes: bpal.byteLength },
     dct: { color: `textures/${dctPath}`, bytes: dct.byteLength },
     astc: { color: `textures/${astcPath}`, bytes: astc.byteLength },
@@ -116,7 +128,7 @@ for (const [index, job] of jobs.textures.entries()) {
   process.stdout.write("done\n");
 }
 
-const codecTotals = Object.fromEntries(["bpal", "dct", "astc"].map((codec) => [
+const codecTotals = Object.fromEntries(["original", "bpal", "dct", "astc"].map((codec) => [
   codec,
   textures.reduce((sum, texture) => sum + texture.variants[codec].bytes, 0),
 ]));
@@ -127,6 +139,7 @@ const manifest = {
   textureCount: textures.length,
   maxDimension: jobs.maxDimension,
   codecs: {
+    original: { label: "Original", settings: "Original resolution, BC1 opaque / BC7 alpha" },
     bpal: { label: "BPAL", settings: "8x8 blocks, 8 local / 256 global colors" },
     dct: { label: "DCTBS2", settings: "3 bpp, quality 88, 4:2:0" },
     astc: { label: "ASTC", settings: "6x6 blocks, medium quality" },
@@ -158,6 +171,36 @@ function encodeBpal(pixels, width, height, overrides = {}) {
     ...overrides,
   });
   return BlockPaletteFormat.encodeBlockPaletteFile(encoded);
+}
+
+function encodeStandardOriginal(job) {
+  const pixels = new Uint8ClampedArray(fs.readFileSync(job.standardRgba));
+  const expectedLength = job.sourceWidth * job.sourceHeight * 4;
+  if (pixels.length !== expectedLength) {
+    throw new RangeError(
+      `${job.source}: expected ${expectedLength} original RGBA bytes, received ${pixels.length}`,
+    );
+  }
+  const format = job.hasAlpha ? "bc7" : "bc1";
+  process.stdout.write(`${format.toUpperCase()}... `);
+  const encoded = format === "bc7"
+    ? StandardTextureCodecs.encodeBc7Image(pixels, job.sourceWidth, job.sourceHeight, {
+      quality: "balanced",
+      includeDecoded: false,
+    })
+    : StandardTextureCodecs.encodeBc1Image(pixels, job.sourceWidth, job.sourceHeight, {
+      quality: "balanced",
+      includeDecoded: false,
+    });
+  return {
+    format,
+    file: StandardTextureCodecs.createDdsFile(
+      format,
+      encoded.payload,
+      job.sourceWidth,
+      job.sourceHeight,
+    ),
+  };
 }
 
 function createAlphaImage(pixels) {

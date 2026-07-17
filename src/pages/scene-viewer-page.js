@@ -6,7 +6,12 @@ import createASTCModule from "../../vendor/astc-encoder-wasm/astcenc.mjs";
 const ASSET_ROOT = "./assets/scenes/barcelona/";
 const MANIFEST_URL = `${ASSET_ROOT}manifest.json`;
 const SCENE_URL = `${ASSET_ROOT}scene.gltf`;
-const CODEC_LABELS = Object.freeze({ bpal: "BPAL", dct: "DCTBS2", astc: "ASTC" });
+const CODEC_LABELS = Object.freeze({
+  original: "Original · BC1 / BC7",
+  bpal: "BPAL",
+  dct: "DCTBS2",
+  astc: "ASTC",
+});
 const FRAME_EXCLUDED_OBJECTS = new Set(["tree_scatter_plane"]);
 const elements = {
   canvas: document.getElementById("scene-canvas"),
@@ -165,6 +170,9 @@ function createDecodeJobs(codec, identifiers) {
 }
 
 async function decode(codec, bytes) {
+  if (codec === "original") {
+    return inspectDds(bytes);
+  }
   if (codec === "bpal") {
     return window.BpalTextureDecoder.decode(bytes);
   }
@@ -175,6 +183,51 @@ async function decode(codec, bytes) {
     return decodeAstc(bytes);
   }
   throw new RangeError(`Unsupported scene texture codec: ${codec}`);
+}
+
+function inspectDds(bytes) {
+  if (!(bytes instanceof Uint8Array) || bytes.length < 128 || readAscii(bytes, 0, 4) !== "DDS ") {
+    throw new RangeError("Invalid DDS texture header");
+  }
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const height = view.getUint32(12, true);
+  const width = view.getUint32(16, true);
+  const fourCc = readAscii(bytes, 84, 4);
+  let format;
+  let headerBytes;
+  let blockBytes;
+  if (fourCc === "DXT1") {
+    format = "bc1";
+    headerBytes = 128;
+    blockBytes = 8;
+    if (!renderer.extensions.has("WEBGL_compressed_texture_s3tc")) {
+      throw new Error("BC1/DXT1 textures require WEBGL_compressed_texture_s3tc");
+    }
+  } else if (fourCc === "DX10" && bytes.length >= 148 && view.getUint32(128, true) === 98) {
+    format = "bc7";
+    headerBytes = 148;
+    blockBytes = 16;
+    if (!renderer.extensions.has("EXT_texture_compression_bptc")) {
+      throw new Error("BC7 textures require EXT_texture_compression_bptc");
+    }
+  } else {
+    throw new RangeError(`Unsupported original DDS format: ${fourCc}`);
+  }
+  const expectedBytes = Math.ceil(width / 4) * Math.ceil(height / 4) * blockBytes;
+  if (!width || !height || bytes.length !== headerBytes + expectedBytes) {
+    throw new RangeError("Invalid DDS texture dimensions or payload length");
+  }
+  return {
+    compressed: true,
+    format,
+    width,
+    height,
+    pixels: bytes.subarray(headerBytes),
+  };
+}
+
+function readAscii(bytes, offset, length) {
+  return String.fromCharCode(...bytes.subarray(offset, offset + length));
 }
 
 async function decodeAstc(bytes) {
@@ -217,6 +270,20 @@ function readUint24(bytes, offset) {
 }
 
 function createThreeTexture(decoded, colorTexture) {
+  if (decoded.compressed) {
+    const format = decoded.format === "bc7"
+      ? THREE.RGBA_BPTC_Format
+      : THREE.RGB_S3TC_DXT1_Format;
+    const texture = new THREE.CompressedTexture(
+      [{ data: decoded.pixels, width: decoded.width, height: decoded.height }],
+      decoded.width,
+      decoded.height,
+      format,
+      THREE.UnsignedByteType,
+    );
+    configureThreeTexture(texture, colorTexture, false);
+    return texture;
+  }
   const pixels = decoded.pixels instanceof Uint8Array
     ? decoded.pixels
     : new Uint8ClampedArray(decoded.pixels);
@@ -227,16 +294,20 @@ function createThreeTexture(decoded, colorTexture) {
     THREE.RGBAFormat,
     THREE.UnsignedByteType,
   );
+  configureThreeTexture(texture, colorTexture, true);
+  return texture;
+}
+
+function configureThreeTexture(texture, colorTexture, generateMipmaps) {
   texture.flipY = false;
   texture.colorSpace = colorTexture ? THREE.SRGBColorSpace : THREE.NoColorSpace;
   texture.wrapS = THREE.RepeatWrapping;
   texture.wrapT = THREE.RepeatWrapping;
   texture.magFilter = THREE.LinearFilter;
-  texture.minFilter = THREE.LinearMipmapLinearFilter;
-  texture.generateMipmaps = true;
+  texture.minFilter = generateMipmaps ? THREE.LinearMipmapLinearFilter : THREE.LinearFilter;
+  texture.generateMipmaps = generateMipmaps;
   texture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
   texture.needsUpdate = true;
-  return texture;
 }
 
 function assignTextures(root, assignments, resources, codec) {
@@ -266,7 +337,8 @@ function assignTextures(root, assignments, resources, codec) {
       if (material.bumpMap) material.bumpMap.colorSpace = THREE.NoColorSpace;
       material.bumpScale = material.name === "water" ? 0.09 : 0.055;
     }
-    if (codec === "astc" && material.map && textureEntries.get(assignment?.baseColor)?.hasAlpha) {
+    if ((codec === "astc" || codec === "original") &&
+        material.map && textureEntries.get(assignment?.baseColor)?.hasAlpha) {
       material.alphaMap = null;
     }
     material.needsUpdate = true;
