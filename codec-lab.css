@@ -71,8 +71,18 @@
   color: #aab5c2;
   font-size: 12px;
   font-weight: 650;
+}
+
+.format-picker > span:first-child,
+.lab-source-controls label > span:first-child,
+.format-settings > label > span:first-child:not(.number-with-unit) {
   letter-spacing: 0.035em;
   text-transform: uppercase;
+}
+
+.format-settings > label.check-option > span {
+  letter-spacing: normal;
+  text-transform: none;
 }
 
 .format-settings {

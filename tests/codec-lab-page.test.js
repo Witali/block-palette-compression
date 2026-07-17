@@ -73,6 +73,7 @@ test("styles the unified settings, comparison, structure, and inspector", () => 
   assert.match(styles, /\.format-settings/);
   assert.match(styles, /column-gap: 14px;[\s\S]*?row-gap: 14px;/);
   assert.match(styles, /color: #aab5c2;[\s\S]*?font-size: 12px;[\s\S]*?font-weight: 650;[\s\S]*?letter-spacing: 0\.035em;[\s\S]*?text-transform: uppercase;/);
+  assert.match(styles, /\.format-settings > label\.check-option > span \{[\s\S]*?letter-spacing: normal;[\s\S]*?text-transform: none;/);
   assert.match(styles, /\.format-settings select,[\s\S]*?\.format-settings input \{[\s\S]*?width: 100%;[\s\S]*?min-width: 0;/);
   assert.match(styles, /\.lab-comparison/);
   assert.match(styles, /\.lab-structure-flow/);
