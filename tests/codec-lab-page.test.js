@@ -59,6 +59,8 @@ test("styles the unified settings, comparison, structure, and inspector", () => 
   assert.match(styles, /\.lab-structure-flow/);
   assert.match(styles, /\.lab-block-details-body/);
   assert.match(styles, /\.lab-coefficient-matrix/);
+  assert.match(styles, /\.lab-matrix-list \{[\s\S]*?grid-template-columns: repeat\(4, minmax\(0, 1fr\)\);/);
+  assert.match(styles, /@media \(max-width: 1200px\)[\s\S]*?grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/);
 });
 
 test("links and caches the unified laboratory", () => {
