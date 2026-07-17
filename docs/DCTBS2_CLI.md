@@ -5,6 +5,7 @@
 implementation. The web worker and CLI therefore use the same coefficient
 selection, quantization, adaptive Y/C allocation, packing, prototype-library,
 quality-search, JPEG DCT import, decoding, and coordinate-sampling code.
+When `--quality` is omitted, fixed-quality encoding uses quality `100`.
 
 Run it through npm:
 

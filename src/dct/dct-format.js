@@ -19,6 +19,7 @@
   const MAGIC = Object.freeze([0x44, 0x43, 0x54, 0x42, 0x53, 0x32, 0x00, 0x00]);
   const VERSION = 2;
   const HEADER_BYTES = 64;
+  const DEFAULT_QUALITY = 100;
   const FLAG_AUTO_QUALITY = 1;
   const FLAG_SPLIT_LUMA_8X8 = 2;
   const FLAG_DCT_LIBRARY = 4;
@@ -301,7 +302,7 @@
 
   function encodeDctFile(pixels, width, height, options = {}) {
     validatePixels(pixels, width, height);
-    const quality = validateQuality(options.quality === undefined ? 72 : options.quality);
+    const quality = validateQuality(options.quality === undefined ? DEFAULT_QUALITY : options.quality);
     const baseLayout = getDctFileLayout(width, height, options.preset);
     const chroma420 = resolveChroma420(options);
     const chromaHeight = chroma420 ? CHROMA_HEIGHT_420 : CHROMA_HEIGHT_422;
@@ -583,7 +584,7 @@
 
   function importJpegDctFile(jpeg, options = {}) {
     const metadata = getJpegDctMetadata(jpeg);
-    const quality = validateQuality(options.quality === undefined ? 72 : options.quality);
+    const quality = validateQuality(options.quality === undefined ? DEFAULT_QUALITY : options.quality);
     const baseLayout = getDctFileLayout(metadata.width, metadata.height, options.preset);
     const chroma420 = resolveChroma420(options);
     const chromaHeight = chroma420 ? CHROMA_HEIGHT_420 : CHROMA_HEIGHT_422;
@@ -4667,6 +4668,7 @@
     MAGIC: "DCTBS2",
     VERSION,
     HEADER_BYTES,
+    DEFAULT_QUALITY,
     MCU_WIDTH,
     MCU_HEIGHT,
     PRESETS,

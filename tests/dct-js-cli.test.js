@@ -17,7 +17,7 @@ const {
 const root = path.resolve(__dirname, "..");
 const cli = path.join(root, "tools", "dctbs2-cli.js");
 
-test("defaults command-line encoding to the 4.5 bpp DCT preset", () => {
+test("defaults command-line encoding to the 4.5 bpp preset at quality 100", () => {
   withTempDirectory((directory) => {
     const width = 16;
     const height = 16;
@@ -26,7 +26,9 @@ test("defaults command-line encoding to the 4.5 bpp DCT preset", () => {
     writePpm(input, width, height, makePixels(width, height));
 
     runCli(["encode", input, output]);
-    assert.equal(inspectDctFile(fs.readFileSync(output)).key, "4.5");
+    const info = inspectDctFile(fs.readFileSync(output));
+    assert.equal(info.key, "4.5");
+    assert.equal(info.quality, 100);
   });
 });
 
@@ -140,6 +142,7 @@ test("uses the shared direct JPEG DCT import and CPU reconstruction", () => {
 test("documents all full-parity command-line algorithm switches", () => {
   const help = runCli(["--help"]);
   assert.match(help, /default: 4\.5/);
+  assert.match(help, /--quality <1\.\.100>\s+default: 100/);
   assert.match(runCli(["--json", "presets"]), /^\[/);
   for (const option of [
     "--auto-quality",

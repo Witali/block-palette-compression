@@ -25,7 +25,7 @@ Input formats:
 
 Encoder options:
   --preset <0.75|1|1.5|2|3|4.5|6|7.5|9>     default: 4.5
-  --quality <1..100>                          default: 72
+  --quality <1..100>                          default: 100
   --auto-quality                              use the web encoder's quality search
   --sample-mcu-count <n>                      quality-search sample count
   --finalist-count <n>                        full-image quality finalists
@@ -210,7 +210,7 @@ function presetsCommand(positionals, options) {
 function createCodecOptions(options) {
   const codecOptions = {
     preset: stringOption(options, "preset", "4.5"),
-    quality: integerOption(options, "quality", 72, 1, 100),
+    quality: integerOption(options, "quality", DctImageFormat.DEFAULT_QUALITY, 1, 100),
   };
   copyStringOption(options, codecOptions, "component-budget", "componentBudget");
   copyStringOption(options, codecOptions, "coefficient-coding", "coefficientCoding");

@@ -61,6 +61,7 @@ constexpr uint32_t LIBRARY_VERSION_SIDECAR_SPECTRAL_HALF = 8u;
 constexpr uint32_t LIBRARY_VERSION_SIDECAR_SPECTRAL_FULL = 9u;
 constexpr int MCU_WIDTH = 16;
 constexpr int MCU_HEIGHT = 16;
+constexpr uint32_t DEFAULT_QUALITY = 100u;
 constexpr uint32_t MIN_CHROMA_BYTES = 8u;
 constexpr int CUDA_THREADS = 256;
 constexpr std::array<uint32_t, 9> PRESET_UNITS{{
@@ -3071,7 +3072,7 @@ void print_usage(const char *program) {
         "  %s --version\n\n"
         "Encode options:\n"
         "  --preset BPP       0.75, 1, 1.5, 2, 3, 4.5, 6, 7.5, or 9 (default 4.5)\n"
-        "  --quality N        Quantization quality 1..100 (default 72)\n"
+        "  --quality N        Quantization quality 1..100 (default 100)\n"
         "  --find-quality     Search CUDA candidates and maximize RGB PSNR\n"
         "  --find-settings    Alias for --find-quality\n"
         "  --component-budget MODE  fixed, fast, or expanded (default fast)\n"
@@ -3126,7 +3127,7 @@ int command_encode(int argc, char **argv) {
     }
     Preset preset;
     make_balanced_preset(36u, &preset);
-    uint32_t quality = 72u;
+    uint32_t quality = DEFAULT_QUALITY;
     bool find_quality = false;
     std::string component_budget = "fast";
     int requested_coding = -1;

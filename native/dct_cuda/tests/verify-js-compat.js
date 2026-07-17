@@ -9,6 +9,7 @@ const path = require("node:path");
 const root = path.resolve(__dirname, "..", "..", "..");
 const { GpuJpegDecoder } = require(path.join(root, "src", "decoders", "gpu-jpeg.js"));
 const {
+  DEFAULT_QUALITY,
   PRESETS,
   decodeDctFile,
   encodeDctFile,
@@ -35,6 +36,7 @@ const representativePresets = [
 
 try {
   verifyPresetListing();
+  verifyDefaultQuality();
   for (const preset of representativePresets) {
     verifyPreset(preset);
   }
@@ -267,6 +269,21 @@ function verifyPresetListing() {
     assert.ok(Number(cbBytes) >= 8 && Number(crBytes) >= 8, `CUDA chroma floor ${key}`);
   }
   console.log(`ok - CUDA lists all ${lines.length} DCTBS2 layouts`);
+}
+
+function verifyDefaultQuality() {
+  const cudaFile = path.join(temporary, "cuda-default-quality.dctbs2");
+  run(["encode", inputPpm, cudaFile, "--preset", "4.5", "--component-budget", "fixed"]);
+  const cudaInfo = inspectDctFile(fs.readFileSync(cudaFile));
+  const javascriptInfo = inspectDctFile(encodeDctFile(rgba, width, height, {
+    preset: "4.5",
+    componentBudget: "fixed",
+  }));
+
+  assert.equal(DEFAULT_QUALITY, 100);
+  assert.equal(cudaInfo.quality, DEFAULT_QUALITY);
+  assert.equal(javascriptInfo.quality, DEFAULT_QUALITY);
+  console.log("ok - CUDA and JavaScript default quantization quality is 100");
 }
 
 function verifyPreset(preset) {

@@ -5,6 +5,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { GpuJpegDecoder } = require("../src/decoders/gpu-jpeg.js");
 const {
+  DEFAULT_QUALITY,
   HEADER_BYTES,
   PRESETS,
   getDctPreset,
@@ -22,6 +23,17 @@ const {
 } = require("../src/dct/dct-format.js");
 
 const root = path.resolve(__dirname, "..");
+
+test("defaults fixed DCT quantization quality to 100", () => {
+  const pixels = makePixels(16, 16);
+  const encoded = encodeDctFile(pixels, 16, 16, {
+    preset: "4.5",
+    componentBudget: "fixed",
+  });
+
+  assert.equal(DEFAULT_QUALITY, 100);
+  assert.equal(inspectDctFile(encoded).quality, 100);
+});
 
 test("describes every bit in grouped, skip, and masked DCT component records", () => {
   const dualScale = describeDctComponentRecord({

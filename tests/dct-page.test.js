@@ -39,6 +39,8 @@ test("offers every fixed MCU rate from the preserved converter", () => {
   assert.match(page, /dctbs_converter_with_edge_dictionary\.html/);
   assert.match(page, /four 8×8 luma transforms at high rates/);
   assert.match(page, /two 8×8 chroma transforms/);
+  assert.match(page, /id="quality-value" for="quality">100<\/output>/);
+  assert.match(page, /id="quality"[^>]*value="100"/);
 });
 
 test("embeds a DCTBS2 layout diagram synchronized with the target rate", () => {

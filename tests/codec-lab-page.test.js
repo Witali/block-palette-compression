@@ -23,6 +23,8 @@ test("combines BPAL, DCTBS2, and BPDH behind one format selector", () => {
   assert.match(page, /<option value="4\.5" selected>4\.5 bpp/);
   assert.doesNotMatch(page, /<option value="1\.5" selected>1\.5 bpp · 48 B\/MCU/);
   assert.match(page, /<option value="fixed" selected data-i18n="dct\.componentBudgetFixed"/);
+  assert.match(page, /id="dct-quality-value">100<\/output>/);
+  assert.match(page, /id="dct-quality"[^>]*value="100"/);
 });
 
 test("uses one comparison and coordinate inspector for every codec", () => {

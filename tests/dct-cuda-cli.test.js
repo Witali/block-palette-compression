@@ -16,6 +16,9 @@ test("provides CUDA encode, decode, settings search, and pixel commands", () => 
   assert.match(source, /--find-settings/);
   assert.match(source, /0\.75, 1, 1\.5, 2, 3, 4\.5, 6, 7\.5, or 9/);
   assert.match(source, /default 4\.5/);
+  assert.match(source, /DEFAULT_QUALITY = 100u/);
+  assert.match(source, /Quantization quality 1\.\.100 \(default 100\)/);
+  assert.match(source, /uint32_t quality = DEFAULT_QUALITY/);
   assert.match(source, /make_balanced_preset\(36u, &preset\)/);
   assert.match(source, /command == "presets"/);
   assert.match(source, /command == "pixel"/);
