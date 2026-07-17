@@ -14,6 +14,8 @@ const {
   inspectDctFile,
   inspectDctMcu,
   findBestDctQuality,
+  calculateSquaredError,
+  getCachedDctEncodingResult,
 } = require("../src/dct/dct-format.js");
 
 const root = path.resolve(__dirname, "..");
@@ -335,6 +337,29 @@ test("imports JPEG Huffman coefficients without an RGB encoder input", () => {
       `imported JPEG pixel ${x},${y}`
     );
   }
+});
+
+test("reuses the selected JPEG import preview after high-rate comparison", () => {
+  const jpegBytes = fs.readFileSync(path.join(root, "assets/benchmark-jpegs/clipart-apple.jpg"));
+  const jpeg = GpuJpegDecoder.parse(jpegBytes);
+  const reference = decodeDctFile(importJpegDctFile(jpeg, {
+    preset: "6",
+    quality: 72,
+    coefficientCoding: "grouped-5-front",
+  })).pixels;
+  const encoded = importJpegDctFile(jpeg, {
+    preset: "6",
+    quality: 72,
+    referencePixels: reference,
+  });
+  const cached = getCachedDctEncodingResult(encoded);
+
+  assert.ok(cached);
+  assert.deepEqual(cached.decoded.pixels, decodeDctFile(encoded).pixels);
+  assert.equal(
+    cached.squaredError,
+    calculateSquaredError(reference, cached.decoded.pixels)
+  );
 });
 
 test("samples every reconstructed pixel without decoding the complete image", () => {

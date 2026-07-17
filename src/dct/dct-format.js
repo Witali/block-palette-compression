@@ -133,6 +133,10 @@
   const scanCache = new Map();
   const skipScanCache = new Map();
   const zigzagScanCache = new Map();
+  const quantizationStepCache = new Map();
+  const jpegDctSourceCache = new WeakMap();
+  const jpegDctRecordCache = new WeakMap();
+  const dctEncodingResultCache = new WeakMap();
 
   function freezePreset(modeCode, bpp, bytesPerMcu, yBytes, cbBytes, crBytes) {
     return Object.freeze({ modeCode, bpp, bytesPerMcu, yBytes, cbBytes, crBytes });
@@ -488,7 +492,7 @@
   }
 
   function importJpegDctFile(jpeg, options = {}) {
-    const source = prepareJpegDctSource(jpeg);
+    const source = getPreparedJpegDctSource(jpeg);
     const quality = validateQuality(options.quality === undefined ? 72 : options.quality);
     const layout = getDctFileLayout(source.width, source.height, options.preset);
     const chroma420 = resolveChroma420(options);
@@ -509,29 +513,40 @@
     const splitLuma8x8 = shouldSplitLuma(layout, options);
     const output = createDctOutput(layout, quality, options, splitLuma8x8, coefficientCoding);
     const reportProgress = createDctProgressReporter(options, layout.mcuCount, quality);
+    const cacheKey = `${chroma420 ? "420" : "422"}:${splitLuma8x8 ? "split" : "merged"}`;
+    let records = getJpegDctRecordMap(jpeg).get(cacheKey);
+    const cacheRecords = !records;
+    if (!records) records = new Array(layout.mcuCount);
     reportProgress(0);
 
     for (let mcuIndex = 0; mcuIndex < layout.mcuCount; mcuIndex += 1) {
       const mcuX = mcuIndex % layout.mcuColumns;
       const mcuY = Math.floor(mcuIndex / layout.mcuColumns);
-      const planes = extractJpegMcuPlanes(source, mcuX, mcuY, chroma420);
+      const record = records[mcuIndex] || transformJpegMcuCoefficients(
+        source,
+        mcuX,
+        mcuY,
+        chroma420,
+        splitLuma8x8
+      );
+      records[mcuIndex] = record;
       const byteOffset = HEADER_BYTES + mcuIndex * layout.bytesPerMcu;
 
-      encodeLuma(
+      encodeLumaCoefficientBlocks(
         output,
         byteOffset,
         layout.yBytes,
-        planes.y,
+        record.y,
         quality,
         splitLuma8x8,
         coefficientCoding,
         true
       );
-      encodeComponent(
+      encodeComponentCoefficients(
         output,
         byteOffset + layout.yBytes,
         layout.cbBytes,
-        planes.cb,
+        record.cb,
         8,
         chromaHeight,
         quality,
@@ -539,11 +554,11 @@
         coefficientCoding,
         splitLuma8x8
       );
-      encodeComponent(
+      encodeComponentCoefficients(
         output,
         byteOffset + layout.yBytes + layout.cbBytes,
         layout.crBytes,
-        planes.cr,
+        record.cr,
         8,
         chromaHeight,
         quality,
@@ -554,7 +569,81 @@
       reportProgress(mcuIndex + 1);
     }
 
+    if (cacheRecords) getJpegDctRecordMap(jpeg).set(cacheKey, records);
     return output;
+  }
+
+  function getPreparedJpegDctSource(jpeg) {
+    let source = jpegDctSourceCache.get(jpeg);
+    if (!source) {
+      source = prepareJpegDctSource(jpeg);
+      jpegDctSourceCache.set(jpeg, source);
+    }
+    return source;
+  }
+
+  function getJpegDctRecordMap(jpeg) {
+    let records = jpegDctRecordCache.get(jpeg);
+    if (!records) {
+      records = new Map();
+      jpegDctRecordCache.set(jpeg, records);
+    }
+    return records;
+  }
+
+  function transformJpegMcuCoefficients(source, mcuX, mcuY, chroma420, splitLuma8x8) {
+    const chromaHeight = chroma420 ? CHROMA_HEIGHT_420 : CHROMA_HEIGHT_422;
+    const planes = extractJpegMcuPlanes(source, mcuX, mcuY, chroma420);
+    return {
+      y: splitLuma8x8
+        ? splitLumaSamples(planes.y).map((samples) => forwardDct(samples, 8, 8))
+        : [forwardDct(planes.y, 16, 16)],
+      cb: forwardDct(planes.cb, 8, chromaHeight),
+      cr: forwardDct(planes.cr, 8, chromaHeight),
+    };
+  }
+
+  function encodeLumaCoefficientBlocks(
+    output,
+    offset,
+    byteCount,
+    coefficientBlocks,
+    quality,
+    split,
+    coding,
+    allowSkip = false
+  ) {
+    if (!split) {
+      encodeComponentCoefficients(
+        output,
+        offset,
+        byteCount,
+        coefficientBlocks[0],
+        16,
+        16,
+        quality,
+        false,
+        coding,
+        allowSkip
+      );
+      return;
+    }
+
+    const blockBytes = byteCount / 4;
+    for (let blockIndex = 0; blockIndex < 4; blockIndex += 1) {
+      encodeComponentCoefficients(
+        output,
+        offset + blockIndex * blockBytes,
+        blockBytes,
+        coefficientBlocks[blockIndex],
+        8,
+        8,
+        quality,
+        false,
+        coding,
+        allowSkip
+      );
+    }
   }
 
   function shouldAutoSelectMaskedTail(presetKey, options) {
@@ -579,13 +668,22 @@
 
     for (let phase = 0; phase < candidates.length; phase += 1) {
       const encoded = encodePhase(candidates[phase], phase);
-      const error = calculateSquaredError(pixels, decodeDctFile(encoded).pixels);
+      const decoded = decodeDctFile(encoded);
+      const error = calculateSquaredError(pixels, decoded.pixels);
       if (!best || error < best.error) {
-        best = { encoded, error };
+        best = { encoded, decoded, error };
       }
     }
 
+    dctEncodingResultCache.set(best.encoded, {
+      decoded: best.decoded,
+      squaredError: best.error,
+    });
     return best.encoded;
+  }
+
+  function getCachedDctEncodingResult(encoded) {
+    return dctEncodingResultCache.get(encoded) || null;
   }
 
   function highRateCandidateConfigurations(presetKey) {
@@ -1836,19 +1934,17 @@
     const acMinimum = -(2 ** (config.acBits - 1));
     const acMaximum = 2 ** (config.acBits - 1) - 1;
     const baseError = squaredNorm(coefficients);
+    const quantizationSteps = getScaledQuantizationSteps(width, height, quality, chroma);
     let best = null;
 
     for (let scaleIndex = 0; scaleIndex < 4; scaleIndex += 1) {
-      const scale = SCALE_MULTIPLIERS[scaleIndex];
-      const dcStep = quantizationStep(0, 0, width, height, quality, chroma) * scale;
+      const dcStep = quantizationSteps[scaleIndex * width * height];
       const dc = clamp(roundSigned(coefficients[0] / dcStep), dcMinimum, dcMaximum);
       const restoredDc = dc * dcStep;
       const errorAfterDc = baseError +
         (coefficients[0] - restoredDc) ** 2 - coefficients[0] ** 2;
       const coding = coefficientOrder.slice(1).map((position, index) => {
-        const u = position % width;
-        const v = Math.floor(position / width);
-        const step = quantizationStep(u, v, width, height, quality, chroma) * scale;
+        const step = quantizationSteps[scaleIndex * width * height + position];
         let stored = clamp(roundSigned(coefficients[position] / step), acMinimum, acMaximum);
         const restored = stored * step;
         const dropError = coefficients[position] ** 2;
@@ -1864,17 +1960,22 @@
           benefit: stored === 0 ? 0 : dropError - keepError,
         };
       });
+      const codingByPosition = new Array(64);
+      for (const entry of coding) codingByPosition[entry.position] = entry;
 
       const selected = new Uint8Array(64);
       const implicitBenefit = implicitPositions.reduce(
-        (total, position) => total + coding.find((entry) => entry.position === position).benefit,
+        (total, position) => total + codingByPosition[position].benefit,
         0
       );
+      const implicitEntries = implicitPositions.map((position) => codingByPosition[position]);
       let explicitBenefit = 0;
       let tailBenefit = coding.slice(63 - flexibleAcCount).reduce(
         (total, entry) => total + entry.benefit,
         0
       );
+      const eligible = [];
+      let nextEligibleRank = 1;
 
       for (let explicitCount = 0; explicitCount <= flexibleAcCount; explicitCount += 1) {
         const tailStart = 64 - flexibleAcCount + explicitCount;
@@ -1886,9 +1987,7 @@
             scaleIndex,
             dc,
             groupScaleIndices: [scaleIndex],
-            implicitEntries: implicitPositions.map(
-              (position) => coding.find((entry) => entry.position === position)
-            ),
+            implicitEntries,
             explicitEntries: coding.slice(0, tailStart - 1)
               .filter((entry) => selected[entry.position] !== 0),
             tailEntries: coding.slice(tailStart - 1),
@@ -1902,21 +2001,58 @@
 
         if (explicitCount === flexibleAcCount) break;
         tailBenefit -= coding[tailStart - 1].benefit;
-        let bestEntry = null;
-        for (const entry of coding) {
-          if (entry.rank > Math.min(62, tailStart)) break;
-          if (implicit[entry.position] !== 0 || selected[entry.position] !== 0) continue;
-          if (!bestEntry || entry.benefit > bestEntry.benefit ||
-              entry.benefit === bestEntry.benefit && entry.rank < bestEntry.rank) {
-            bestEntry = entry;
-          }
+        const maximumEligibleRank = Math.min(62, tailStart);
+        while (nextEligibleRank <= maximumEligibleRank) {
+          const entry = coding[nextEligibleRank - 1];
+          if (implicit[entry.position] === 0) pushBenefitEntry(eligible, entry);
+          nextEligibleRank += 1;
         }
+        const bestEntry = popBenefitEntry(eligible);
         selected[bestEntry.position] = 1;
         explicitBenefit += bestEntry.benefit;
       }
     }
 
     return best;
+  }
+
+  function pushBenefitEntry(heap, entry) {
+    let index = heap.length;
+    heap.push(entry);
+
+    while (index > 0) {
+      const parentIndex = Math.floor((index - 1) / 2);
+      if (!isBetterBenefitEntry(entry, heap[parentIndex])) break;
+      heap[index] = heap[parentIndex];
+      index = parentIndex;
+    }
+    heap[index] = entry;
+  }
+
+  function popBenefitEntry(heap) {
+    const best = heap[0];
+    const last = heap.pop();
+    if (heap.length === 0) return best;
+
+    let index = 0;
+    while (true) {
+      const leftIndex = index * 2 + 1;
+      if (leftIndex >= heap.length) break;
+      const rightIndex = leftIndex + 1;
+      const childIndex = rightIndex < heap.length &&
+        isBetterBenefitEntry(heap[rightIndex], heap[leftIndex])
+        ? rightIndex : leftIndex;
+      if (!isBetterBenefitEntry(heap[childIndex], last)) break;
+      heap[index] = heap[childIndex];
+      index = childIndex;
+    }
+    heap[index] = last;
+    return best;
+  }
+
+  function isBetterBenefitEntry(left, right) {
+    return left.benefit > right.benefit ||
+      left.benefit === right.benefit && left.rank < right.rank;
   }
 
   function writeMaskedTailComponentCandidate(output, offset, byteCount, candidate, coding) {
@@ -2279,6 +2415,18 @@
       reservedAcCount,
       width * height - 1
     );
+    const quantizationSteps = getScaledQuantizationSteps(width, height, quality, chroma);
+    const dcChoice = chooseQuantizedGroup(
+      coefficients,
+      [0],
+      width,
+      height,
+      quality,
+      chroma,
+      10,
+      quantizationSteps
+    );
+    const baseError = squaredNorm(coefficients) + dcChoice.errorDelta;
     let best = null;
 
     for (let profile = 0; profile < getProfileCount(coding); profile += 1) {
@@ -2290,18 +2438,9 @@
         layout.acCount,
         libraryFrequencySplit
       );
-      const dcChoice = chooseQuantizedGroup(
-        coefficients,
-        [0],
-        width,
-        height,
-        quality,
-        chroma,
-        10
-      );
       const ac = [];
       const groupScaleIndices = [];
-      let error = squaredNorm(coefficients) + dcChoice.errorDelta;
+      let error = baseError;
       let groupStart = 0;
 
       for (const groupEnd of layout.groupEnds) {
@@ -2313,7 +2452,8 @@
           height,
           quality,
           chroma,
-          coding.mantissaBits
+          coding.mantissaBits,
+          quantizationSteps
         );
 
         groupScaleIndices.push(group.scaleIndex);
@@ -2339,35 +2479,45 @@
     return best;
   }
 
-  function chooseQuantizedGroup(coefficients, positions, width, height, quality, chroma, bitCount) {
+  function chooseQuantizedGroup(
+    coefficients,
+    positions,
+    width,
+    height,
+    quality,
+    chroma,
+    bitCount,
+    quantizationSteps = getScaledQuantizationSteps(width, height, quality, chroma)
+  ) {
     const minimum = -(2 ** (bitCount - 1));
     const maximum = 2 ** (bitCount - 1) - 1;
-    let best = null;
+    const coefficientCount = width * height;
+    let bestScaleIndex = -1;
+    let bestErrorDelta = Infinity;
 
     for (let scaleIndex = 0; scaleIndex < SCALE_MULTIPLIERS.length; scaleIndex += 1) {
-      const scale = SCALE_MULTIPLIERS[scaleIndex];
-      const values = [];
       let errorDelta = 0;
 
       for (const position of positions) {
-        const u = position % width;
-        const v = Math.floor(position / width);
-        const step = quantizationStep(u, v, width, height, quality, chroma) * scale;
+        const step = quantizationSteps[scaleIndex * coefficientCount + position];
         const stored = clamp(roundSigned(coefficients[position] / step), minimum, maximum);
         const restored = stored * step;
 
-        values.push(stored);
         errorDelta += (coefficients[position] - restored) ** 2 - coefficients[position] ** 2;
       }
 
-      const candidate = { scaleIndex, values, errorDelta };
-      if (!best || candidate.errorDelta < best.errorDelta ||
-          (candidate.errorDelta === best.errorDelta && candidate.scaleIndex < best.scaleIndex)) {
-        best = candidate;
+      if (errorDelta < bestErrorDelta ||
+          (errorDelta === bestErrorDelta && scaleIndex < bestScaleIndex)) {
+        bestScaleIndex = scaleIndex;
+        bestErrorDelta = errorDelta;
       }
     }
 
-    return best;
+    const values = positions.map((position) => {
+      const step = quantizationSteps[bestScaleIndex * coefficientCount + position];
+      return clamp(roundSigned(coefficients[position] / step), minimum, maximum);
+    });
+    return { scaleIndex: bestScaleIndex, values, errorDelta: bestErrorDelta };
   }
 
   function getGroupedAcLayout(byteCount, coding, reservedAcCount = 0, maximumAcCount = Infinity) {
@@ -3447,6 +3597,34 @@
     return Math.max(1, table[tableY * 8 + tableX] * qualityScale * dimensionScale);
   }
 
+  function getScaledQuantizationSteps(width, height, quality, chroma) {
+    const key = `${width}:${height}:${quality}:${chroma ? 1 : 0}`;
+
+    if (!quantizationStepCache.has(key)) {
+      const coefficientCount = width * height;
+      const steps = new Float64Array(coefficientCount * SCALE_MULTIPLIERS.length);
+
+      for (let position = 0; position < coefficientCount; position += 1) {
+        const baseStep = quantizationStep(
+          position % width,
+          Math.floor(position / width),
+          width,
+          height,
+          quality,
+          chroma
+        );
+
+        for (let scaleIndex = 0; scaleIndex < SCALE_MULTIPLIERS.length; scaleIndex += 1) {
+          steps[scaleIndex * coefficientCount + position] =
+            baseStep * SCALE_MULTIPLIERS[scaleIndex];
+        }
+      }
+      quantizationStepCache.set(key, steps);
+    }
+
+    return quantizationStepCache.get(key);
+  }
+
   function measureSampleError(
     pixels,
     width,
@@ -3752,5 +3930,6 @@
     inspectDctMcu,
     findBestDctQuality,
     calculateSquaredError,
+    getCachedDctEncodingResult,
   });
 });

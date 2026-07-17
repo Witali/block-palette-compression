@@ -29,6 +29,7 @@ self.addEventListener("message", ({ data }) => {
     let decoded;
     let quality = data.quality;
     let candidateCount = 0;
+    let squaredError;
 
     if (data.jpegImport) {
       if (!data.jpegBytes) {
@@ -45,7 +46,9 @@ self.addEventListener("message", ({ data }) => {
       }
 
       encoded = self.DctImageFormat.importJpegDctFile(jpeg, options);
-      decoded = self.DctImageFormat.decodeDctFile(encoded);
+      const cached = self.DctImageFormat.getCachedDctEncodingResult(encoded);
+      decoded = cached ? cached.decoded : self.DctImageFormat.decodeDctFile(encoded);
+      squaredError = cached ? cached.squaredError : undefined;
     } else if (data.autoQuality) {
       const result = self.DctImageFormat.findBestDctQuality(
         pixels,
@@ -69,6 +72,7 @@ self.addEventListener("message", ({ data }) => {
       decoded = result.decoded;
       quality = result.quality;
       candidateCount = result.candidateCount;
+      squaredError = result.error;
     } else {
       encoded = self.DctImageFormat.encodeDctFile(
         pixels,
@@ -79,7 +83,9 @@ self.addEventListener("message", ({ data }) => {
       decoded = self.DctImageFormat.decodeDctFile(encoded);
     }
 
-    const squaredError = self.DctImageFormat.calculateSquaredError(pixels, decoded.pixels);
+    if (squaredError === undefined) {
+      squaredError = self.DctImageFormat.calculateSquaredError(pixels, decoded.pixels);
+    }
 
     self.postMessage({
       type: "result",
