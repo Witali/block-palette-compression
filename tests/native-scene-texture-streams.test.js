@@ -40,6 +40,30 @@ test("ships raw Direct3D streams instead of decoded texture caches", () => {
   }
 });
 
+test("filters every native scene codec without a decoded texture cache", () => {
+  const main = fs.readFileSync(path.join(nativeDirectory, "main.cpp"), "utf8");
+  const hlsl = fs.readFileSync(path.join(nativeDirectory, "assets", "scene.hlsl"), "utf8");
+  const readme = fs.readFileSync(path.join(nativeDirectory, "README.md"), "utf8");
+
+  for (const label of ["Nearest", "Bilinear", "Trilinear", "Anisotropic"]) {
+    assert.match(main, new RegExp(`Filter: ${label}`));
+  }
+  assert.match(main, /kAnisotropyValues = \{2\.0f, 4\.0f, 8\.0f\}/);
+  assert.match(main, /kLodBiasValues/);
+  assert.match(main, /PSSetConstantBuffers\(3/);
+  assert.match(main, /originalSamplers_\[samplerIndex\]/);
+  assert.match(main, /const std::uint32_t storageWidth = \(width \+ 3u\) & ~3u/);
+  assert.match(main, /resource->descriptor\.parameters\[0\] = storageWidth/);
+  assert.match(hlsl, /cbuffer FilterConstants : register\(b3\)/);
+  assert.match(hlsl, /SampleTextureBilinear\(/);
+  assert.match(hlsl, /SampleTextureFootprint\(/);
+  assert.match(hlsl, /SampleTextureAnisotropic\(/);
+  assert.match(hlsl, /SampleDctFiltered\(/);
+  assert.match(hlsl, /DctFilterWidth\(/);
+  assert.doesNotMatch(hlsl, /Texture2D<float4> decoded/);
+  assert.match(readme, /do not create decoded mip levels or an RGBA cache/);
+});
+
 test("shares byte-identical packed streams with the WebGL2 viewer", () => {
   const nativeFiles = walk(streamDirectory).map((file) => path.relative(streamDirectory, file));
   const webFiles = walk(webStreamDirectory).map((file) => path.relative(webStreamDirectory, file));

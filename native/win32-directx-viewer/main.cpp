@@ -37,8 +37,24 @@ namespace {
 constexpr wchar_t kWindowClass[] = L"BpalDirectXSceneViewer";
 constexpr int kCodecComboId = 1001;
 constexpr int kStatusLabelId = 1002;
+constexpr int kFilterComboId = 1003;
+constexpr int kAnisotropyComboId = 1004;
+constexpr int kLodBiasComboId = 1005;
 constexpr std::array<const char*, 4> kCodecDirectories = {"original", "bpal", "dct", "astc"};
 constexpr std::array<const wchar_t*, 4> kCodecLabels = {L"Original BC1/BC7", L"BPAL", L"DCTBS2", L"ASTC"};
+constexpr std::array<const wchar_t*, 4> kFilterLabels = {
+    L"Filter: Nearest", L"Filter: Bilinear", L"Filter: Trilinear", L"Filter: Anisotropic"};
+constexpr std::array<const wchar_t*, 4> kFilterNames = {
+    L"Nearest", L"Bilinear", L"Trilinear", L"Anisotropic"};
+constexpr std::array<const wchar_t*, 3> kAnisotropyLabels = {
+    L"Anisotropy: 2x", L"Anisotropy: 4x", L"Anisotropy: 8x"};
+constexpr std::array<float, 3> kAnisotropyValues = {2.0f, 4.0f, 8.0f};
+constexpr std::array<const wchar_t*, 9> kLodBiasLabels = {
+    L"LOD bias: -2.0", L"LOD bias: -1.5", L"LOD bias: -1.0",
+    L"LOD bias: -0.5", L"LOD bias: 0.0", L"LOD bias: +0.5",
+    L"LOD bias: +1.0", L"LOD bias: +1.5", L"LOD bias: +2.0"};
+constexpr std::array<float, 9> kLodBiasValues = {
+    -2.0f, -1.5f, -1.0f, -0.5f, 0.0f, 0.5f, 1.0f, 1.5f, 2.0f};
 
 struct SceneConstants {
     XMFLOAT4X4 viewProjection;
@@ -60,10 +76,15 @@ struct TextureConstants {
     TextureDescriptorGpu streams[3];
 };
 
+struct FilterConstants {
+    XMFLOAT4 parameters;
+};
+
 static_assert(sizeof(SceneConstants) % 16 == 0);
 static_assert(sizeof(MaterialConstants) % 16 == 0);
 static_assert(sizeof(TextureDescriptorGpu) == 80);
 static_assert(sizeof(TextureConstants) % 16 == 0);
+static_assert(sizeof(FilterConstants) % 16 == 0);
 
 struct TextureGpuResource {
     ComPtr<ID3D11Buffer> buffer;
@@ -126,7 +147,7 @@ public:
     int Run(HINSTANCE instance, int showCommand) {
         const bool smokeTest = wcsstr(GetCommandLineW(), L"--smoke-test") != nullptr;
         RegisterWindow(instance);
-        CreateMainWindow(instance, smokeTest ? SW_HIDE : showCommand);
+        CreateMainWindow(instance, smokeTest ? SW_HIDE : showCommand, smokeTest);
         LocateAssets();
         LoadSceneFile();
         CreateDevice();
@@ -136,10 +157,12 @@ public:
         LoadCodec(0);
 
         if (smokeTest) {
-            Render();
-            for (int index = 1; index < static_cast<int>(kCodecLabels.size()); ++index) {
-                LoadCodec(index);
-                Render();
+            for (int codec = 0; codec < static_cast<int>(kCodecLabels.size()); ++codec) {
+                LoadCodec(codec);
+                for (int filter = 0; filter < static_cast<int>(kFilterLabels.size()); ++filter) {
+                    filterMode_ = filter;
+                    Render();
+                }
             }
             return 0;
         }
@@ -167,6 +190,30 @@ public:
                     MessageBoxA(window_, error.what(), "Texture switch failed", MB_OK | MB_ICONERROR);
                     SendMessageW(codecCombo_, CB_SETCURSEL, codecIndex_, 0);
                 }
+                return 0;
+            }
+            if (LOWORD(wParam) == kFilterComboId && HIWORD(wParam) == CBN_SELCHANGE) {
+                filterMode_ = std::clamp(
+                    static_cast<int>(SendMessageW(filterCombo_, CB_GETCURSEL, 0, 0)),
+                    0,
+                    static_cast<int>(kFilterLabels.size()) - 1);
+                UpdateFilterControls();
+                return 0;
+            }
+            if (LOWORD(wParam) == kAnisotropyComboId && HIWORD(wParam) == CBN_SELCHANGE) {
+                anisotropyIndex_ = std::clamp(
+                    static_cast<int>(SendMessageW(anisotropyCombo_, CB_GETCURSEL, 0, 0)),
+                    0,
+                    static_cast<int>(kAnisotropyValues.size()) - 1);
+                UpdateWindowTitle();
+                return 0;
+            }
+            if (LOWORD(wParam) == kLodBiasComboId && HIWORD(wParam) == CBN_SELCHANGE) {
+                lodBiasIndex_ = std::clamp(
+                    static_cast<int>(SendMessageW(lodBiasCombo_, CB_GETCURSEL, 0, 0)),
+                    0,
+                    static_cast<int>(kLodBiasValues.size()) - 1);
+                UpdateWindowTitle();
                 return 0;
             }
             break;
@@ -205,6 +252,24 @@ public:
         }
         case WM_KEYDOWN:
             if (wParam == 'R') ResetCamera();
+            if (wParam == 'F') {
+                filterMode_ = (filterMode_ + 1) % static_cast<int>(kFilterLabels.size());
+                UpdateFilterControls();
+            }
+            if (wParam == 'A') {
+                anisotropyIndex_ = (anisotropyIndex_ + 1) % static_cast<int>(kAnisotropyValues.size());
+                SendMessageW(anisotropyCombo_, CB_SETCURSEL, anisotropyIndex_, 0);
+                UpdateWindowTitle();
+            }
+            if (wParam == VK_OEM_4 || wParam == VK_OEM_6) {
+                const int direction = wParam == VK_OEM_4 ? -1 : 1;
+                lodBiasIndex_ = std::clamp(
+                    lodBiasIndex_ + direction,
+                    0,
+                    static_cast<int>(kLodBiasValues.size()) - 1);
+                SendMessageW(lodBiasCombo_, CB_SETCURSEL, lodBiasIndex_, 0);
+                UpdateWindowTitle();
+            }
             if (wParam >= '1' && wParam <= '4') {
                 const int index = static_cast<int>(wParam - '1');
                 SendMessageW(codecCombo_, CB_SETCURSEL, index, 0);
@@ -238,8 +303,8 @@ private:
         ThrowIfFailed(RegisterClassExW(&windowClass) ? S_OK : HRESULT_FROM_WIN32(GetLastError()), "RegisterClassExW");
     }
 
-    void CreateMainWindow(HINSTANCE instance, int showCommand) {
-        RECT rectangle{0, 0, 1440, 900};
+    void CreateMainWindow(HINSTANCE instance, int showCommand, bool smokeTest) {
+        RECT rectangle{0, 0, smokeTest ? 320 : 1440, smokeTest ? 240 : 900};
         AdjustWindowRectEx(&rectangle, WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, FALSE, 0);
         window_ = CreateWindowExW(
             0,
@@ -261,16 +326,43 @@ private:
             WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST,
             0, 0, 240, 200,
             window_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kCodecComboId)), instance, nullptr);
+        filterCombo_ = CreateWindowExW(
+            0, L"COMBOBOX", nullptr,
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST,
+            0, 0, 190, 200,
+            window_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kFilterComboId)), instance, nullptr);
+        anisotropyCombo_ = CreateWindowExW(
+            0, L"COMBOBOX", nullptr,
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST,
+            0, 0, 160, 160,
+            window_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kAnisotropyComboId)), instance, nullptr);
+        lodBiasCombo_ = CreateWindowExW(
+            0, L"COMBOBOX", nullptr,
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST,
+            0, 0, 150, 220,
+            window_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kLodBiasComboId)), instance, nullptr);
         statusLabel_ = CreateWindowExW(
-            0, L"STATIC", L"Left drag: orbit    Wheel: zoom    R: reset    1/2/3/4: texture format",
+            0, L"STATIC", L"Drag: orbit   Wheel: zoom   1-4: texture   F: filter   A: anisotropy   [ ]: LOD bias",
             WS_CHILD | WS_VISIBLE | SS_LEFT,
             20, 20, 760, 24,
             window_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kStatusLabelId)), instance, nullptr);
         const HFONT font = static_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
         SendMessageW(codecCombo_, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
+        SendMessageW(filterCombo_, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
+        SendMessageW(anisotropyCombo_, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
+        SendMessageW(lodBiasCombo_, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
         SendMessageW(statusLabel_, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
         for (const wchar_t* label : kCodecLabels) SendMessageW(codecCombo_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(label));
+        for (const wchar_t* label : kFilterLabels) SendMessageW(filterCombo_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(label));
+        for (const wchar_t* label : kAnisotropyLabels) {
+            SendMessageW(anisotropyCombo_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(label));
+        }
+        for (const wchar_t* label : kLodBiasLabels) SendMessageW(lodBiasCombo_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(label));
         SendMessageW(codecCombo_, CB_SETCURSEL, 0, 0);
+        SendMessageW(filterCombo_, CB_SETCURSEL, filterMode_, 0);
+        SendMessageW(anisotropyCombo_, CB_SETCURSEL, anisotropyIndex_, 0);
+        SendMessageW(lodBiasCombo_, CB_SETCURSEL, lodBiasIndex_, 0);
+        UpdateFilterControls();
 
         ShowWindow(window_, showCommand);
         UpdateWindow(window_);
@@ -280,9 +372,28 @@ private:
     }
 
     void PositionControls(UINT width) const {
-        const int comboWidth = 240;
-        MoveWindow(codecCombo_, std::max(20, static_cast<int>(width) - comboWidth - 20), 16, comboWidth, 220, TRUE);
-        MoveWindow(statusLabel_, 20, 22, std::max(120, static_cast<int>(width) - comboWidth - 70), 22, TRUE);
+        constexpr int gap = 8;
+        constexpr int codecWidth = 220;
+        constexpr int filterWidth = 180;
+        constexpr int anisotropyWidth = 150;
+        constexpr int lodBiasWidth = 145;
+        int right = std::max(20, static_cast<int>(width) - 20);
+        right -= codecWidth;
+        MoveWindow(codecCombo_, right, 16, codecWidth, 220, TRUE);
+        right -= gap + filterWidth;
+        MoveWindow(filterCombo_, right, 16, filterWidth, 200, TRUE);
+        right -= gap + anisotropyWidth;
+        MoveWindow(anisotropyCombo_, right, 16, anisotropyWidth, 160, TRUE);
+        right -= gap + lodBiasWidth;
+        MoveWindow(lodBiasCombo_, right, 16, lodBiasWidth, 220, TRUE);
+        MoveWindow(statusLabel_, 20, 22, std::max(120, right - 40), 22, TRUE);
+    }
+
+    void UpdateFilterControls() const {
+        SendMessageW(filterCombo_, CB_SETCURSEL, filterMode_, 0);
+        EnableWindow(anisotropyCombo_, filterMode_ == 3);
+        EnableWindow(lodBiasCombo_, filterMode_ >= 2);
+        UpdateWindowTitle();
     }
 
     void LocateAssets() {
@@ -396,6 +507,7 @@ private:
         sceneConstantBuffer_ = CreateConstantBuffer(sizeof(SceneConstants));
         materialConstantBuffer_ = CreateConstantBuffer(sizeof(MaterialConstants));
         textureConstantBuffer_ = CreateConstantBuffer(sizeof(TextureConstants));
+        filterConstantBuffer_ = CreateConstantBuffer(sizeof(FilterConstants));
 
         D3D11_RASTERIZER_DESC rasterizerDescription{};
         rasterizerDescription.FillMode = D3D11_FILL_SOLID;
@@ -430,15 +542,31 @@ private:
         fallbackOriginalTexture_ = CreateFallbackOriginalTexture();
 
         D3D11_SAMPLER_DESC samplerDescription{};
-        samplerDescription.Filter = D3D11_FILTER_ANISOTROPIC;
         samplerDescription.AddressU = D3D11_TEXTURE_ADDRESS_WRAP;
         samplerDescription.AddressV = D3D11_TEXTURE_ADDRESS_WRAP;
         samplerDescription.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;
-        samplerDescription.MaxAnisotropy = 8;
         samplerDescription.ComparisonFunc = D3D11_COMPARISON_NEVER;
         samplerDescription.MinLOD = 0;
         samplerDescription.MaxLOD = D3D11_FLOAT32_MAX;
-        ThrowIfFailed(device_->CreateSamplerState(&samplerDescription, &originalSampler_), "CreateSamplerState");
+        samplerDescription.Filter = D3D11_FILTER_MIN_MAG_MIP_POINT;
+        ThrowIfFailed(
+            device_->CreateSamplerState(&samplerDescription, &originalSamplers_[0]),
+            "CreateSamplerState(nearest)");
+        samplerDescription.Filter = D3D11_FILTER_MIN_MAG_LINEAR_MIP_POINT;
+        ThrowIfFailed(
+            device_->CreateSamplerState(&samplerDescription, &originalSamplers_[1]),
+            "CreateSamplerState(bilinear)");
+        samplerDescription.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+        ThrowIfFailed(
+            device_->CreateSamplerState(&samplerDescription, &originalSamplers_[2]),
+            "CreateSamplerState(trilinear)");
+        samplerDescription.Filter = D3D11_FILTER_ANISOTROPIC;
+        for (std::size_t index = 0; index < kAnisotropyValues.size(); ++index) {
+            samplerDescription.MaxAnisotropy = static_cast<UINT>(kAnisotropyValues[index]);
+            ThrowIfFailed(
+                device_->CreateSamplerState(&samplerDescription, &originalSamplers_[3 + index]),
+                "CreateSamplerState(anisotropic)");
+        }
     }
 
     void CompileShader(
@@ -667,16 +795,25 @@ private:
         } else {
             throw std::runtime_error("Original DDS is not BC1 or BC7: " + filePath.string());
         }
+        if (
+            !width || !height ||
+            width > D3D11_REQ_TEXTURE2D_U_OR_V_DIMENSION ||
+            height > D3D11_REQ_TEXTURE2D_U_OR_V_DIMENSION
+        ) {
+            throw std::runtime_error("Original DDS dimensions are invalid: " + filePath.string());
+        }
         const std::uint64_t blocksX = (static_cast<std::uint64_t>(width) + 3) / 4;
         const std::uint64_t blocksY = (static_cast<std::uint64_t>(height) + 3) / 4;
+        const std::uint32_t storageWidth = (width + 3u) & ~3u;
+        const std::uint32_t storageHeight = (height + 3u) & ~3u;
         const std::uint64_t dataBytes = blocksX * blocksY * blockBytes;
-        if (!width || !height || dataOffset + dataBytes != bytes.size() || dataBytes > UINT_MAX) {
+        if (dataOffset + dataBytes != bytes.size() || dataBytes > UINT_MAX) {
             throw std::runtime_error("Original DDS dimensions are invalid: " + filePath.string());
         }
 
         D3D11_TEXTURE2D_DESC description{};
-        description.Width = width;
-        description.Height = height;
+        description.Width = storageWidth;
+        description.Height = storageHeight;
         description.MipLevels = 1;
         description.ArraySize = 1;
         description.Format = format;
@@ -699,6 +836,8 @@ private:
         resource->descriptor.header[1] = width;
         resource->descriptor.header[2] = height;
         resource->descriptor.header[3] = static_cast<std::uint32_t>(dataBytes);
+        resource->descriptor.parameters[0] = storageWidth;
+        resource->descriptor.parameters[1] = storageHeight;
         return resource;
     }
 
@@ -788,6 +927,13 @@ private:
         sceneConstants.lightDirectionExposure = XMFLOAT4(0.35f, -1.0f, 0.28f, 1.12f);
         sceneConstants.cameraPosition = XMFLOAT4(camera.x, camera.y, camera.z, 1.0f);
         context_->UpdateSubresource(sceneConstantBuffer_.Get(), 0, nullptr, &sceneConstants, 0, 0);
+        FilterConstants filterConstants{};
+        filterConstants.parameters = XMFLOAT4(
+            static_cast<float>(filterMode_),
+            kAnisotropyValues[anisotropyIndex_],
+            kLodBiasValues[lodBiasIndex_],
+            0.0f);
+        context_->UpdateSubresource(filterConstantBuffer_.Get(), 0, nullptr, &filterConstants, 0, 0);
 
         const UINT stride = sizeof(native_scene::Vertex);
         const UINT offset = 0;
@@ -801,7 +947,9 @@ private:
         context_->PSSetConstantBuffers(0, 1, sceneConstantBuffer_.GetAddressOf());
         context_->PSSetConstantBuffers(1, 1, materialConstantBuffer_.GetAddressOf());
         context_->PSSetConstantBuffers(2, 1, textureConstantBuffer_.GetAddressOf());
-        context_->PSSetSamplers(0, 1, originalSampler_.GetAddressOf());
+        context_->PSSetConstantBuffers(3, 1, filterConstantBuffer_.GetAddressOf());
+        const int samplerIndex = filterMode_ < 3 ? filterMode_ : 3 + anisotropyIndex_;
+        context_->PSSetSamplers(0, 1, originalSamplers_[samplerIndex].GetAddressOf());
 
         const float blendFactor[4] = {0, 0, 0, 0};
         for (int transparentPass = 0; transparentPass < 2; transparentPass += 1) {
@@ -853,7 +1001,18 @@ private:
         title += kCodecLabels[codecIndex_];
         title += L" (";
         title += FormatBytes(sceneHeader_.codecBytes[codecIndex_]);
-        title += L" texture data)";
+        title += L" texture data) - ";
+        title += kFilterNames[filterMode_];
+        if (filterMode_ == 3) {
+            wchar_t anisotropy[16]{};
+            swprintf_s(anisotropy, L" %.0fx", kAnisotropyValues[anisotropyIndex_]);
+            title += anisotropy;
+        }
+        if (filterMode_ >= 2) {
+            wchar_t lodBias[32]{};
+            swprintf_s(lodBias, L" - LOD bias %+.1f", kLodBiasValues[lodBiasIndex_]);
+            title += lodBias;
+        }
         SetWindowTextW(window_, title.c_str());
     }
 
@@ -870,6 +1029,9 @@ private:
 
     HWND window_{};
     HWND codecCombo_{};
+    HWND filterCombo_{};
+    HWND anisotropyCombo_{};
+    HWND lodBiasCombo_{};
     HWND statusLabel_{};
     std::filesystem::path assetsDirectory_;
     native_scene::SceneHeader sceneHeader_{};
@@ -893,13 +1055,14 @@ private:
     ComPtr<ID3D11Buffer> sceneConstantBuffer_;
     ComPtr<ID3D11Buffer> materialConstantBuffer_;
     ComPtr<ID3D11Buffer> textureConstantBuffer_;
+    ComPtr<ID3D11Buffer> filterConstantBuffer_;
     ComPtr<ID3D11RasterizerState> cullBack_;
     ComPtr<ID3D11RasterizerState> cullNone_;
     ComPtr<ID3D11BlendState> opaqueBlend_;
     ComPtr<ID3D11BlendState> alphaBlend_;
     ComPtr<ID3D11DepthStencilState> opaqueDepth_;
     ComPtr<ID3D11DepthStencilState> transparentDepth_;
-    ComPtr<ID3D11SamplerState> originalSampler_;
+    std::array<ComPtr<ID3D11SamplerState>, 6> originalSamplers_;
     TextureResourcePtr fallbackTexture_;
     TextureResourcePtr fallbackOriginalTexture_;
     D3D11_VIEWPORT viewport_{};
@@ -912,6 +1075,9 @@ private:
     bool dragging_{};
     POINT previousMouse_{};
     int codecIndex_{};
+    int filterMode_{2};
+    int anisotropyIndex_{1};
+    int lodBiasIndex_{4};
 };
 
 }  // namespace

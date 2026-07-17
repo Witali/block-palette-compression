@@ -29,12 +29,27 @@ does not leave a per-pixel codec dispatch in the hot path. Bump values are also
 sampled from the selected compressed stream; screen-space derivatives provide
 the height gradient without decoding neighboring texels into a cache.
 
+The filtering controls mirror the BPAL Shader Texture Sampler: nearest,
+bilinear, trilinear footprint filtering, and 2x/4x/8x anisotropic filtering,
+with an adjustable LOD bias. Original BC1/BC7 textures use matching Direct3D
+sampler states. BPAL and ASTC perform the required neighboring lookups directly
+in their compressed streams. DCTBS2 evaluates the IDCT at fractional
+coordinates and attenuates high-frequency coefficients according to the pixel
+footprint, avoiding multiple full DCT evaluations per fragment. The packed
+formats do not create decoded mip levels or an RGBA cache.
+
 ## Controls
 
 - left mouse drag: orbit;
 - mouse wheel: zoom;
 - `R`: reset the camera;
 - `1`, `2`, `3`, `4`: select original BC1/BC7, BPAL, DCTBS2, or ASTC.
+- `F`: cycle nearest, bilinear, trilinear, and anisotropic filtering;
+- `A`: cycle 2x, 4x, and 8x anisotropy;
+- `[` and `]`: decrease or increase LOD bias by 0.5.
+
+The same settings are available from the three filtering lists in the window's
+top bar. Trilinear is the default mode, matching the web BPAL sampler.
 
 ## Rebuild assets
 
@@ -72,8 +87,8 @@ The executable and copied runtime assets are written to
 `build/x64/Release/`.
 
 The hidden smoke test creates the Direct3D device, compiles all shader variants,
-uploads the complete scene, loads all four texture sets, and renders one frame
-for each format:
+uploads the complete scene, loads all four texture sets, and renders every
+texture-format/filter combination:
 
 ```powershell
 native\win32-directx-viewer\build\x64\Release\BarcelonaPavilionViewer.exe --smoke-test

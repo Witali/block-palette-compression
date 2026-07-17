@@ -17,6 +17,12 @@ cbuffer TextureConstants : register(b2)
     uint4 textureInfo[15];
 };
 
+cbuffer FilterConstants : register(b3)
+{
+    // x: filter mode, y: maximum anisotropy, z: LOD bias.
+    float4 filterParameters;
+};
+
 #ifndef ACTIVE_CODEC
 #define ACTIVE_CODEC 1
 #endif
@@ -152,10 +158,16 @@ int SignedBits(uint value, uint bitCount)
     return (value & sign) == 0u ? (int)value : (int)value - (int)(1u << bitCount);
 }
 
-float DctBasis(int frequency, int coordinate, int size)
+float DctBasis(int frequency, float coordinate, int size, float filterWidth)
 {
     float alpha = frequency == 0 ? sqrt(1.0 / (float)size) : sqrt(2.0 / (float)size);
-    return alpha * cos(DCT_PI * (float)((2 * coordinate + 1) * frequency) / (float)(2 * size));
+    float value = alpha * cos(DCT_PI * (2.0 * coordinate + 1.0) * (float)frequency / (float)(2 * size));
+    if (frequency > 0 && filterWidth > 1.0)
+    {
+        float normalizedWidth = (float)frequency * (filterWidth - 1.0) / (float)size;
+        value /= 1.0 + 4.0 * normalizedWidth * normalizedWidth;
+    }
+    return value;
 }
 
 float DctQuantizationStep(int position, bool chroma, int width, int height, int quality)
@@ -173,8 +185,9 @@ float DctQuantizationStep(int position, bool chroma, int width, int height, int 
 float SampleDctComponent(
     ByteAddressBuffer data,
     uint recordOffset,
-    int localX,
-    int localY,
+    float localX,
+    float localY,
+    float2 filterWidth,
     int width,
     int height,
     bool chroma,
@@ -194,7 +207,8 @@ float SampleDctComponent(
     };
     float sum = (float)dc * exp2((float)dcScaleIndex) *
         DctQuantizationStep(0, chroma, width, height, quality) *
-        DctBasis(0, localX, width) * DctBasis(0, localY, height);
+        DctBasis(0, localX, width, filterWidth.x) *
+        DctBasis(0, localY, height, filterWidth.y);
     float correction = 0.0;
     int firstEnd = (acCount + 5) / 6;
     int secondEnd = (acCount + 1) / 2;
@@ -209,8 +223,8 @@ float SampleDctComponent(
         int group = index < firstEnd ? 0 : index < secondEnd ? 1 : 2;
         float value = (float)stored * scales[group] *
             DctQuantizationStep(position, chroma, width, height, quality) *
-            DctBasis(position % width, localX, width) *
-            DctBasis(position / width, localY, height);
+            DctBasis(position % width, localX, width, filterWidth.x) *
+            DctBasis(position / width, localY, height, filterWidth.y);
         float adjusted = value - correction;
         float next = sum + adjusted;
         correction = (next - sum) - adjusted;
@@ -219,25 +233,56 @@ float SampleDctComponent(
     return sum + 128.0;
 }
 
-float4 SampleDct(
+float2 DctFilterWidth(uint2 dimensions, float2 uv, float filterMode, float maxAnisotropy, float lodBias)
+{
+    if (filterMode < 1.5) return float2(0.0, 0.0);
+    float2 size = (float2)dimensions;
+    float2 dx = ddx(uv) * size;
+    float2 dy = ddy(uv) * size;
+    float biasScale = exp2(lodBias);
+    if (filterMode < 2.5)
+    {
+        float width = max(length(dx), length(dy)) * biasScale;
+        return max(float2(width, width), 1.0);
+    }
+    float2 axisWidth = sqrt(dx * dx + dy * dy) * biasScale;
+    float minorWidth = max(1.0, min(axisWidth.x, axisWidth.y));
+    return clamp(axisWidth, 1.0, minorWidth * max(1.0, maxAnisotropy));
+}
+
+float4 SampleDctFiltered(
     ByteAddressBuffer data,
     uint4 header,
     uint4 p0,
     uint4 p1,
-    float2 uv)
+    float2 uv,
+    float filterMode,
+    float maxAnisotropy,
+    float lodBias)
 {
     uint2 dimensions = max(header.yz, uint2(1u, 1u));
     float2 wrapped = frac(uv);
     float2 oriented = float2(wrapped.x, 1.0 - wrapped.y);
-    uint2 pixel = min((uint2)(oriented * (float2)dimensions), dimensions - 1u);
-    uint mcuIndex = (pixel.y >> 4u) * p0.x + (pixel.x >> 4u);
+    float2 coordinate = oriented * (float2)dimensions - 0.5;
+    if (filterMode < 0.5) coordinate = floor(coordinate + 0.5);
+    coordinate = clamp(coordinate, 0.0, (float2)(dimensions - 1u));
+    uint2 mcu = (uint2)floor(coordinate / 16.0);
+    uint mcuIndex = mcu.y * p0.x + mcu.x;
     uint mcuOffset = 64u + mcuIndex * p0.z;
-    int2 local = (int2)(pixel & 15u);
-    float y = SampleDctComponent(data, mcuOffset, local.x, local.y, 16, 16, false, 97, (int)p0.y, p1.z);
-    int chromaX = local.x >> 1;
-    int chromaY = local.y >> 1;
-    float cb = SampleDctComponent(data, mcuOffset + p0.w, chromaX, chromaY, 8, 8, true, 20, (int)p0.y, p1.z);
-    float cr = SampleDctComponent(data, mcuOffset + p0.w + p1.x, chromaX, chromaY, 8, 8, true, 20, (int)p0.y, p1.z);
+    float2 local = coordinate - (float2)(mcu * 16u);
+    float2 filterWidth = DctFilterWidth(
+        dimensions, uv, filterMode, maxAnisotropy, lodBias);
+    float y = SampleDctComponent(
+        data, mcuOffset, local.x, local.y, filterWidth,
+        16, 16, false, 97, (int)p0.y, p1.z);
+    float2 chromaCoordinate = filterMode < 0.5 ? floor(local * 0.5) : local * 0.5;
+    float2 chromaFilterWidth = filterWidth * 0.5;
+    float cb = SampleDctComponent(
+        data, mcuOffset + p0.w, chromaCoordinate.x, chromaCoordinate.y,
+        chromaFilterWidth, 8, 8, true, 20, (int)p0.y, p1.z);
+    float cr = SampleDctComponent(
+        data, mcuOffset + p0.w + p1.x, chromaCoordinate.x, chromaCoordinate.y,
+        chromaFilterWidth, 8, 8, true, 20, (int)p0.y, p1.z);
     cb -= 128.0;
     cr -= 128.0;
     float3 rgb = saturate(float3(
@@ -275,10 +320,17 @@ float4 SampleTexture(
     bool convertSrgb)
 {
     float2 wrapped = frac(uv);
-    return data.Sample(originalSampler, float2(wrapped.x, 1.0 - wrapped.y));
+    int offset = descriptor * 5;
+    float2 sourceSize = max((float2)textureInfo[offset].yz, 1.0);
+    float2 storageSize = max((float2)textureInfo[offset + 1].xy, sourceSize);
+    float2 oriented = float2(wrapped.x, 1.0 - wrapped.y);
+    return data.SampleBias(
+        originalSampler,
+        oriented * sourceSize / storageSize,
+        filterParameters.z);
 }
 #else
-float4 SampleTexture(
+float4 SampleTexturePoint(
     ByteAddressBuffer data,
     int descriptor,
     float2 uv,
@@ -293,13 +345,131 @@ float4 SampleTexture(
         value = SampleBpal(data, header, textureInfo[offset + 1], textureInfo[offset + 2], textureInfo[offset + 3], uv);
 #elif ACTIVE_CODEC == 2
     if (header.x == 2u)
-        value = SampleDct(data, header, textureInfo[offset + 1], textureInfo[offset + 2], uv);
+        value = SampleDctFiltered(
+            data, header, textureInfo[offset + 1], textureInfo[offset + 2],
+            uv, 0.0, 1.0, 0.0);
 #elif ACTIVE_CODEC == 3
     if (header.x == 3u)
         value = SampleAstc(data, header, textureInfo[offset + 1], uv);
 #endif
     if (convertSrgb) value.rgb = SrgbToLinear(value.rgb);
     return value;
+}
+
+float2 WrappedPixelUv(float2 pixel, float2 dimensions)
+{
+    float2 wrappedPixel = pixel - floor(pixel / dimensions) * dimensions;
+    float2 oriented = (wrappedPixel + 0.5) / dimensions;
+    return float2(oriented.x, 1.0 - oriented.y);
+}
+
+float4 SampleTextureBilinear(
+    ByteAddressBuffer data,
+    int descriptor,
+    float2 uv,
+    bool convertSrgb)
+{
+    int offset = descriptor * 5;
+    uint4 header = textureInfo[offset];
+    if (header.x == 0u) return float4(1.0, 1.0, 1.0, 1.0);
+    float2 dimensions = max((float2)header.yz, 1.0);
+    float2 wrapped = frac(uv);
+    float2 source = float2(wrapped.x, 1.0 - wrapped.y) * dimensions - 0.5;
+    float2 topLeft = floor(source);
+    float2 blend = frac(source);
+    float4 top = lerp(
+        SampleTexturePoint(data, descriptor, WrappedPixelUv(topLeft, dimensions), convertSrgb),
+        SampleTexturePoint(data, descriptor, WrappedPixelUv(topLeft + float2(1.0, 0.0), dimensions), convertSrgb),
+        blend.x);
+    float4 bottom = lerp(
+        SampleTexturePoint(data, descriptor, WrappedPixelUv(topLeft + float2(0.0, 1.0), dimensions), convertSrgb),
+        SampleTexturePoint(data, descriptor, WrappedPixelUv(topLeft + float2(1.0, 1.0), dimensions), convertSrgb),
+        blend.x);
+    return lerp(top, bottom, blend.y);
+}
+
+float4 SampleTextureFootprint(
+    ByteAddressBuffer data,
+    int descriptor,
+    float2 uv,
+    bool convertSrgb)
+{
+    float biasScale = exp2(filterParameters.z);
+    float spread = biasScale * 0.25;
+    float2 rawDx = ddx(uv);
+    float2 rawDy = ddy(uv);
+    int offset = descriptor * 5;
+    float2 dimensions = max((float2)textureInfo[offset].yz, 1.0);
+    if (max(length(rawDx * dimensions), length(rawDy * dimensions)) * biasScale <= 1.0)
+        return SampleTextureBilinear(data, descriptor, uv, convertSrgb);
+    float2 dx = rawDx * spread;
+    float2 dy = rawDy * spread;
+    return (
+        SampleTexturePoint(data, descriptor, uv - dx - dy, convertSrgb) +
+        SampleTexturePoint(data, descriptor, uv + dx - dy, convertSrgb) +
+        SampleTexturePoint(data, descriptor, uv - dx + dy, convertSrgb) +
+        SampleTexturePoint(data, descriptor, uv + dx + dy, convertSrgb)
+    ) * 0.25;
+}
+
+float4 SampleTextureAnisotropic(
+    ByteAddressBuffer data,
+    int descriptor,
+    float2 uv,
+    bool convertSrgb)
+{
+    int offset = descriptor * 5;
+    float2 dimensions = max((float2)textureInfo[offset].yz, 1.0);
+    float2 dx = ddx(uv);
+    float2 dy = ddy(uv);
+    float dxLength = length(dx * dimensions);
+    float dyLength = length(dy * dimensions);
+    float2 majorUv = dxLength >= dyLength ? dx : dy;
+    float majorLength = max(dxLength, dyLength);
+    float minorLength = max(1.0, min(dxLength, dyLength));
+    float sampleCount = ceil(clamp(
+        majorLength / minorLength,
+        1.0,
+        min(8.0, max(1.0, filterParameters.y))));
+    majorUv *= exp2(filterParameters.z);
+    float4 value = 0.0;
+    [unroll]
+    for (int index = 0; index < 8; ++index)
+    {
+        if ((float)index < sampleCount)
+        {
+            float sampleOffset = ((float)index + 0.5) / sampleCount - 0.5;
+            value += SampleTextureBilinear(
+                data, descriptor, uv + majorUv * sampleOffset, convertSrgb);
+        }
+    }
+    return value / sampleCount;
+}
+
+float4 SampleTexture(
+    ByteAddressBuffer data,
+    int descriptor,
+    float2 uv,
+    bool convertSrgb)
+{
+    int offset = descriptor * 5;
+    uint4 header = textureInfo[offset];
+    if (header.x == 0u) return float4(1.0, 1.0, 1.0, 1.0);
+#if ACTIVE_CODEC == 2
+    float4 value = SampleDctFiltered(
+        data, header, textureInfo[offset + 1], textureInfo[offset + 2],
+        uv, filterParameters.x, filterParameters.y, filterParameters.z);
+    if (convertSrgb) value.rgb = SrgbToLinear(value.rgb);
+    return value;
+#else
+    if (filterParameters.x < 0.5)
+        return SampleTexturePoint(data, descriptor, uv, convertSrgb);
+    if (filterParameters.x < 1.5)
+        return SampleTextureBilinear(data, descriptor, uv, convertSrgb);
+    if (filterParameters.x < 2.5)
+        return SampleTextureFootprint(data, descriptor, uv, convertSrgb);
+    return SampleTextureAnisotropic(data, descriptor, uv, convertSrgb);
+#endif
 }
 #endif
 
