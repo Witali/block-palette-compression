@@ -61,6 +61,7 @@ constexpr uint32_t LIBRARY_VERSION_SIDECAR_SPECTRAL_HALF = 8u;
 constexpr uint32_t LIBRARY_VERSION_SIDECAR_SPECTRAL_FULL = 9u;
 constexpr int MCU_WIDTH = 16;
 constexpr int MCU_HEIGHT = 16;
+constexpr uint32_t MIN_CHROMA_BYTES = 8u;
 constexpr int CUDA_THREADS = 256;
 constexpr std::array<uint32_t, 9> PRESET_UNITS{{
     6u, 8u, 12u, 16u, 24u, 36u, 48u, 60u, 72u
@@ -254,9 +255,10 @@ bool make_balanced_preset(uint32_t units, Preset *preset) {
         preset->cb_bytes = source_block_bytes;
         preset->cr_bytes = source_block_bytes;
     } else {
-        preset->y_bytes = units * 2u;
-        preset->cb_bytes = units;
-        preset->cr_bytes = units;
+        const uint32_t chroma_bytes = std::max(units, MIN_CHROMA_BYTES);
+        preset->y_bytes = preset->bytes_per_mcu - chroma_bytes * 2u;
+        preset->cb_bytes = chroma_bytes;
+        preset->cr_bytes = chroma_bytes;
     }
     return true;
 }
@@ -310,17 +312,17 @@ std::vector<Preset> component_budget_presets(
     }
     std::vector<uint32_t> chroma_budgets;
     if (mode == "fast") {
-        if (base.mode_code == 3000u) chroma_budgets = {6u, 12u, 20u};
-        else if (base.mode_code == 2000u) chroma_budgets = {6u, 5u};
-        else if (base.mode_code == 1500u) chroma_budgets = {5u, 4u};
-        else if (base.mode_code == 1000u) chroma_budgets = {5u, 4u};
-        else if (base.mode_code == 750u) chroma_budgets = {4u, 3u};
+        if (base.mode_code == 3000u) chroma_budgets = {8u, 12u, 20u};
+        else if (base.mode_code == 2000u || base.mode_code == 1500u) {
+            chroma_budgets = {8u};
+        }
     } else if (mode == "expanded") {
-        if (base.mode_code == 3000u) chroma_budgets = {4u, 6u, 8u, 10u, 12u, 14u, 16u, 18u, 20u, 22u, 24u};
-        else if (base.mode_code == 2000u) chroma_budgets = {3u, 4u, 5u, 6u, 7u, 8u, 9u, 10u};
-        else if (base.mode_code == 1500u) chroma_budgets = {4u, 5u, 6u, 7u, 8u, 9u};
-        else if (base.mode_code == 1000u) chroma_budgets = {3u, 4u, 5u, 6u, 7u, 8u};
-        else if (base.mode_code == 750u) chroma_budgets = {3u, 4u, 5u, 6u};
+        if (base.mode_code == 3000u) chroma_budgets = {8u, 10u, 12u, 14u, 16u, 18u, 20u, 22u, 24u};
+        else if (base.mode_code == 2000u) chroma_budgets = {8u, 9u, 10u};
+        else if (base.mode_code == 1500u) chroma_budgets = {8u, 9u};
+        else if (base.mode_code == 1000u || base.mode_code == 750u) {
+            chroma_budgets = {8u};
+        }
     } else {
         throw std::runtime_error("Component budget must be fixed, fast, or expanded");
     }
@@ -331,7 +333,8 @@ std::vector<Preset> component_budget_presets(
         candidate.cr_bytes = chroma_bytes;
         const uint32_t y_record_bytes = candidate.nominal_bpp >= 3.0
             ? candidate.y_bytes / 4u : candidate.y_bytes;
-        if (y_record_bytes < 3u || candidate.cb_bytes < 3u ||
+        if (y_record_bytes < 3u || candidate.cb_bytes < MIN_CHROMA_BYTES ||
+            candidate.cr_bytes < MIN_CHROMA_BYTES ||
             (candidate.nominal_bpp >= 3.0 && candidate.y_bytes % 4u != 0u)) {
             continue;
         }
@@ -2583,7 +2586,7 @@ DctInfo inspect_header(const uint8_t *bytes, uint64_t file_size) {
         read_u32(bytes, 32u) != preset.bytes_per_mcu ||
         y_bytes + cb_bytes + cr_bytes != preset.bytes_per_mcu ||
         y_record_bytes < 3u || (info.split_luma_8x8 && y_bytes % 4u != 0u) ||
-        cb_bytes < 3u || cr_bytes < 3u) {
+        cb_bytes < MIN_CHROMA_BYTES || cr_bytes < MIN_CHROMA_BYTES) {
         throw std::runtime_error("Invalid DCTBS2 layout");
     }
     preset.y_bytes = y_bytes;

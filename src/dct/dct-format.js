@@ -33,6 +33,7 @@
   const CHROMA_WIDTH = 8;
   const CHROMA_HEIGHT_420 = 8;
   const CHROMA_HEIGHT_422 = 16;
+  const MIN_CHROMA_BYTES = 8;
   const SCALE_MULTIPLIERS = Object.freeze([1, 2, 4, 8, 16, 32, 64, 128]);
   const PROFILE_NAMES = Object.freeze(["low frequency", "horizontal", "vertical", "diagonal"]);
   const ZIGZAG_PROFILE_NAME = "zigzag";
@@ -104,21 +105,21 @@
     "2": freezePreset(2000, 2, 64, 32, 16, 16),
     "1.5": freezePreset(1500, 1.5, 48, 24, 12, 12),
     "1": freezePreset(1000, 1, 32, 16, 8, 8),
-    "0.75": freezePreset(750, 0.75, 24, 12, 6, 6),
+    "0.75": freezePreset(750, 0.75, 24, 8, 8, 8),
   });
   const FAST_COMPONENT_BUDGETS = Object.freeze({
-    "3": Object.freeze([6, 12, 20]),
-    "2": Object.freeze([6, 5]),
-    "1.5": Object.freeze([5, 4]),
-    "1": Object.freeze([5, 4]),
-    "0.75": Object.freeze([4, 3]),
+    "3": Object.freeze([8, 12, 20]),
+    "2": Object.freeze([8]),
+    "1.5": Object.freeze([8]),
+    "1": Object.freeze([]),
+    "0.75": Object.freeze([]),
   });
   const EXPANDED_COMPONENT_BUDGETS = Object.freeze({
-    "3": Object.freeze([4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24]),
-    "2": Object.freeze([3, 4, 5, 6, 7, 8, 9, 10]),
-    "1.5": Object.freeze([4, 5, 6, 7, 8, 9]),
-    "1": Object.freeze([3, 4, 5, 6, 7, 8]),
-    "0.75": Object.freeze([3, 4, 5, 6]),
+    "3": Object.freeze([8, 10, 12, 14, 16, 18, 20, 22, 24]),
+    "2": Object.freeze([8, 9, 10]),
+    "1.5": Object.freeze([8, 9]),
+    "1": Object.freeze([8]),
+    "0.75": Object.freeze([8]),
   });
   const MODE_TO_PRESET = new Map(
     Object.entries(PRESETS).map(([key, preset]) => [preset.modeCode, key])
@@ -250,7 +251,8 @@
 
     if (!Number.isInteger(yBytes) || !Number.isInteger(cbBytes) ||
         !Number.isInteger(crBytes) || yBytes + cbBytes + crBytes !== layout.bytesPerMcu ||
-        yRecordBytes < 3 || !Number.isInteger(yRecordBytes) || cbBytes < 3 || crBytes < 3) {
+        yRecordBytes < 3 || !Number.isInteger(yRecordBytes) ||
+        cbBytes < MIN_CHROMA_BYTES || crBytes < MIN_CHROMA_BYTES) {
       throw new RangeError("Invalid DCTBS2 component allocation");
     }
 

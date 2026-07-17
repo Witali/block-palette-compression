@@ -177,6 +177,29 @@ test("covers every rate from the preserved reference converter", () => {
     assert.ok(PRESETS[preset], `missing ${preset} bpp`);
   }
 
+  assert.deepEqual(PRESETS["0.75"], {
+    modeCode: 750,
+    bpp: 0.75,
+    bytesPerMcu: 24,
+    yBytes: 8,
+    cbBytes: 8,
+    crBytes: 8,
+  });
+
+  const formerLayout = encodeDctFile(makePixels(16, 16), 16, 16, {
+    preset: "0.75",
+    componentBudget: "fixed",
+  }).slice();
+  const formerView = new DataView(
+    formerLayout.buffer,
+    formerLayout.byteOffset,
+    formerLayout.byteLength
+  );
+  formerView.setUint32(36, 12, true);
+  formerView.setUint32(40, 6, true);
+  formerView.setUint32(44, 6, true);
+  assert.throws(() => inspectDctFile(formerLayout), /Invalid DCTBS2 layout/);
+
   assert.deepEqual(PRESETS["3"], {
     modeCode: 3000,
     bpp: 3,
@@ -679,9 +702,17 @@ test("selects the best fixed-size Y/C allocation without regressing RGB quality"
     assert.ok(fastError <= fixedError, `${preset} bpp fast adaptive allocation regressed`);
     assert.ok(expandedError <= fastError, `${preset} bpp expanded allocation regressed`);
     assert.equal(info.yBytes + info.cbBytes + info.crBytes, info.bytesPerMcu);
-    assert.ok(info.yBytes >= 3 && info.cbBytes >= 3 && info.crBytes >= 3);
+    assert.ok(info.yBytes >= 3 && info.cbBytes >= 8 && info.crBytes >= 8);
     if (info.splitLuma8x8) assert.equal(info.yBytes % 4, 0);
   }
+
+  assert.throws(
+    () => encodeDctFile(source, width, height, {
+      preset: "1",
+      componentAllocation: { yBytes: 20, cbBytes: 6, crBytes: 6 },
+    }),
+    /Invalid DCTBS2 component allocation/
+  );
 });
 
 test("selects the lowest-error zigzag coding for every high-rate preset", () => {

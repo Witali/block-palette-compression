@@ -30,6 +30,10 @@ npm run dct -- encode input.ppm output.dctbs2 `
   --preset 2 --auto-quality --component-budget expanded --progress
 ```
 
+Every encoder allocation reserves at least 8 bytes separately for Cb and Cr.
+The 0.75 bpp preset therefore uses `Y8 + Cb8 + Cr8`; larger presets keep their
+existing total MCU size while adaptive candidates may redistribute the rest.
+
 Prototype-library encoding exposes every setting supported by the shared
 codec:
 

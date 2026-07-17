@@ -72,7 +72,7 @@ constexpr std::array<Preset, 7> kPresets = {{
     {2000, 64, 32, 16, 16, 2.0},
     {1500, 48, 24, 12, 12, 1.5},
     {1000, 32, 16, 8, 8, 1.0},
-    {750, 24, 12, 6, 6, 0.75},
+    {750, 24, 8, 8, 8, 0.75},
 }};
 
 struct ScanPosition {
@@ -530,7 +530,7 @@ bool DecodeDctbs2(
         ReadU32Le(bytes + 32) != preset.bytes_per_mcu ||
         y_bytes + cb_bytes + cr_bytes != preset.bytes_per_mcu ||
         y_record_bytes < 3u || (split && y_bytes % 4u != 0u) ||
-        cb_bytes < 3u || cr_bytes < 3u ||
+        cb_bytes < 8u || cr_bytes < 8u ||
         payload_bytes != static_cast<std::uint64_t>(columns) * rows * preset.bytes_per_mcu ||
         byte_count != kHeaderBytes + static_cast<std::uint64_t>(payload_bytes) + library_bytes) {
         error = L"DCTBS2 layout is inconsistent with its header";

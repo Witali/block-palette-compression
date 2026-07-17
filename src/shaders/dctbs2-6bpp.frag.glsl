@@ -974,7 +974,7 @@ bool validMainHeader(uint flags) {
     return u32le(0) == 0x42544344u && u32le(4) == 0x00003253u &&
         u32le(8) == 2u && u32le(12) == EXPECTED_MODE &&
         u32le(32) == EXPECTED_MCU_BYTES && yBytes + cbBytes + crBytes == EXPECTED_MCU_BYTES &&
-        cbBytes >= 3u && crBytes >= 3u && yBytes >= (splitLuma ? 12u : 3u) &&
+        cbBytes >= 8u && crBytes >= 8u && yBytes >= (splitLuma ? 12u : 3u) &&
         (!splitLuma || yBytes % 4u == 0u) &&
         (flags & ~0x00000f1fu) == 0u && ((flags >> 8u) & 15u) <= 7u &&
         (((flags & FLAG_LIBRARY) == 0u) ||

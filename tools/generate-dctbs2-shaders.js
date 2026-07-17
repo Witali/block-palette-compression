@@ -8,7 +8,7 @@ const root = path.resolve(__dirname, "..");
 const outputDirectory = path.join(root, "src", "shaders");
 const cubeTemplatePath = path.join(outputDirectory, "cube-webgl2.frag.glsl");
 const presets = Object.freeze([
-  { key: "0.75", file: "dctbs2-0_75bpp.frag.glsl", mode: 750, mcu: 24, y: 12, cb: 6, cr: 6 },
+  { key: "0.75", file: "dctbs2-0_75bpp.frag.glsl", mode: 750, mcu: 24, y: 8, cb: 8, cr: 8 },
   { key: "1", file: "dctbs2-1bpp.frag.glsl", mode: 1000, mcu: 32, y: 16, cb: 8, cr: 8 },
   { key: "1.5", file: "dctbs2-1_5bpp.frag.glsl", mode: 1500, mcu: 48, y: 24, cb: 12, cr: 12 },
   { key: "2", file: "dctbs2-2bpp.frag.glsl", mode: 2000, mcu: 64, y: 32, cb: 16, cr: 16 },
@@ -999,7 +999,7 @@ bool validMainHeader(uint flags) {
     return u32le(0) == 0x42544344u && u32le(4) == 0x00003253u &&
         u32le(8) == 2u && u32le(12) == EXPECTED_MODE &&
         u32le(32) == EXPECTED_MCU_BYTES && yBytes + cbBytes + crBytes == EXPECTED_MCU_BYTES &&
-        cbBytes >= 3u && crBytes >= 3u && yBytes >= (splitLuma ? 12u : 3u) &&
+        cbBytes >= 8u && crBytes >= 8u && yBytes >= (splitLuma ? 12u : 3u) &&
         (!splitLuma || yBytes % 4u == 0u) &&
         (flags & ~0x00000f1fu) == 0u && ((flags >> 8u) & 15u) <= 7u &&
         (((flags & FLAG_LIBRARY) == 0u) ||

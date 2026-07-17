@@ -22,6 +22,10 @@ test("ships one current-format WebGL2 DCTBS2 shader for every payload rate", () 
     Object.keys(PRESETS).sort((left, right) => Number(left) - Number(right))
   );
   assert.equal(generatedFiles().size, 17);
+  assert.deepEqual(
+    [presets[0].y, presets[0].cb, presets[0].cr],
+    [8, 8, 8]
+  );
 
   for (const [file, expected] of generatedFiles()) {
     const actual = fs.readFileSync(path.join(root, "src", "shaders", file), "utf8")
@@ -43,6 +47,7 @@ test("matches DCTBS2 v2 MCU layouts instead of the attached legacy dctb layout",
     assert.match(source, /u32le\(8\) == 2u/);
     assert.match(source, /uint yBytes = u32le\(36\)/);
     assert.match(source, /yBytes \+ cbBytes \+ crBytes == EXPECTED_MCU_BYTES/);
+    assert.match(source, /cbBytes >= 8u && crBytes >= 8u/);
     assert.doesNotMatch(source, /EXPECTED_Y_BYTES/);
     assert.match(source, /int mcuOffset = HEADER_SIZE \+ mcuIndex \* int\(EXPECTED_MCU_BYTES\)/);
     assert.doesNotMatch(source, /HEADER_SIZE = 256/);

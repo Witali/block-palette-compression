@@ -264,6 +264,7 @@ function verifyPresetListing() {
       [preset.bytesPerMcu, preset.yBytes, preset.cbBytes, preset.crBytes],
       `CUDA layout ${key}`
     );
+    assert.ok(Number(cbBytes) >= 8 && Number(crBytes) >= 8, `CUDA chroma floor ${key}`);
   }
   console.log(`ok - CUDA lists all ${lines.length} DCTBS2 layouts`);
 }
@@ -284,6 +285,7 @@ function verifyPreset(preset) {
   assert.equal(cudaInfo.quality, 72);
   assert.equal(cudaInfo.splitLuma8x8, Number(preset) >= 3);
   assert.equal(cudaInfo.chroma420, true);
+  assert.ok(cudaInfo.cbBytes >= 8 && cudaInfo.crBytes >= 8);
   assert.equal(cudaInfo.zigzagOrder, true);
   const expectedCoding = {
     "0.75": "skip-rle-equal-2",
@@ -316,6 +318,7 @@ function verifyPreset(preset) {
   const javascriptInfo = inspectDctFile(javascriptEncoded);
   assert.equal(javascriptInfo.splitLuma8x8, Number(preset) >= 3);
   assert.equal(javascriptInfo.chroma420, true);
+  assert.ok(javascriptInfo.cbBytes >= 8 && javascriptInfo.crBytes >= 8);
   assert.equal(javascriptInfo.zigzagOrder, true);
   fs.writeFileSync(jsFile, javascriptEncoded);
   const javascriptDecodedJs = decodeDctFile(javascriptEncoded);

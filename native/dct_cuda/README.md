@@ -132,7 +132,9 @@ list visible devices and the CUDA runtime version.
 Low-rate encodes use the fast adaptive Y/C component budget by default. Use
 `--component-budget fixed`, `fast`, or `expanded` to control the exact
 full-image RGB comparison. The selected Y, Cb, and Cr byte counts are stored in
-the DCTBS2 header and do not change the fixed MCU size.
+the DCTBS2 header and do not change the fixed MCU size. New encodes reserve at
+least 8 bytes for each chroma component so saturated details are not traded
+away for additional luma coefficients.
 
 ## Compatibility check
 

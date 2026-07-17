@@ -47,6 +47,8 @@ test("provides CUDA encode, decode, settings search, and pixel commands", () => 
   assert.match(source, /const int tail_start = 64 - tail_count/);
   assert.match(source, /encode_best_coding/);
   assert.match(source, /const bool zigzag_order = true/);
+  assert.match(source, /MIN_CHROMA_BYTES = 8u/);
+  assert.match(source, /cb_bytes < MIN_CHROMA_BYTES \|\| cr_bytes < MIN_CHROMA_BYTES/);
   assert.match(source, /if \(error < best\.error\)/);
   assert.match(readme, /bit zero selects\s+zigzag AC1/);
   assert.match(readme, /DC is separate/);
