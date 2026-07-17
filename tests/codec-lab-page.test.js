@@ -212,9 +212,8 @@ test("styles the unified settings, comparison, structure, and inspector", () => 
 
 test("links and caches the unified laboratory", () => {
   assert.match(home, /href="\.\/codec-lab\.html"/);
-  for (const format of ["bpal", "dct", "bpdh"]) {
-    assert.match(home, new RegExp(`href="\\.\\/codec-lab\\.html\\?format=${format}"`));
-  }
+  assert.equal((home.match(/href="\.\/codec-lab\.html"/g) || []).length, 1);
+  assert.doesNotMatch(home, /codec-lab\.html\?format=/);
   assert.match(home, /data-i18n="home\.lab\.title"/);
   assert.match(serviceWorker, /"\.\/codec-lab\.html"/);
   assert.match(serviceWorker, /"\.\/codec-lab\.css"/);
