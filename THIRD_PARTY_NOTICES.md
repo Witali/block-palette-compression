@@ -6,6 +6,12 @@ Codec Laboratory uses `astc-encoder-wasm` 1.0.4, an Apache-2.0 WebAssembly
 port of Arm `astcenc` 5.3.0. The vendored license and provenance are stored in
 `vendor/astc-encoder-wasm/`.
 
+## Three.js
+
+The Barcelona Pavilion scene viewer uses Three.js 0.185.1 under the MIT
+license. The browser runtime, glTF loader, orbit controls, and license are
+stored in `vendor/three/`.
+
 ## BC1 and BC7 algorithm references
 
 The JavaScript BC1 and BC7 encoders were implemented from the public format
