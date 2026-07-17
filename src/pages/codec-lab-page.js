@@ -15,7 +15,8 @@
     worker: null,
     workerReject: null,
     requestId: 0,
-    uploadedUrl: null,
+    sourceKey: null,
+    pendingFile: null,
     busy: false,
   };
 
@@ -57,8 +58,8 @@
   bindEvents();
   selectInitialFormat();
   updateRangeLabels();
-  updateFormatUi(false);
-  loadUrl(elements.imageUrl.value, optionText(elements.imageUrl)).catch(showError);
+  updateFormatUi();
+  setStatus(t("lab.readyToEncode"));
 
   function collectElements() {
     return {
@@ -151,15 +152,16 @@
   function bindEvents() {
     elements.controls.addEventListener("submit", (event) => {
       event.preventDefault();
-      processCurrentFormat();
+      processSelection().catch(showError);
     });
     elements.codecFormat.addEventListener("change", () => {
       state.format = elements.codecFormat.value;
-      updateFormatUi(true);
+      updateFormatUi();
+      markSettingsChanged();
     });
     elements.imageUrl.addEventListener("change", () => {
-      releaseUpload();
-      loadUrl(elements.imageUrl.value, optionText(elements.imageUrl)).catch(showError);
+      clearPendingFile();
+      markSourceChanged(t("lab.sourceChanged"));
     });
     elements.uploadButton.addEventListener("click", () => elements.imageFile.click());
     elements.imageFile.addEventListener("change", handleUpload);
@@ -200,12 +202,13 @@
     elements.codecFormat.value = state.format;
   }
 
-  function updateFormatUi(process) {
+  function updateFormatUi() {
     cancelWorker();
     state.result = null;
     elements.downloadFile.disabled = true;
     elements.downloadPng.disabled = true;
     comparison.clearResult();
+    resetMetrics(false);
     comparison.setOverlayRenderer((context, view) => currentAdapter().drawOverlay(context, view));
 
     for (const panel of document.querySelectorAll("[data-format-panel]")) {
@@ -227,21 +230,52 @@
     url.searchParams.set("format", state.format);
     root.history.replaceState(null, "", url);
 
-    if (process && state.sourceImageData) processCurrentFormat();
   }
 
   function currentAdapter() {
     return formatAdapters[state.format];
   }
 
-  async function loadUrl(url, name) {
+  async function processSelection() {
+    if (state.busy) return;
+
+    const source = selectedSource();
+    if (!state.sourceImageData || state.sourceKey !== source.key) {
+      if (source.file) {
+        await loadBlob(source.file, source.name, source.key);
+      } else {
+        await loadUrl(source.url, source.name, source.key);
+      }
+    }
+
+    await processCurrentFormat();
+  }
+
+  function selectedSource() {
+    if (state.pendingFile) {
+      const file = state.pendingFile;
+      return {
+        key: `file:${file.name}:${file.size}:${file.lastModified}`,
+        file,
+        name: file.name,
+      };
+    }
+
+    return {
+      key: `url:${elements.imageUrl.value}`,
+      url: elements.imageUrl.value,
+      name: optionText(elements.imageUrl),
+    };
+  }
+
+  async function loadUrl(url, name, sourceKey) {
     setBusy(true, t("dynamic.loadingImage"));
     const response = await fetch(url);
     if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
-    await loadBlob(await response.blob(), name || fileStem(url));
+    await loadBlob(await response.blob(), name || fileStem(url), sourceKey);
   }
 
-  async function loadBlob(blob, name) {
+  async function loadBlob(blob, name, sourceKey) {
     cancelWorker();
     const bytes = new Uint8Array(await blob.arrayBuffer());
     const bitmap = await createImageBitmap(blob);
@@ -257,26 +291,26 @@
     state.sourceBytes = bytes;
     state.sourceMime = blob.type || "";
     state.sourceName = fileStem(name);
+    state.sourceKey = sourceKey;
     state.result = null;
     comparison.setSource(imageData);
     elements.metricDimensions.textContent = `${formatInteger(imageData.width)} × ${formatInteger(imageData.height)}`;
     resetMetrics(false);
     syncDctControls();
     setBusy(false, t("common.ready"));
-    await processCurrentFormat();
   }
 
-  async function handleUpload() {
+  function handleUpload() {
     const file = elements.imageFile.files && elements.imageFile.files[0];
     if (!file) return;
 
-    releaseUpload();
-    state.uploadedUrl = URL.createObjectURL(file);
-    try {
-      await loadBlob(file, file.name);
-    } catch (error) {
-      showError(error);
-    }
+    state.pendingFile = file;
+    elements.imageUrl.querySelector("[data-pending-file]")?.remove();
+    const localOption = new Option(file.name, "");
+    localOption.dataset.pendingFile = "true";
+    elements.imageUrl.append(localOption);
+    elements.imageUrl.value = "";
+    markSourceChanged(t("lab.fileSelected", { name: file.name }));
   }
 
   async function processCurrentFormat() {
@@ -665,7 +699,20 @@
 
   function markSettingsChanged() {
     updateRangeLabels();
-    if (state.result && !state.busy) setStatus(t("lab.settingsChanged"));
+    if (!state.busy) setStatus(t("lab.settingsChanged"));
+  }
+
+  function markSourceChanged(message) {
+    state.result = null;
+    elements.downloadFile.disabled = true;
+    elements.downloadPng.disabled = true;
+    comparison.clearResult();
+    elements.metricDimensions.textContent = "—";
+    resetMetrics(true);
+    clearInspector();
+    elements.structureSummary.textContent = "—";
+    elements.structureFlow.replaceChildren(emptyState(t("lab.encodeToInspect")));
+    if (!state.busy) setStatus(message);
   }
 
   function runWorker(url, message, transfers, onMessage) {
@@ -1108,14 +1155,14 @@
     setTimeout(() => URL.revokeObjectURL(url), 0);
   }
 
-  function releaseUpload() {
-    if (state.uploadedUrl) URL.revokeObjectURL(state.uploadedUrl);
-    state.uploadedUrl = null;
+  function clearPendingFile() {
+    state.pendingFile = null;
+    elements.imageFile.value = "";
+    elements.imageUrl.querySelector("[data-pending-file]")?.remove();
   }
 
   function dispose() {
     cancelWorker();
-    releaseUpload();
     comparison.destroy();
   }
 

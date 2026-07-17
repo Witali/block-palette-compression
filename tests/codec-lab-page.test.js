@@ -47,6 +47,22 @@ test("keeps encoding in format-specific workers", () => {
   assert.match(page, /id="progress-cancel"/);
 });
 
+test("loads and converts only after the encode button is pressed", () => {
+  const startup = script.slice(0, script.indexOf("function collectElements"));
+  const bindings = script.slice(script.indexOf("function bindEvents"), script.indexOf("function selectInitialFormat"));
+  const upload = script.slice(script.indexOf("function handleUpload"), script.indexOf("function processCurrentFormat"));
+  const formatUi = script.slice(script.indexOf("function updateFormatUi"), script.indexOf("function currentAdapter"));
+
+  assert.doesNotMatch(startup, /loadUrl\(|loadBlob\(|processCurrentFormat\(/);
+  assert.match(bindings, /controls\.addEventListener\("submit"[\s\S]*?processSelection\(\)/);
+  assert.doesNotMatch(bindings, /loadUrl\(|loadBlob\(|processCurrentFormat\(/);
+  assert.match(script, /async function processSelection\(\)[\s\S]*?await loadBlob\([\s\S]*?await loadUrl\([\s\S]*?await processCurrentFormat\(\)/);
+  assert.doesNotMatch(upload, /loadUrl\(|loadBlob\(|processCurrentFormat\(/);
+  assert.match(upload, /localOption\.dataset\.pendingFile = "true"/);
+  assert.doesNotMatch(formatUi, /processCurrentFormat\(/);
+  assert.match(formatUi, /resetMetrics\(false\)/);
+});
+
 test("styles the unified settings, comparison, structure, and inspector", () => {
   assert.match(styles, /\.format-picker/);
   assert.match(styles, /\.format-picker select option \{[\s\S]*?background: #171d25;[\s\S]*?color: #eef3f8;/);
@@ -54,6 +70,7 @@ test("styles the unified settings, comparison, structure, and inspector", () => 
   assert.match(styles, /\.lab-controls \{[\s\S]*?width: 100%;[\s\S]*?justify-self: stretch;/);
   assert.match(styles, /\.format-settings/);
   assert.match(styles, /column-gap: 14px;[\s\S]*?row-gap: 14px;/);
+  assert.match(styles, /color: #aab5c2;[\s\S]*?font-size: 12px;[\s\S]*?font-weight: 650;[\s\S]*?letter-spacing: 0\.035em;[\s\S]*?text-transform: uppercase;/);
   assert.match(styles, /\.format-settings select,[\s\S]*?\.format-settings input \{[\s\S]*?width: 100%;[\s\S]*?min-width: 0;/);
   assert.match(styles, /\.lab-comparison/);
   assert.match(styles, /\.lab-structure-flow/);
