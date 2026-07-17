@@ -78,6 +78,7 @@ test("styles the unified settings, comparison, structure, and inspector", () => 
   assert.match(styles, /\.lab-comparison/);
   assert.match(styles, /\.lab-structure-flow/);
   assert.match(styles, /\.lab-block-details-body/);
+  assert.match(styles, /\.lab-block-details-body \{[\s\S]*?padding: 18px;/);
   assert.match(styles, /\.lab-coefficient-matrix/);
   assert.match(styles, /\.lab-coefficient-grid span \{[\s\S]*?font: 750 10px\/1 ui-monospace/);
   assert.match(styles, /\.lab-matrix-list \{[\s\S]*?grid-template-columns: repeat\(4, minmax\(0, 1fr\)\);/);

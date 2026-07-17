@@ -230,7 +230,7 @@
 .lab-block-details-body {
   display: grid;
   gap: 16px;
-  padding-top: 14px;
+  padding: 18px;
 }
 
 .lab-detail-metadata {
