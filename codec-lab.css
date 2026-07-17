@@ -223,13 +223,13 @@
   color: #7f8d9b;
 }
 
-.lab-format-guide {
+.lab-disclosure {
   margin-top: 18px;
   padding: 0;
   overflow: hidden;
 }
 
-.lab-format-guide > summary {
+.lab-disclosure > summary {
   display: flex;
   align-items: center;
   gap: 13px;
@@ -239,11 +239,11 @@
   user-select: none;
 }
 
-.lab-format-guide > summary::-webkit-details-marker {
+.lab-disclosure > summary::-webkit-details-marker {
   display: none;
 }
 
-.lab-format-guide > summary::before {
+.lab-disclosure > summary::before {
   content: "›";
   color: #83b8ff;
   font-size: 24px;
@@ -251,28 +251,28 @@
   transition: transform 120ms ease;
 }
 
-.lab-format-guide[open] > summary::before {
+.lab-disclosure[open] > summary::before {
   transform: rotate(90deg);
 }
 
-.lab-format-guide-heading {
+.lab-disclosure-heading {
   display: grid;
   gap: 3px;
   min-width: 0;
 }
 
-.lab-format-guide-heading > strong {
+.lab-disclosure-heading > strong {
   color: #edf4fb;
   font-size: 20px;
 }
 
-.lab-format-guide-heading > small {
+.lab-disclosure-heading > small {
   color: #8794a3;
   font-size: var(--font-size-md);
   font-weight: 400;
 }
 
-.lab-format-guide > summary output {
+.lab-disclosure > summary output {
   margin-left: auto;
   color: #83b8ff;
   font: 750 var(--font-size-sm)/1.35 ui-monospace, Consolas, monospace;
@@ -508,10 +508,16 @@
   margin-top: 18px;
 }
 
-.lab-block-details-body {
+.lab-inspector-body {
   display: grid;
   gap: 16px;
   padding: 18px;
+  border-top: 1px solid #303a46;
+}
+
+.lab-block-details-body {
+  display: grid;
+  gap: 16px;
 }
 
 .lab-detail-metadata {
@@ -725,12 +731,12 @@
     grid-column: auto;
   }
 
-  .lab-format-guide > summary {
+  .lab-disclosure > summary {
     align-items: flex-start;
     flex-wrap: wrap;
   }
 
-  .lab-format-guide > summary output {
+  .lab-disclosure > summary output {
     width: 100%;
     margin-left: 37px;
     white-space: normal;

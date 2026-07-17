@@ -38,6 +38,10 @@ test("uses one comparison and coordinate inspector for every codec", () => {
   assert.match(script, /const blockSize = image\.blockSize \|\| image\.codingUnitSize/);
   assert.match(page, /id="structure-flow"/);
   assert.match(page, /id="block-details-body"/);
+  assert.match(page, /<details id="inspector" class="storage-section lab-disclosure lab-inspector">/);
+  assert.doesNotMatch(page, /id="block-details"/);
+  assert.doesNotMatch(page, /data-i18n="hybrid\.blockDetailsTitle"/);
+  assert.doesNotMatch(script, /blockDetailsSummary/);
   assert.match(page, /class="pixel-inspector pixel-inspector-grid"/);
   assert.match(script, /const sampled = normalizeColor\(adapter\.sample\(result, px, py\)\)/);
   assert.match(script, /a: color\.a \?\? 255/);
@@ -57,7 +61,7 @@ test("keeps encoding in format-specific workers", () => {
 });
 
 test("shows a format-specific expandable binary layout reference", () => {
-  assert.match(page, /<details id="format-guide" class="storage-section lab-format-guide">/);
+  assert.match(page, /<details id="format-guide" class="storage-section lab-disclosure lab-format-guide">/);
   assert.match(page, /id="format-guide-summary"/);
   assert.match(page, /id="format-guide-body"/);
   assert.match(page, /data-i18n="lab\.formatGuideTitle"/);
@@ -72,7 +76,7 @@ test("shows a format-specific expandable binary layout reference", () => {
   assert.match(script, /guideBit\("unit 0", 1, "map", "0 \/ 1"\)/);
   assert.match(script, /function updateFormatUi\(\)[\s\S]*?renderFormatGuide\(\)/);
   assert.match(script, /function markSettingsChanged\(\)[\s\S]*?renderFormatGuide\(\)/);
-  assert.match(styles, /\.lab-format-guide > summary/);
+  assert.match(styles, /\.lab-disclosure > summary/);
   assert.match(styles, /\.lab-format-table/);
   assert.match(styles, /\.lab-bit-strip/);
   assert.match(styles, /\.lab-file-segment\.is-dct/);
@@ -134,7 +138,8 @@ test("styles the unified settings, comparison, structure, and inspector", () => 
   assert.match(styles, /\.lab-difference-canvas\[hidden\] \{[\s\S]*?display: none;/);
   assert.match(styles, /\.lab-structure-flow/);
   assert.match(styles, /\.lab-block-details-body/);
-  assert.match(styles, /\.lab-block-details-body \{[\s\S]*?padding: 18px;/);
+  assert.match(styles, /\.lab-inspector-body \{[\s\S]*?padding: 18px;[\s\S]*?border-top: 1px solid #303a46;/);
+  assert.doesNotMatch(styles, /\.lab-block-details-body \{[^}]*padding:/);
   assert.match(styles, /\.lab-coefficient-matrix/);
   assert.match(styles, /\.lab-coefficient-grid span \{[\s\S]*?font: 750 var\(--font-size-sm\)\/1 ui-monospace/);
   assert.match(styles, /\.lab-matrix-list \{[\s\S]*?grid-template-columns: repeat\(4, minmax\(0, 1fr\)\);/);

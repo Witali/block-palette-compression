@@ -12,7 +12,7 @@
     <link rel="stylesheet" href="./block-palette.css?v=type-scale-1">
     <link rel="stylesheet" href="./bpdh.css?v=type-scale-1">
     <link rel="stylesheet" href="./dct-compression.css?v=type-scale-1">
-    <link rel="stylesheet" href="./codec-lab.css?v=bpal-palettes-1">
+    <link rel="stylesheet" href="./codec-lab.css?v=inspector-disclosure-1">
     <link rel="stylesheet" href="./i18n.css?v=type-scale-1">
   </head>
   <body>
@@ -150,9 +150,9 @@
         </figure>
       </section>
 
-      <details id="format-guide" class="storage-section lab-format-guide">
+      <details id="format-guide" class="storage-section lab-disclosure lab-format-guide">
         <summary>
-          <span class="lab-format-guide-heading">
+          <span class="lab-disclosure-heading">
             <strong data-i18n="lab.formatGuideTitle">File format reference</strong>
             <small data-i18n="lab.formatGuideDescription">Header fields, file sections, block records, and bit packing for the selected codec.</small>
           </span>
@@ -196,27 +196,26 @@
         </section>
       </div>
 
-      <section class="palette-section inspector-section lab-inspector" aria-labelledby="inspector-title">
-        <div class="section-heading">
-          <div>
-            <h2 id="inspector-title" data-i18n="lab.inspectorTitle">Coordinate and block inspector</h2>
-            <p data-i18n="lab.inspectorDescription">Click the decoded image to trace one pixel through the selected format and inspect its stored block.</p>
-          </div>
+      <details id="inspector" class="storage-section lab-disclosure lab-inspector">
+        <summary>
+          <span class="lab-disclosure-heading">
+            <strong id="inspector-title" data-i18n="lab.inspectorTitle">Coordinate and block inspector</strong>
+            <small data-i18n="lab.inspectorDescription">Click the decoded image to trace one pixel through the selected format and inspect its stored block.</small>
+          </span>
           <output id="selected-unit">—</output>
-        </div>
-        <div class="pixel-inspector pixel-inspector-grid">
-          <div><span data-i18n="hybrid.coordinate">Coordinate</span><strong id="pixel-coordinate">—</strong></div>
-          <div><span data-i18n="lab.sourceColor">Source color</span><strong id="pixel-source-color">—</strong></div>
-          <div><span data-i18n="hybrid.fullDecodeColor">Full decode</span><strong id="pixel-full-color">—</strong></div>
-          <div><span data-i18n="hybrid.coordinateColor">Coordinate decode</span><strong id="pixel-sampled-color">—</strong></div>
-          <div class="pixel-match"><span data-i18n="hybrid.determinism">Determinism</span><strong id="pixel-match">—</strong></div>
-          <span id="pixel-swatch" class="pixel-swatch" aria-hidden="true"></span>
-        </div>
-        <details id="block-details" class="block-details" open>
-          <summary><span data-i18n="hybrid.blockDetailsTitle">Selected block contents</span><strong id="block-details-summary">—</strong></summary>
+        </summary>
+        <div class="lab-inspector-body">
+          <div class="pixel-inspector pixel-inspector-grid">
+            <div><span data-i18n="hybrid.coordinate">Coordinate</span><strong id="pixel-coordinate">—</strong></div>
+            <div><span data-i18n="lab.sourceColor">Source color</span><strong id="pixel-source-color">—</strong></div>
+            <div><span data-i18n="hybrid.fullDecodeColor">Full decode</span><strong id="pixel-full-color">—</strong></div>
+            <div><span data-i18n="hybrid.coordinateColor">Coordinate decode</span><strong id="pixel-sampled-color">—</strong></div>
+            <div class="pixel-match"><span data-i18n="hybrid.determinism">Determinism</span><strong id="pixel-match">—</strong></div>
+            <span id="pixel-swatch" class="pixel-swatch" aria-hidden="true"></span>
+          </div>
           <div id="block-details-body" class="lab-block-details-body"></div>
-        </details>
-      </section>
+        </div>
+      </details>
     </main>
 
     <dialog id="progress-dialog" class="progress-dialog" aria-labelledby="progress-title">
@@ -236,7 +235,7 @@
     <script src="./src/i18n/i18n.js"></script>
     <script src="./src/pages/codec-comparison-view.js?v=codec-lab-3"></script>
     <script src="./src/encoders/codec-encoder-runtime.js?v=shared-encoder-runtime-1"></script>
-    <script src="./src/pages/codec-lab-page.js?v=shared-encoder-runtime-1"></script>
+    <script src="./src/pages/codec-lab-page.js?v=inspector-disclosure-1"></script>
     <script src="./src/pwa/register-service-worker.js?v=1"></script>
   </body>
 </html>

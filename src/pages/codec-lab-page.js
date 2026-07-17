@@ -118,8 +118,6 @@
       pixelMatch: byId("pixel-match"),
       pixelMatchCard: byId("pixel-match").parentElement,
       pixelSwatch: byId("pixel-swatch"),
-      blockDetails: byId("block-details"),
-      blockDetailsSummary: byId("block-details-summary"),
       blockDetailsBody: byId("block-details-body"),
       progressDialog: byId("progress-dialog"),
       progressEyebrow: byId("progress-eyebrow"),
@@ -1195,7 +1193,6 @@
     elements.pixelMatchCard.classList.toggle("is-match", match);
     elements.pixelMatchCard.classList.toggle("is-mismatch", !match);
     elements.pixelSwatch.style.backgroundColor = `rgb(${sampled.r}, ${sampled.g}, ${sampled.b})`;
-    elements.blockDetailsSummary.textContent = detail.summary;
     elements.blockDetailsBody.replaceChildren(detail.body);
     if (state.format === "bpal") renderBpalPalettes(result.raw, px, py);
     comparison.drawOverlay();
@@ -1210,7 +1207,6 @@
     elements.pixelMatch.textContent = "—";
     elements.pixelMatchCard.classList.remove("is-match", "is-mismatch");
     elements.pixelSwatch.style.backgroundColor = "#111820";
-    elements.blockDetailsSummary.textContent = "—";
     elements.blockDetailsBody.replaceChildren(emptyState(t("lab.selectPixel")));
   }
 
