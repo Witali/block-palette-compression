@@ -30,9 +30,13 @@ override:
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\setup.ps1
 ```
 
-The script checks Node.js and calls `tools/setup-local-cuda.ps1`. Repeated runs
-are safe: existing CUDA archives are reused only after their SHA-256 hashes
-match the official NVIDIA manifest.
+The script checks Node.js, downloads the
+[official Barcelona Pavilion demo scene](https://download.blender.org/demo/test/pabellon_barcelona_v1.scene_.zip),
+and calls `tools/setup-local-cuda.ps1`. The scene is extracted to
+`.tmp/barcelona-source`; its downloaded ZIP is deleted immediately and the
+source files remain ignored by Git. Repeated runs skip an already extracted
+scene. Existing CUDA archives are reused only after their SHA-256 hashes match
+the official NVIDIA manifest.
 
 ## Downloaded CUDA components
 
@@ -84,7 +88,8 @@ To keep the environment unchanged and use explicit paths instead:
 
 | Option | Effect |
 | --- | --- |
-| `-SkipCuda` | Check Node.js only; useful for browser-only development. |
+| `-SkipCuda` | Skip CUDA while still checking Node.js and preparing the source scene. |
+| `-SkipBarcelonaScene` | Do not download the original Barcelona Pavilion scene. |
 | `-NoUserEnvironment` | Download CUDA without changing user environment variables. |
 | `-CudaRelease <version>` | Select the NVIDIA redistributable manifest release. |
 | `-CudaToolkitVersion <version>` | Select the local toolkit directory and environment-variable suffix. |

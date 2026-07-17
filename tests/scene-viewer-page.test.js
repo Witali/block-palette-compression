@@ -7,6 +7,7 @@ const path = require("node:path");
 const root = path.resolve(__dirname, "..");
 const assetDirectory = path.join(root, "assets", "scenes", "barcelona");
 const manifestPath = path.join(assetDirectory, "manifest.json");
+const officialSceneUrl = "https://download.blender.org/demo/test/pabellon_barcelona_v1.scene_.zip";
 
 test("provides a Blender scene viewer with the requested codec switch", () => {
   const html = read("scene-viewer.html");
@@ -24,6 +25,19 @@ test("provides a Blender scene viewer with the requested codec switch", () => {
   assert.match(source, /material\.transparent = false/);
   assert.match(source, /material\.opacity = 1/);
   assert.match(source, /material\.depthWrite = true/);
+});
+
+test("downloads the original scene from Blender into ignored temporary storage", () => {
+  const setup = read("setup.ps1");
+  const setupGuide = read("docs/SETUP.md");
+  const viewerGuide = read("docs/BLENDER_SCENE_VIEWER.md");
+
+  assert.ok(setup.includes(officialSceneUrl));
+  assert.ok(setupGuide.includes(officialSceneUrl));
+  assert.ok(viewerGuide.includes(officialSceneUrl));
+  assert.match(setup, /Join-Path \$temporaryDirectory "barcelona-source"/);
+  assert.match(setup, /Remove-Item -LiteralPath \$sceneArchivePath/);
+  assert.match(read(".gitignore"), /^\.tmp\/$/m);
 });
 
 test("ships all source textures in BPAL, DCTBS2, and ASTC", () => {

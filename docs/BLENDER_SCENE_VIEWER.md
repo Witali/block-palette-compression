@@ -1,8 +1,10 @@
 # Blender scene viewer
 
 `scene-viewer.html` displays the Barcelona Pavilion scene exported from
-`pavillon_barcelone_v1.2.blend`. The page loads texture-free glTF geometry and
-assigns one of three complete texture sets at runtime:
+`pavillon_barcelone_v1.2.blend`. The original scene is obtained from Blender's
+[official demo archive](https://download.blender.org/demo/test/pabellon_barcelona_v1.scene_.zip);
+it is not stored in this repository. The page loads texture-free glTF geometry
+and assigns one of three complete texture sets at runtime:
 
 - BPAL v5 with 8 x 8 blocks, 8 block-local colors, and a 256-color shared palette;
 - DCTBS2 at the 3 bpp preset, quality 88, with 4:2:0 chroma;
@@ -23,11 +25,13 @@ so the viewer can only render material images through the selected codec.
 ## Rebuild assets
 
 The build requires Python with Pillow, Node.js, and a Blender 4.5-compatible
-executable. From the repository root:
+executable. Run setup first to download and extract the original scene under
+the Git-ignored `.tmp` directory, then rebuild the runtime assets:
 
 ```powershell
+.\setup.ps1 -SkipCuda
 python tools/build-blender-scene-assets.py `
-  path\to\pavillon_barcelone_v1.2.blend `
+  .tmp\barcelona-source\3d\pavillon_barcelone_v1.2.blend `
   assets\scenes\barcelona `
   --blender path\to\blender.exe `
   --node path\to\node.exe `
