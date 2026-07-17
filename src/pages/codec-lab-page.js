@@ -1463,7 +1463,7 @@
   function drawBlockOverlay(context, view, blockSize, modeColor) {
     const blocksX = Math.ceil(view.width / blockSize);
     const blocksY = Math.ceil(view.height / blockSize);
-    const lineWidth = Math.max(1, Math.min(view.width, view.height) / 420);
+    const lineWidth = Math.max(0.4, Math.min(view.width, view.height) / 720);
 
     if (elements.showOverlay.checked) {
       for (let blockY = 0; blockY < blocksY; blockY += 1) {
@@ -1493,8 +1493,9 @@
     context.fillStyle = "rgba(255, 240, 106, 0.12)";
     context.fillRect(x, y, width, height);
     context.strokeStyle = "#fff06a";
-    context.lineWidth = lineWidth * 2.5;
-    context.strokeRect(x + context.lineWidth / 2, y + context.lineWidth / 2, Math.max(0, width - context.lineWidth), Math.max(0, height - context.lineWidth));
+    const selectedLineWidth = Math.max(0.75, lineWidth * 1.5);
+    context.lineWidth = selectedLineWidth;
+    context.strokeRect(x + selectedLineWidth / 2, y + selectedLineWidth / 2, Math.max(0, width - selectedLineWidth), Math.max(0, height - selectedLineWidth));
   }
 
   function structureCard(label, value, detail) {

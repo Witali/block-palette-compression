@@ -48,6 +48,8 @@ test("uses one comparison and coordinate inspector for every codec", () => {
   assert.match(script, /cell\.textContent = formatCoefficient\(value\)/);
   assert.match(script, /function formatCoefficient\(value\)[\s\S]*?toPrecision\(4\)/);
   assert.match(script, /figure\.classList\.toggle\("is-wide", matrix\.width > 8\)/);
+  assert.match(script, /const lineWidth = Math\.max\(0\.4, Math\.min\(view\.width, view\.height\) \/ 720\)/);
+  assert.match(script, /const selectedLineWidth = Math\.max\(0\.75, lineWidth \* 1\.5\)/);
 });
 
 test("keeps encoding in format-specific workers", () => {
