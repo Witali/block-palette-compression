@@ -185,7 +185,13 @@
     });
     elements.showOverlay.addEventListener("change", () => comparison.drawOverlay());
     elements.bpalQualityPreset.addEventListener("change", applyBpalPreset);
-    elements.bpalBlockSize.addEventListener("change", updateBpalLocalColorOptions);
+    elements.bpalBlockSize.addEventListener("change", () => {
+      updateBpalLocalColorOptions();
+      syncBpalPresetFromSettings();
+    });
+    for (const control of [elements.bpalLocalColors, elements.bpalGlobalColors, elements.bpalPaletteCount]) {
+      control.addEventListener("change", syncBpalPresetFromSettings);
+    }
     elements.bpalDiversity.addEventListener("input", updateRangeLabels);
     elements.dctQuality.addEventListener("input", updateRangeLabels);
     elements.dctJpegImport.addEventListener("change", syncDctControls);
@@ -688,6 +694,21 @@
     elements.bpalPaletteCount.value = String(preset.paletteCount);
     updateBpalLocalColorOptions();
     markSettingsChanged();
+  }
+
+  function syncBpalPresetFromSettings() {
+    const blockSize = Number(elements.bpalBlockSize.value);
+    const localColorCount = Number(elements.bpalLocalColors.value);
+    const globalColorCount = Number(elements.bpalGlobalColors.value);
+    const paletteCount = Number(elements.bpalPaletteCount.value);
+    const match = Object.entries(QUALITY_PRESETS).find(([, preset]) =>
+      preset.blockSize === blockSize &&
+      preset.localColorCount === localColorCount &&
+      preset.globalColorCount === globalColorCount &&
+      preset.paletteCount === paletteCount
+    );
+
+    elements.bpalQualityPreset.value = match ? match[0] : "";
   }
 
   function updateBpalLocalColorOptions() {

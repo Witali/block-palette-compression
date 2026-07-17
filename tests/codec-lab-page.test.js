@@ -92,6 +92,15 @@ test("shows selected and shared BPAL palettes only in BPAL mode", () => {
   assert.match(styles, /\.lab-bpal-palettes\[hidden\] \{[\s\S]*?display: none;/);
 });
 
+test("keeps the BPAL quality preset synchronized with its component fields", () => {
+  assert.match(script, /elements\.bpalBlockSize\.addEventListener\("change", \(\) => \{[\s\S]*?updateBpalLocalColorOptions\(\);[\s\S]*?syncBpalPresetFromSettings\(\);/);
+  assert.match(script, /\[elements\.bpalLocalColors, elements\.bpalGlobalColors, elements\.bpalPaletteCount\]/);
+  assert.match(script, /control\.addEventListener\("change", syncBpalPresetFromSettings\)/);
+  assert.match(script, /function syncBpalPresetFromSettings\(\)[\s\S]*?Object\.entries\(QUALITY_PRESETS\)\.find/);
+  assert.match(script, /preset\.blockSize === blockSize[\s\S]*?preset\.localColorCount === localColorCount[\s\S]*?preset\.globalColorCount === globalColorCount[\s\S]*?preset\.paletteCount === paletteCount/);
+  assert.match(script, /elements\.bpalQualityPreset\.value = match \? match\[0\] : ""/);
+});
+
 test("loads and converts only after the encode button is pressed", () => {
   const startup = script.slice(0, script.indexOf("function collectElements"));
   const bindings = script.slice(script.indexOf("function bindEvents"), script.indexOf("function selectInitialFormat"));
