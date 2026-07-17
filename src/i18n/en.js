@@ -281,7 +281,7 @@
     "block.presetNone": "Not selected",
     "block.blockSize": "Block size",
     "block.localColors": "Colors per block",
-    "block.globalPalette": "Shared palette",
+    "block.globalPalette": "Colors per palette",
     "block.paletteCount": "Number of palettes",
     "block.paletteCount1": "1 palette · 0 bits/block",
     "block.paletteCount2": "2 palettes · 1 bit/block",

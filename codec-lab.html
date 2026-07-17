@@ -63,7 +63,7 @@
             </label>
             <label><span data-i18n="block.blockSize">Block size</span><select id="bpal-block-size"><option value="4">4 × 4</option><option value="8" selected>8 × 8</option><option value="16">16 × 16</option><option value="32">32 × 32</option><option value="64">64 × 64</option></select></label>
             <label><span data-i18n="block.localColors">Colors per block</span><select id="bpal-local-colors"><option value="2">2</option><option value="4">4</option><option value="8" selected>8</option><option value="16">16</option></select></label>
-            <label><span data-i18n="block.globalPalette">Shared palette</span><select id="bpal-global-colors"><option value="8">8</option><option value="16">16</option><option value="32">32</option><option value="64">64</option><option value="128" selected>128</option><option value="256">256</option></select></label>
+            <label><span data-i18n="block.globalPalette">Colors per palette</span><select id="bpal-global-colors"><option value="8">8</option><option value="16">16</option><option value="32">32</option><option value="64">64</option><option value="128" selected>128</option><option value="256">256</option></select></label>
             <label><span data-i18n="block.paletteCount">Number of palettes</span><select id="bpal-palette-count"><option value="1">1</option><option value="2">2</option><option value="4">4</option><option value="8">8</option><option value="16" selected>16</option><option value="32">32</option><option value="64">64</option><option value="128">128</option></select></label>
             <label><span data-i18n="block.paletteFormat">Palette color format</span><select id="bpal-palette-bits"><option value="24" selected>RGB888</option><option value="16">RGB565</option></select></label>
             <label><span data-i18n="common.colorSpace">Color space</span><select id="bpal-color-space"><option value="oklab" selected>OKLab</option><option value="rgb">RGB</option></select></label>
@@ -90,7 +90,7 @@
             <label><span data-i18n="hybrid.mode">Allowed modes</span><select id="bpdh-mode"><option value="auto" selected data-i18n="hybrid.modeAuto">Automatic BPAL + DCT</option><option value="bpal" data-i18n="hybrid.modeBpal">BPAL only</option><option value="dct" data-i18n="hybrid.modeDct">DCT only</option></select></label>
             <label><span data-i18n="hybrid.dctSearch">DCT quality search</span><select id="bpdh-dct-search"><option value="balanced" selected>Balanced · 8</option><option value="fast">Fast · 4</option><option value="70">Quality 70</option><option value="85">Quality 85</option><option value="95">Quality 95</option></select></label>
             <label><span data-i18n="block.localColors">Colors per BPAL block</span><select id="bpdh-local-colors"><option value="2">2</option><option value="4">4</option><option value="8" selected>8</option><option value="16">16</option></select></label>
-            <label><span data-i18n="block.globalPalette">Colors per shared palette</span><select id="bpdh-global-colors"><option value="8">8</option><option value="16">16</option><option value="32" selected>32</option><option value="64">64</option><option value="128">128</option><option value="256">256</option></select></label>
+            <label><span data-i18n="block.globalPalette">Colors per palette</span><select id="bpdh-global-colors"><option value="8">8</option><option value="16">16</option><option value="32" selected>32</option><option value="64">64</option><option value="128">128</option><option value="256">256</option></select></label>
             <label><span data-i18n="block.paletteCount">Number of palettes</span><select id="bpdh-palette-count"><option value="1">1</option><option value="2">2</option><option value="4">4</option><option value="8">8</option><option value="16">16</option><option value="32">32</option><option value="64" selected>64</option><option value="128">128</option></select></label>
             <label><span data-i18n="block.paletteFormat">Palette color format</span><select id="bpdh-palette-bits"><option value="24" selected>RGB888</option><option value="16">RGB565</option></select></label>
             <label><span data-i18n="common.colorSpace">Color space</span><select id="bpdh-color-space"><option value="rgb" selected>RGB</option><option value="oklab">OKLab</option></select></label>
@@ -249,8 +249,8 @@
     <script src="./src/dct/dct-format.js?v=dct-default-45-1"></script>
     <script src="./src/hybrid/dct420.js?v=hybrid-1"></script>
     <script src="./src/hybrid/bpdh-format.js?v=hybrid-1"></script>
-    <script src="./src/i18n/en.js?v=dct-record-map-1"></script>
-    <script src="./src/i18n/ru.js?v=dct-record-map-1"></script>
+    <script src="./src/i18n/en.js?v=palette-label-1"></script>
+    <script src="./src/i18n/ru.js?v=palette-label-1"></script>
     <script src="./src/i18n/i18n.js"></script>
     <script src="./src/pages/codec-comparison-view.js?v=codec-lab-3"></script>
     <script src="./src/encoders/codec-encoder-runtime.js?v=shared-encoder-runtime-1"></script>

@@ -281,7 +281,7 @@
     "block.presetNone": "Не выбран",
     "block.blockSize": "Размер блока",
     "block.localColors": "Цветов в блоке",
-    "block.globalPalette": "Общая палитра",
+    "block.globalPalette": "Цветов в палитре",
     "block.paletteCount": "Количество палитр",
     "block.paletteCount1": "1 палитра · 0 бит/блок",
     "block.paletteCount2": "2 палитры · 1 бит/блок",
