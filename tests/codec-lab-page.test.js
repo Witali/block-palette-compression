@@ -33,6 +33,9 @@ test("uses one comparison and coordinate inspector for every codec", () => {
   assert.match(script, /const blockSize = image\.blockSize \|\| image\.codingUnitSize/);
   assert.match(page, /id="structure-flow"/);
   assert.match(page, /id="block-details-body"/);
+  assert.match(page, /class="pixel-inspector pixel-inspector-grid"/);
+  assert.match(script, /const sampled = normalizeColor\(adapter\.sample\(result, px, py\)\)/);
+  assert.match(script, /a: color\.a \?\? 255/);
 });
 
 test("keeps encoding in format-specific workers", () => {

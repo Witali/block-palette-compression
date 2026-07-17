@@ -792,7 +792,7 @@
     const px = clamp(Math.trunc(x), 0, result.imageData.width - 1);
     const py = clamp(Math.trunc(y), 0, result.imageData.height - 1);
     comparison.setSelectedPixel(px, py);
-    const sampled = adapter.sample(result, px, py);
+    const sampled = normalizeColor(adapter.sample(result, px, py));
     const full = rgbaAt(result.imageData.data, result.imageData.width, px, py);
     const source = rgbaAt(state.sourceImageData.data, state.sourceImageData.width, px, py);
     const match = colorsEqual(sampled, full);
@@ -1132,6 +1132,10 @@
   function rgbaAt(pixels, width, x, y) {
     const offset = (y * width + x) * 4;
     return { r: pixels[offset], g: pixels[offset + 1], b: pixels[offset + 2], a: pixels[offset + 3] };
+  }
+
+  function normalizeColor(color) {
+    return { r: color.r, g: color.g, b: color.b, a: color.a ?? 255 };
   }
 
   function colorsEqual(left, right) {
