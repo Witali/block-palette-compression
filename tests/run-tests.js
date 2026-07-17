@@ -12,6 +12,7 @@ async function runTests() {
   require("./block-palette-format.test.js");
   require("./dct-format.test.js");
   require("./dct-page.test.js");
+  require("./js-codec-runtime.test.js");
   require("./codec-comparison-view.test.js");
   require("./codec-lab-page.test.js");
   require("./dct-shader.test.js");
@@ -28,7 +29,7 @@ async function runTests() {
   require("./bplm-webgl-pages.test.js");
   require("./bpal-texture-decoder.test.js");
   require("./block-palette-optimizer.test.js");
-  require("./block-palette-webgl-codec.test.js");
+  require("./block-palette-webgl-accelerator.test.js");
   require("./native-cli-find-settings.test.js");
   await require("./pwa.test.js");
 }

@@ -352,10 +352,7 @@ function processImage() {
   const settings = getSettings();
   const sourceCopy = new Uint8ClampedArray(state.sourceImageData.data);
   const processingId = ++state.processingId;
-  const workerUrl = settings.algorithm === "webgl"
-    ? "./src/palette/block-palette-webgl-worker.js?v=direct-block-colors-1"
-    : "./src/palette/block-palette-worker.js?v=direct-block-colors-1";
-  const worker = new Worker(workerUrl);
+  const worker = window.CodecEncoderRuntime.createWorker("bpal");
 
   state.worker = worker;
   startProgress({

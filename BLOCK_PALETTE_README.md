@@ -250,7 +250,7 @@ the optimizer, and WebGL2-to-CPU fallback.
   and preview controls;
 - [`src/palette/block-palette-codec.js`](./src/palette/block-palette-codec.js) —
   main CPU codec;
-- [`src/palette/block-palette-webgl-codec.js`](./src/palette/block-palette-webgl-codec.js) —
+- [`src/palette/block-palette-webgl-accelerator.js`](./src/palette/block-palette-webgl-accelerator.js) —
   WebGL2 acceleration;
 - [`src/palette/block-palette-format.js`](./src/palette/block-palette-format.js) —
   BPAL reading and writing;

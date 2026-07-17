@@ -5,10 +5,7 @@ const BENCHMARK_IMAGES = [
   { name: "landscape photo", url: "../assets/benchmark-jpegs/landscape-alaska.jpg" },
   { name: "clipart", url: "../assets/benchmark-jpegs/clipart-apple.jpg" },
 ];
-const WORKER_URLS = {
-  cpu: "../src/palette/block-palette-worker.js?v=iterative-refinement-1",
-  gpu: "../src/palette/block-palette-webgl-worker.js?v=multi-palette-gpu-2",
-};
+const WORKER_URL = "../src/palette/block-palette-worker.js?v=shared-encoder-runtime-1";
 const params = new URLSearchParams(window.location.search);
 const maximumSide = readIntegerParameter("side", 256, 64, 1024);
 const runCount = readIntegerParameter("runs", 3, 1, 10);
@@ -148,7 +145,7 @@ async function loadImageData(url, maximumDimension) {
 
 function runCodec(algorithm, imageData, codecSettings) {
   return new Promise((resolve, reject) => {
-    const worker = new Worker(WORKER_URLS[algorithm]);
+    const worker = new Worker(WORKER_URL);
     const source = new Uint8ClampedArray(imageData.data);
 
     worker.addEventListener("message", (event) => {
@@ -173,7 +170,10 @@ function runCodec(algorithm, imageData, codecSettings) {
       pixels: source.buffer,
       width: imageData.width,
       height: imageData.height,
-      settings: codecSettings,
+      settings: {
+        ...codecSettings,
+        algorithm: algorithm === "gpu" ? "webgl" : "cpu",
+      },
     }, [source.buffer]);
   });
 }

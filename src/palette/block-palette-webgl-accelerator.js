@@ -1,17 +1,14 @@
 (function (root, factory) {
   "use strict";
 
-  const blockPaletteCodec = typeof module === "object" && module.exports
-    ? require("./block-palette-codec.js")
-    : root.BlockPaletteCodec;
-  const api = factory(blockPaletteCodec);
+  const api = factory();
 
   if (typeof module === "object" && module.exports) {
     module.exports = api;
   }
 
-  root.BlockPaletteWebGLCodec = api;
-})(typeof self !== "undefined" ? self : globalThis, function (blockPaletteCodec) {
+  root.BlockPaletteWebGLAccelerator = api;
+})(typeof self !== "undefined" ? self : globalThis, function () {
   "use strict";
 
   const VERTEX_SHADER = `#version 300 es
@@ -273,68 +270,6 @@
       outputIndex = vec4(float(bestLocalIndex) / 255.0, 0.0, 0.0, 1.0);
     }
   `;
-
-  function compressImageWebGL(sourcePixels, width, height, settings) {
-    const options = settings || {};
-    let accelerator = null;
-
-    try {
-      accelerator = createWebGLAccelerator(width, height);
-      const result = blockPaletteCodec.compressImage(sourcePixels, width, height, {
-        ...options,
-        accelerator,
-      });
-
-      const usesCpuErrorDiffusion = options.dithering === "floyd-steinberg";
-      const refinementPasses = options.refinementPasses === undefined
-        ? 4
-        : Number(options.refinementPasses);
-      const acceleratedStages = ["global-assignments"];
-
-      if (!usesCpuErrorDiffusion) {
-        acceleratedStages.push("block-encoding");
-      }
-
-      if (refinementPasses > 0) {
-        acceleratedStages.push("refinement-assignments");
-
-        if (!usesCpuErrorDiffusion) {
-          acceleratedStages.push("refinement-encoding");
-        }
-      }
-
-      result.algorithm = usesCpuErrorDiffusion ? "webgl-hybrid" : "webgl";
-      result.acceleratedStages = acceleratedStages;
-
-      return result;
-    } catch (error) {
-      if (options.webglFallback === false) {
-        throw error;
-      }
-
-      const cpuOptions = { ...options };
-
-      delete cpuOptions.accelerator;
-      delete cpuOptions.webglFallback;
-
-      const result = blockPaletteCodec.compressImage(
-        sourcePixels,
-        width,
-        height,
-        cpuOptions
-      );
-
-      result.algorithm = "cpu-fallback";
-      result.acceleratedStages = [];
-      result.fallbackReason = error && error.message ? error.message : String(error);
-
-      return result;
-    } finally {
-      if (accelerator) {
-        accelerator.dispose();
-      }
-    }
-  }
 
   function createWebGLAccelerator(width, height) {
     if (typeof OffscreenCanvas === "undefined") {
@@ -767,7 +702,6 @@
   }
 
   return {
-    compressImageWebGL,
     createWebGLAccelerator,
   };
 });

@@ -386,11 +386,7 @@
         const source = state.sourceImageData;
         const settings = readBpalSettings();
         const pixels = new Uint8ClampedArray(source.data);
-        const workerUrl = settings.algorithm === "webgl"
-          ? "./src/palette/block-palette-webgl-worker.js?v=direct-block-colors-1"
-          : "./src/palette/block-palette-worker.js?v=direct-block-colors-1";
-
-        return runWorker(workerUrl, {
+        return runWorker("bpal", {
           pixels: pixels.buffer,
           width: source.width,
           height: source.height,
@@ -487,7 +483,7 @@
         };
         const transfers = jpegBytes ? [pixels.buffer, jpegBytes.buffer] : [pixels.buffer];
 
-        return runWorker("./src/dct/dct-worker.js?v=dct-page-19", message, transfers, (data) => {
+        return runWorker("dct", message, transfers, (data) => {
           if (!data || data.requestId !== requestId) return null;
           if (data.type === "progress") {
             renderProgress(data, "dct");
@@ -555,7 +551,7 @@
         const source = state.sourceImageData;
         const pixels = new Uint8ClampedArray(source.data);
         const startedAt = performance.now();
-        return runWorker("./src/hybrid/bpdh-worker.js?v=hybrid-2", {
+        return runWorker("bpdh", {
           width: source.width,
           height: source.height,
           pixels: pixels.buffer,
@@ -758,9 +754,9 @@
     if (!state.busy) setStatus(message);
   }
 
-  function runWorker(url, message, transfers, onMessage) {
+  function runWorker(format, message, transfers, onMessage) {
     cancelWorker();
-    const worker = new Worker(url);
+    const worker = root.CodecEncoderRuntime.createWorker(format);
     state.worker = worker;
 
     return new Promise((resolve, reject) => {

@@ -8,6 +8,7 @@ const root = path.resolve(__dirname, "..");
 const page = read("codec-lab.html");
 const styles = read("codec-lab.css");
 const script = read("src/pages/codec-lab-page.js");
+const encoderRuntime = read("src/encoders/codec-encoder-runtime.js");
 const home = read("index.html");
 const serviceWorker = read("service-worker.js");
 
@@ -46,9 +47,10 @@ test("uses one comparison and coordinate inspector for every codec", () => {
 });
 
 test("keeps encoding in format-specific workers", () => {
-  assert.match(script, /src\/palette\/block-palette-worker\.js/);
-  assert.match(script, /src\/dct\/dct-worker\.js/);
-  assert.match(script, /src\/hybrid\/bpdh-worker\.js/);
+  assert.match(encoderRuntime, /src\/palette\/block-palette-worker\.js/);
+  assert.match(encoderRuntime, /src\/dct\/dct-worker\.js/);
+  assert.match(encoderRuntime, /src\/hybrid\/bpdh-worker\.js/);
+  assert.match(script, /root\.CodecEncoderRuntime\.createWorker\(format\)/);
   assert.match(script, /function runWorker\(/);
   assert.match(page, /id="progress-dialog"/);
   assert.match(page, /id="progress-cancel"/);

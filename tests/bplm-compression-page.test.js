@@ -20,6 +20,13 @@ test("offers BPLM export after compression", () => {
   assert.match(source, /\.bplm`/);
 });
 
+test("uses one BPAL worker for CPU and WebGL compression", () => {
+  assert.match(source, /CodecEncoderRuntime\.createWorker\("bpal"\)/);
+  assert.match(workerSource, /settings && settings\.algorithm === "webgl"/);
+  assert.match(workerSource, /BlockPaletteWebGLAccelerator\.createWebGLAccelerator/);
+  assert.match(workerSource, /BlockPaletteCodec\.compressImage/);
+});
+
 test("loads the BPLM dependencies before the compression page", () => {
   const decoderIndex = html.indexOf("src/decoders/bpal-texture.js");
   const formatIndex = html.indexOf("src/palette/bplm-format.js");

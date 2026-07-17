@@ -1,6 +1,6 @@
 "use strict";
 
-const CACHE_VERSION = "v35";
+const CACHE_VERSION = "v36";
 const SHELL_CACHE = `bpal-shell-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `bpal-runtime-${CACHE_VERSION}`;
 const SHARED_FILE_CACHE = "bpal-shared-files-v1";
@@ -43,6 +43,7 @@ const APP_SHELL = [
   "./src/decoders/gpu-jpeg.js",
   "./src/dct/dct-format.js",
   "./src/dct/dct-worker.js",
+  "./src/encoders/codec-encoder-runtime.js",
   "./src/i18n/en.js",
   "./src/i18n/i18n.js",
   "./src/i18n/ru.js",
@@ -65,8 +66,7 @@ const APP_SHELL = [
   "./src/palette/block-palette-format.js",
   "./src/palette/block-palette-optimizer.js",
   "./src/palette/block-palette-optimizer-worker.js",
-  "./src/palette/block-palette-webgl-codec.js",
-  "./src/palette/block-palette-webgl-worker.js",
+  "./src/palette/block-palette-webgl-accelerator.js",
   "./src/palette/block-palette-worker.js",
   "./src/palette/bplm-format.js",
   "./src/palette/palette-quantizer.js",

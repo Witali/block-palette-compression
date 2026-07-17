@@ -36,7 +36,7 @@ test("loads deterministic BPDH decoding before the page controller", () => {
 });
 
 test("runs the hybrid encoder outside the UI thread", () => {
-  assert.match(pageScript, /new Worker\("\.\/src\/hybrid\/bpdh-worker\.js/);
+  assert.match(pageScript, /CodecEncoderRuntime\.createWorker\("bpdh"\)/);
   assert.match(worker, /importScripts\(/);
   assert.match(worker, /block-palette-codec\.js/);
   assert.match(worker, /bpdh-codec\.js/);

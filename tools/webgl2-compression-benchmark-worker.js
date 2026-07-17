@@ -2,7 +2,7 @@
 
 importScripts("../src/palette/palette-quantizer.js?v=progress-1");
 importScripts("../src/palette/block-palette-codec.js?v=refinement-distance-cache-2");
-importScripts("../src/palette/block-palette-webgl-codec.js?v=normalized-index-textures-1");
+importScripts("../src/palette/block-palette-webgl-accelerator.js?v=shared-encoder-runtime-1");
 
 self.addEventListener("message", (event) => {
   const { pixels, width, height, settings } = event.data;
@@ -11,6 +11,7 @@ self.addEventListener("message", (event) => {
   const startedAt = performance.now();
   let currentStage = "startup";
   let stageStartedAt = startedAt;
+  let accelerator = null;
 
   function recordProgress(progress) {
     if (!progress || progress.stage === currentStage) {
@@ -25,12 +26,18 @@ self.addEventListener("message", (event) => {
   }
 
   try {
-    const result = self.BlockPaletteWebGLCodec.compressImageWebGL(
+    accelerator = self.BlockPaletteWebGLAccelerator.createWebGLAccelerator(width, height);
+    const result = self.BlockPaletteCodec.compressImage(
       source,
       width,
       height,
-      { ...settings, onProgress: recordProgress }
+      { ...settings, accelerator, onProgress: recordProgress }
     );
+    result.algorithm = "webgl";
+    result.acceleratedStages = ["global-assignments", "block-encoding"];
+    if (Number(settings.refinementPasses || 0) > 0) {
+      result.acceleratedStages.push("refinement-assignments", "refinement-encoding");
+    }
     const finishedAt = performance.now();
 
     stages[currentStage] = (stages[currentStage] || 0) + finishedAt - stageStartedAt;
@@ -50,6 +57,8 @@ self.addEventListener("message", (event) => {
     });
   } catch (error) {
     self.postMessage({ error: error && error.stack ? error.stack : String(error) });
+  } finally {
+    if (accelerator) accelerator.dispose();
   }
 });
 

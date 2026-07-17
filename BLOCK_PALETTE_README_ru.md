@@ -247,7 +247,7 @@ npm test
   управление страницей и предпросмотром;
 - [`src/palette/block-palette-codec.js`](./src/palette/block-palette-codec.js) —
   основной CPU-кодек;
-- [`src/palette/block-palette-webgl-codec.js`](./src/palette/block-palette-webgl-codec.js) —
+- [`src/palette/block-palette-webgl-accelerator.js`](./src/palette/block-palette-webgl-accelerator.js) —
   WebGL2-ускорение;
 - [`src/palette/block-palette-format.js`](./src/palette/block-palette-format.js) —
   запись и чтение BPAL;

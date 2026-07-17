@@ -241,7 +241,7 @@
     const width = state.sourceImageData.width;
     const height = state.sourceImageData.height;
     const pixels = new Uint8ClampedArray(state.sourceImageData.data);
-    const worker = new Worker("./src/hybrid/bpdh-worker.js?v=hybrid-2");
+    const worker = root.CodecEncoderRuntime.createWorker("bpdh");
 
     state.worker = worker;
     worker.addEventListener("message", (event) => handleWorkerMessage(worker, event));
