@@ -495,8 +495,7 @@
 }
 
 .dct-layout-zigzag-halo,
-.dct-layout-zigzag-line,
-.dct-layout-zigzag-direction {
+.dct-layout-zigzag-line {
   fill: none;
   stroke-linecap: round;
   stroke-linejoin: round;
@@ -513,27 +512,13 @@
   stroke-width: 2px;
 }
 
-.dct-layout-zigzag-direction {
-  stroke: transparent;
-  stroke-width: 2px;
-}
-
-.dct-layout-zigzag-arrow {
+.dct-layout-zigzag-rank {
   fill: #ffe071;
   stroke: #071018;
-  stroke-width: 0.35px;
-}
-
-.dct-layout-zigzag-point {
-  fill: #ffe071;
-  stroke: #071018;
-  stroke-width: 0.08px;
-}
-
-.dct-layout-zigzag-label {
-  fill: #071018;
-  font: 800 0.28px/1 ui-monospace, Consolas, monospace;
-  text-anchor: middle;
+  stroke-width: 0.045px;
+  paint-order: stroke fill;
+  font: 800 0.22px/1 ui-monospace, Consolas, monospace;
+  text-anchor: start;
   dominant-baseline: central;
 }
 

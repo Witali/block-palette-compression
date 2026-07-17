@@ -634,28 +634,28 @@ function renderDctLayoutCoefficientMatrix(presetKey, shape) {
       cell.className = "dct-layout-coefficient";
       cell.style.setProperty("--dct-frequency-alpha", String(Math.max(0.06, 0.34 * (1 - normalized))));
       cell.setAttribute("aria-hidden", "true");
-      cell.title = t("dct.layoutCellAc", { position, u, v });
+      cell.title = t("dct.layoutCellAc", { position, rank, u, v });
 
       if (position === 0) {
         cell.classList.add("is-dc");
         cell.textContent = "DC";
-        cell.title = t("dct.layoutCellDc");
+        cell.title = t("dct.layoutCellDc", { position, rank, u, v });
       } else if (implicit2 && (position === 1 || position === 8)) {
         cell.classList.add("is-implicit");
         cell.textContent = "I";
-        cell.title = t("dct.layoutCellImplicit", { position });
+        cell.title = t("dct.layoutCellImplicit", { position, rank, u, v });
       } else if (masked && rank === 63) {
         cell.classList.add("is-tail");
         cell.textContent = "T";
-        cell.title = t("dct.layoutCellTail", { position });
+        cell.title = t("dct.layoutCellTail", { position, rank, u, v });
       } else if (masked && rank >= tailStart) {
         cell.classList.add("is-mask-tail");
         cell.textContent = "M/T";
-        cell.title = t("dct.layoutCellMaskTail", { position });
+        cell.title = t("dct.layoutCellMaskTail", { position, rank, u, v });
       } else if (masked && position <= 62) {
         cell.classList.add("is-mask");
         cell.textContent = "M";
-        cell.title = t("dct.layoutCellMask", { position });
+        cell.title = t("dct.layoutCellMask", { position, rank, u, v });
       }
       cells.push(cell);
     }
@@ -692,37 +692,16 @@ function renderDctLayoutZigzag(shape, visible) {
 
   const positions = getDctLayoutZigzagPositions(shape.width, shape.height);
   const points = positions.map(({ u, v }) => `${u + 0.5},${v + 0.5}`).join(" ");
-  const directionLines = [];
-  const maximumDiagonal = shape.width + shape.height - 2;
+  const rankLabels = positions.map(({ u, v }, rank) => (
+    `<text class="dct-layout-zigzag-rank" x="${u + 0.07}" y="${v + 0.17}">${rank}</text>`
+  )).join("");
 
-  for (let diagonal = 1; diagonal <= maximumDiagonal; diagonal += 1) {
-    const diagonalPoints = positions
-      .filter(({ u, v }) => u + v === diagonal)
-      .map(({ u, v }) => `${u + 0.5},${v + 0.5}`)
-      .join(" ");
-    if (diagonalPoints.includes(" ")) {
-      directionLines.push(
-        `<polyline class="dct-layout-zigzag-direction" points="${diagonalPoints}" marker-end="url(#dct-layout-zigzag-arrowhead)" />`
-      );
-    }
-  }
-
-  const last = positions[positions.length - 1];
   layoutZigzag.setAttribute("viewBox", `0 0 ${shape.width} ${shape.height}`);
   layoutZigzag.setAttribute("preserveAspectRatio", "none");
   layoutZigzag.innerHTML = `
-    <defs>
-      <marker id="dct-layout-zigzag-arrowhead" class="dct-layout-zigzag-marker" viewBox="0 0 0.42 0.42" refX="0.38" refY="0.21" markerWidth="0.42" markerHeight="0.42" markerUnits="userSpaceOnUse" orient="auto">
-        <path class="dct-layout-zigzag-arrow" d="M0,0 L0.42,0.21 L0,0.42 Z"></path>
-      </marker>
-    </defs>
     <polyline class="dct-layout-zigzag-halo" points="${points}"></polyline>
     <polyline class="dct-layout-zigzag-line" points="${points}"></polyline>
-    ${directionLines.join("")}
-    <circle class="dct-layout-zigzag-point" cx="0.5" cy="0.5" r="0.27"></circle>
-    <text class="dct-layout-zigzag-label" x="0.5" y="0.5">0</text>
-    <circle class="dct-layout-zigzag-point" cx="${last.u + 0.5}" cy="${last.v + 0.5}" r="0.27"></circle>
-    <text class="dct-layout-zigzag-label" x="${last.u + 0.5}" y="${last.v + 0.5}">${positions.length - 1}</text>`;
+    ${rankLabels}`;
 }
 
 function getDctLayoutZigzagPositions(width, height) {
