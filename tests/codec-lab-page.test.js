@@ -36,6 +36,8 @@ test("uses one comparison and coordinate inspector for every codec", () => {
   assert.match(page, /class="pixel-inspector pixel-inspector-grid"/);
   assert.match(script, /const sampled = normalizeColor\(adapter\.sample\(result, px, py\)\)/);
   assert.match(script, /a: color\.a \?\? 255/);
+  assert.match(script, /cell\.textContent = formatCoefficient\(value\)/);
+  assert.match(script, /function formatCoefficient\(value\)[\s\S]*?toPrecision\(4\)/);
 });
 
 test("keeps encoding in format-specific workers", () => {
@@ -76,6 +78,7 @@ test("styles the unified settings, comparison, structure, and inspector", () => 
   assert.match(styles, /\.lab-structure-flow/);
   assert.match(styles, /\.lab-block-details-body/);
   assert.match(styles, /\.lab-coefficient-matrix/);
+  assert.match(styles, /\.lab-coefficient-grid span \{[\s\S]*?font: 750 10px\/1 ui-monospace/);
   assert.match(styles, /\.lab-matrix-list \{[\s\S]*?grid-template-columns: repeat\(4, minmax\(0, 1fr\)\);/);
   assert.match(styles, /@media \(max-width: 1200px\)[\s\S]*?grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/);
 });

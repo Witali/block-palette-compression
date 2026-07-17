@@ -987,8 +987,8 @@
       for (let index = 0; index < (matrix.coefficients || []).length; index += 1) {
         const value = matrix.coefficients[index];
         const cell = document.createElement("span");
-        cell.textContent = String(value);
-        cell.title = `u=${index % matrix.width}, v=${Math.floor(index / matrix.width)}`;
+        cell.textContent = formatCoefficient(value);
+        cell.title = `u=${index % matrix.width}, v=${Math.floor(index / matrix.width)} · ${value}`;
         cell.classList.toggle("is-zero", value === 0);
         cell.classList.toggle("is-dc", index === 0);
         grid.append(cell);
@@ -1222,6 +1222,13 @@
 
   function formatInteger(value) {
     return formatNumber(value, 0);
+  }
+
+  function formatCoefficient(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return String(value);
+    if (numeric === 0) return "0";
+    return Number(numeric.toPrecision(4)).toString();
   }
 
   function optionText(select) {
