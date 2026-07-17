@@ -436,6 +436,9 @@ test("encodes DCT files deterministically and exposes bounded MCU metadata", () 
   assert.deepEqual(Object.keys(mcu.components), ["y", "cb", "cr"]);
   assert.ok(mcu.components.y.coefficientCount > mcu.components.cb.coefficientCount);
   assert.ok(mcu.components.y.scale >= 1 && mcu.components.y.scale <= 128);
+  assert.equal(mcu.components.y.coefficients.length, 256);
+  assert.equal(mcu.components.cb.coefficients.length, 64);
+  assert.equal(mcu.components.cr.coefficients.length, 64);
 });
 
 test("uses adaptive skip coding by default while preserving grouped and legacy files", () => {

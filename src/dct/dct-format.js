@@ -3116,6 +3116,7 @@
         explicitAcCount: component.explicitAcCount,
         tailAcCount: component.tailAcCount,
         tailStart: component.tailStart,
+        coefficients: Array.from(component.coefficients),
       };
     }
 

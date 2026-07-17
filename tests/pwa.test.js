@@ -16,6 +16,7 @@ const htmlPages = [
   "block-palette.html",
   "dct-compression.html",
   "bpdh.html",
+  "codec-lab.html",
   "bpal-viewer.html",
   "cube.html",
   "cube-bpal-sampler.html",

@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#101318">
+    <title data-i18n="lab.title">Codec laboratory</title>
+    <link rel="manifest" href="./app.webmanifest">
+    <link rel="icon" href="./assets/icons/app-icon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="./assets/icons/app-icon-192.png">
+    <link rel="stylesheet" href="./block-palette.css?v=codec-lab-2">
+    <link rel="stylesheet" href="./bpdh.css?v=codec-lab-2">
+    <link rel="stylesheet" href="./dct-compression.css?v=codec-lab-2">
+    <link rel="stylesheet" href="./codec-lab.css?v=codec-lab-2">
+    <link rel="stylesheet" href="./i18n.css">
+  </head>
+  <body>
+    <main class="codec-lab">
+      <header class="page-header lab-header">
+        <div class="lab-heading">
+          <div>
+            <a class="back-link" href="./index.html" data-i18n="common.home">← Back to home</a>
+            <h1 data-i18n="lab.title">Codec laboratory</h1>
+            <p id="format-description" data-i18n="lab.description">One workspace for encoding, visual comparison, random-access decoding, and block inspection.</p>
+          </div>
+          <label class="format-picker">
+            <span data-i18n="lab.format">Format</span>
+            <select id="codec-format" name="codecFormat">
+              <option value="bpal">BPAL · block palette</option>
+              <option value="dct">DCTBS2 · 4:2:0 DCT</option>
+              <option value="bpdh">BPDH · hybrid BPAL/DCT</option>
+            </select>
+          </label>
+        </div>
+
+        <form id="lab-controls" class="lab-controls">
+          <div class="lab-source-controls">
+            <label>
+              <span data-i18n="common.image">Image</span>
+              <select id="image-url" name="image">
+                <option value="./assets/stone-texture-small.jpg">stone-texture-small.jpg</option>
+                <option value="./assets/stone-texture-wic.jpg">stone-texture-wic.jpg</option>
+                <option value="./assets/benchmark-jpegs/landscape-alaska.jpg">landscape-alaska.jpg</option>
+                <option value="./assets/benchmark-jpegs/clipart-apple.jpg">clipart-apple.jpg</option>
+              </select>
+            </label>
+            <button id="upload-button" type="button" data-i18n="common.uploadImage">Upload image</button>
+            <input id="image-file" type="file" accept="image/*" hidden>
+          </div>
+
+          <fieldset class="format-settings" data-format-panel="bpal">
+            <legend data-i18n="lab.bpalSettings">BPAL settings</legend>
+            <label>
+              <span data-i18n="block.qualityPreset">Quality preset</span>
+              <select id="bpal-quality-preset">
+                <option value="" data-i18n="block.presetNone">Not selected</option>
+                <option value="1.5">1.5 bpp</option><option value="2">2 bpp</option>
+                <option value="2.5">2.5 bpp</option><option value="3">3 bpp</option>
+                <option value="4" selected>4 bpp</option><option value="5">5 bpp</option>
+                <option value="6">6 bpp</option><option value="8">8 bpp</option>
+              </select>
+            </label>
+            <label><span data-i18n="block.blockSize">Block size</span><select id="bpal-block-size"><option value="4">4 × 4</option><option value="8" selected>8 × 8</option><option value="16">16 × 16</option><option value="32">32 × 32</option><option value="64">64 × 64</option></select></label>
+            <label><span data-i18n="block.localColors">Colors per block</span><select id="bpal-local-colors"><option value="2">2</option><option value="4">4</option><option value="8" selected>8</option><option value="16">16</option></select></label>
+            <label><span data-i18n="block.globalPalette">Shared palette</span><select id="bpal-global-colors"><option value="8">8</option><option value="16">16</option><option value="32">32</option><option value="64">64</option><option value="128" selected>128</option><option value="256">256</option><option value="1024">1024</option><option value="4096">4096</option></select></label>
+            <label><span data-i18n="block.paletteCount">Number of palettes</span><select id="bpal-palette-count"><option value="1">1</option><option value="2">2</option><option value="4">4</option><option value="8">8</option><option value="16" selected>16</option><option value="32">32</option><option value="64">64</option><option value="128">128</option></select></label>
+            <label><span data-i18n="block.paletteFormat">Palette color format</span><select id="bpal-palette-bits"><option value="24" selected>RGB888</option><option value="16">RGB565</option></select></label>
+            <label><span data-i18n="common.colorSpace">Color space</span><select id="bpal-color-space"><option value="oklab" selected>OKLab</option><option value="rgb">RGB</option></select></label>
+            <label><span data-i18n="block.clusteringMethod">Clustering method</span><select id="bpal-clustering"><option value="k-medoids" selected>K-medoids</option><option value="k-means">K-means</option><option value="k-means-uniform">K-means uniform</option><option value="k-medians">K-medians</option></select></label>
+            <label><span data-i18n="block.algorithm">Algorithm</span><select id="bpal-algorithm"><option value="cpu" selected>CPU</option><option value="webgl">WebGL2</option></select></label>
+            <label class="range-label"><span><span data-i18n="common.diversity">Diversity</span><output id="bpal-diversity-value">0.5</output></span><input id="bpal-diversity" type="range" min="0" max="1" step="0.1" value="0.5"></label>
+            <label><span data-i18n="common.dithering">Dithering</span><select id="bpal-dithering"><option value="none" selected data-i18n="common.noDithering">No dithering</option><option value="pattern-2x2">Bayer 2×2</option><option value="pattern">Bayer 4×4</option><option value="floyd-steinberg">Floyd–Steinberg</option></select></label>
+            <label><span data-i18n="block.refinementPasses">Refinement passes</span><select id="bpal-refinement"><option value="0">0</option><option value="1" selected>1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select></label>
+          </fieldset>
+
+          <fieldset class="format-settings" data-format-panel="dct" hidden>
+            <legend data-i18n="lab.dctSettings">DCTBS2 settings</legend>
+            <label><span data-i18n="dct.rate">Target rate</span><select id="dct-preset"><option value="9">9 bpp · 288 B/MCU</option><option value="7.5">7.5 bpp · 240 B/MCU</option><option value="6">6 bpp · 192 B/MCU</option><option value="4.5">4.5 bpp · 144 B/MCU</option><option value="3">3 bpp · 96 B/MCU</option><option value="2">2 bpp · 64 B/MCU</option><option value="1.5" selected>1.5 bpp · 48 B/MCU</option><option value="1">1 bpp · 32 B/MCU</option><option value="0.75">0.75 bpp · 24 B/MCU</option></select></label>
+            <label class="range-label"><span><span data-i18n="dct.quality">Quantization quality</span><output id="dct-quality-value">72</output></span><input id="dct-quality" type="range" min="1" max="100" value="72"></label>
+            <label class="check-option"><input id="dct-auto-quality" type="checkbox"><span data-i18n="dct.autoQuality">Find quantization automatically</span></label>
+            <label class="check-option"><input id="dct-jpeg-import" type="checkbox" checked><span data-i18n="dct.jpegImport">Fast JPEG DCT import</span></label>
+            <label><span data-i18n="dct.prototypeLibrary">DCT prototype library</span><select id="dct-library"><option value="none" selected data-i18n="dct.prototypeLibraryNone">None</option><option value="header3">Header · 3</option><option value="sidecar16">Sidecar · 16</option><option value="sidecar32">Sidecar · 32</option><option value="sidecar32-spectral">Spectral · 32</option></select></label>
+          </fieldset>
+
+          <fieldset class="format-settings" data-format-panel="bpdh" hidden>
+            <legend data-i18n="lab.bpdhSettings">BPDH hybrid settings</legend>
+            <label><span data-i18n="hybrid.targetBpp">Target payload</span><span class="number-with-unit"><input id="bpdh-target-bpp" type="number" min="0.5" max="24" step="0.25" value="4"><small>bpp</small></span></label>
+            <label><span data-i18n="hybrid.mode">Allowed modes</span><select id="bpdh-mode"><option value="auto" selected data-i18n="hybrid.modeAuto">Automatic BPAL + DCT</option><option value="bpal" data-i18n="hybrid.modeBpal">BPAL only</option><option value="dct" data-i18n="hybrid.modeDct">DCT only</option></select></label>
+            <label><span data-i18n="hybrid.dctSearch">DCT quality search</span><select id="bpdh-dct-search"><option value="balanced" selected>Balanced · 8</option><option value="fast">Fast · 4</option><option value="70">Quality 70</option><option value="85">Quality 85</option><option value="95">Quality 95</option></select></label>
+            <label><span data-i18n="block.localColors">Colors per BPAL block</span><select id="bpdh-local-colors"><option value="2">2</option><option value="4">4</option><option value="8" selected>8</option><option value="16">16</option></select></label>
+            <label><span data-i18n="block.globalPalette">Colors per shared palette</span><select id="bpdh-global-colors"><option value="8">8</option><option value="16">16</option><option value="32" selected>32</option><option value="64">64</option><option value="128">128</option><option value="256">256</option></select></label>
+            <label><span data-i18n="block.paletteCount">Number of palettes</span><select id="bpdh-palette-count"><option value="1">1</option><option value="2">2</option><option value="4">4</option><option value="8">8</option><option value="16">16</option><option value="32">32</option><option value="64" selected>64</option><option value="128">128</option></select></label>
+            <label><span data-i18n="block.paletteFormat">Palette color format</span><select id="bpdh-palette-bits"><option value="24" selected>RGB888</option><option value="16">RGB565</option></select></label>
+            <label><span data-i18n="common.colorSpace">Color space</span><select id="bpdh-color-space"><option value="rgb" selected>RGB</option><option value="oklab">OKLab</option></select></label>
+            <label><span data-i18n="block.clusteringMethod">Clustering method</span><select id="bpdh-clustering"><option value="k-means" selected>K-means</option><option value="k-means-uniform">K-means uniform</option><option value="k-medoids">K-medoids</option><option value="k-medians">K-medians</option></select></label>
+            <label><span data-i18n="block.refinementPasses">Refinement passes</span><select id="bpdh-refinement"><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4" selected>4</option></select></label>
+          </fieldset>
+
+          <div class="lab-actions">
+            <button id="process-button" type="submit" data-i18n="lab.encode">Encode selected format</button>
+            <button id="download-file" type="button" disabled data-i18n="lab.downloadEncoded">Download encoded file</button>
+            <button id="download-png" type="button" disabled data-i18n="common.downloadPng">Download PNG</button>
+          </div>
+        </form>
+      </header>
+
+      <section id="status" class="status" role="status" aria-live="polite" data-i18n="common.preparing">Preparing…</section>
+
+      <section class="metrics lab-metrics" aria-label="Compression metrics" data-i18n-aria-label="lab.metrics">
+        <div><span data-i18n="hybrid.dimensions">Dimensions</span><strong id="metric-dimensions">—</strong></div>
+        <div><span data-i18n="common.size">Size</span><strong id="metric-size">—</strong></div>
+        <div><span data-i18n="block.bitsPerPixel">Bits per pixel</span><strong id="metric-bpp">—</strong></div>
+        <div><span data-i18n="block.rgbRatio">Compression vs RGB</span><strong id="metric-ratio">—</strong></div>
+        <div><span data-i18n="common.rmse">RMSE per channel</span><strong id="metric-rmse">—</strong></div>
+        <div><span data-i18n="common.psnr">PSNR RGB</span><strong id="metric-psnr">—</strong></div>
+        <div><span data-i18n="common.processingTime">Processing time</span><strong id="metric-time">—</strong></div>
+      </section>
+
+      <section class="comparison lab-comparison" aria-label="Image comparison" data-i18n-aria-label="common.imageComparison">
+        <figure>
+          <figcaption data-i18n="common.sourceImage">Source image</figcaption>
+          <div id="source-viewport" class="canvas-viewport lab-viewport">
+            <span id="source-stage" class="canvas-stage"><canvas id="source-canvas"></canvas></span>
+          </div>
+        </figure>
+        <figure>
+          <figcaption class="result-caption">
+            <span id="result-caption" data-i18n="lab.restoredPreview">Decoded result</span>
+            <span class="result-caption-controls">
+              <span class="zoom-controls" aria-label="Zoom" data-i18n-aria-label="viewer.zoom">
+                <button id="zoom-out" type="button" disabled>−</button>
+                <output id="zoom-level" aria-label="Current zoom">100%</output>
+                <button id="zoom-in" type="button" disabled>+</button>
+                <button id="actual-size" class="text-button" type="button" aria-pressed="false" disabled>1:1</button>
+                <button id="fit-image" class="text-button" type="button" aria-pressed="true" disabled data-i18n="viewer.fit">Fit</button>
+              </span>
+              <label><input id="smooth-scaling" type="checkbox" checked><span data-i18n="block.smoothing">Smoothing</span></label>
+              <label><input id="show-overlay" type="checkbox" checked><span data-i18n="lab.showOverlay">Block overlay</span></label>
+            </span>
+          </figcaption>
+          <div id="result-viewport" class="canvas-viewport lab-viewport">
+            <span id="result-stage" class="canvas-stage result-stage">
+              <canvas id="result-canvas"></canvas>
+              <canvas id="overlay-canvas" class="lab-overlay-canvas" aria-hidden="true"></canvas>
+            </span>
+          </div>
+        </figure>
+      </section>
+
+      <section class="storage-section lab-structure" aria-labelledby="structure-title">
+        <div class="section-heading">
+          <div>
+            <h2 id="structure-title" data-i18n="lab.structureTitle">Stored data structure</h2>
+            <p id="structure-description" data-i18n="lab.structureDescription">The structure follows the selected format and the current encoded result.</p>
+          </div>
+          <output id="structure-summary">—</output>
+        </div>
+        <div id="structure-flow" class="lab-structure-flow"></div>
+      </section>
+
+      <section class="palette-section inspector-section lab-inspector" aria-labelledby="inspector-title">
+        <div class="section-heading">
+          <div>
+            <h2 id="inspector-title" data-i18n="lab.inspectorTitle">Coordinate and block inspector</h2>
+            <p data-i18n="lab.inspectorDescription">Click the decoded image to trace one pixel through the selected format and inspect its stored block.</p>
+          </div>
+          <output id="selected-unit">—</output>
+        </div>
+        <div class="pixel-inspector-grid">
+          <div><span data-i18n="hybrid.coordinate">Coordinate</span><strong id="pixel-coordinate">—</strong></div>
+          <div><span data-i18n="lab.sourceColor">Source color</span><strong id="pixel-source-color">—</strong></div>
+          <div><span data-i18n="hybrid.fullDecodeColor">Full decode</span><strong id="pixel-full-color">—</strong></div>
+          <div><span data-i18n="hybrid.coordinateColor">Coordinate decode</span><strong id="pixel-sampled-color">—</strong></div>
+          <div class="pixel-match"><span data-i18n="hybrid.determinism">Determinism</span><strong id="pixel-match">—</strong></div>
+          <span id="pixel-swatch" class="pixel-swatch" aria-hidden="true"></span>
+        </div>
+        <details id="block-details" class="block-details" open>
+          <summary><span data-i18n="hybrid.blockDetailsTitle">Selected block contents</span><strong id="block-details-summary">—</strong></summary>
+          <div id="block-details-body" class="lab-block-details-body"></div>
+        </details>
+      </section>
+    </main>
+
+    <dialog id="progress-dialog" class="progress-dialog" aria-labelledby="progress-title">
+      <div class="progress-heading"><div><span id="progress-eyebrow" class="progress-eyebrow">CODEC LAB</span><h2 id="progress-title" data-i18n="lab.progressTitle">Encoding progress</h2></div><output id="progress-percent">0%</output></div>
+      <p id="progress-stage" class="progress-stage" data-i18n="block.progressStagePreparing">Preparing source data</p>
+      <progress id="progress-bar" max="100" value="0">0%</progress>
+      <p id="progress-detail" class="progress-detail" data-i18n="block.progressWaiting">Waiting for the encoder…</p>
+      <button id="progress-cancel" type="button" data-i18n="common.cancel">Cancel</button>
+    </dialog>
+
+    <script src="./src/palette/block-palette-format.js?v=direct-block-colors-1"></script>
+    <script src="./src/dct/dct-format.js?v=codec-lab-2"></script>
+    <script src="./src/hybrid/dct420.js?v=hybrid-1"></script>
+    <script src="./src/hybrid/bpdh-format.js?v=hybrid-1"></script>
+    <script src="./src/i18n/en.js?v=codec-lab-2"></script>
+    <script src="./src/i18n/ru.js?v=codec-lab-2"></script>
+    <script src="./src/i18n/i18n.js"></script>
+    <script src="./src/pages/codec-comparison-view.js?v=codec-lab-2"></script>
+    <script src="./src/pages/codec-lab-page.js?v=codec-lab-2"></script>
+    <script src="./src/pwa/register-service-worker.js?v=1"></script>
+  </body>
+</html>

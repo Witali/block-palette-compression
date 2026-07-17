@@ -12,6 +12,7 @@ async function runTests() {
   require("./dct-format.test.js");
   require("./dct-page.test.js");
   require("./codec-comparison-view.test.js");
+  require("./codec-lab-page.test.js");
   require("./dct-shader.test.js");
   require("./dct-cube-texture.test.js");
   require("./dct-cuda-cli.test.js");
