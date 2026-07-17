@@ -435,5 +435,11 @@ function loadGltf(url) {
 }
 
 function nextFrame() {
-  return new Promise((resolve) => requestAnimationFrame(resolve));
+  return new Promise((resolve) => {
+    if (document.hidden) {
+      setTimeout(resolve, 0);
+    } else {
+      requestAnimationFrame(resolve);
+    }
+  });
 }
