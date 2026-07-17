@@ -81,6 +81,7 @@
     "lab.inspectorTitle": "Coordinate and block inspector",
     "lab.inspectorDescription": "Click the decoded image to trace one pixel through the selected format and inspect its stored block.",
     "lab.sourceColor": "Source color",
+    "lab.showDifference": "Difference ×4",
     "lab.progressTitle": "Encoding progress",
     "lab.encodeToInspect": "Encode an image to inspect the stored structure.",
     "lab.selectPixel": "Select a pixel in the decoded image to inspect its block.",

@@ -44,6 +44,7 @@
     resultStage: elements.resultStage,
     sourceCanvas: elements.sourceCanvas,
     resultCanvas: elements.resultCanvas,
+    differenceCanvas: elements.differenceCanvas,
     overlayCanvas: elements.overlayCanvas,
     zoomOut: elements.zoomOut,
     zoomIn: elements.zoomIn,
@@ -51,6 +52,7 @@
     actualSize: elements.actualSize,
     fitImage: elements.fitImage,
     smoothScaling: elements.smoothScaling,
+    differenceToggle: elements.showDifference,
   }, {
     onSelect: (x, y) => renderInspector(x, y),
   });
@@ -86,6 +88,7 @@
       resultStage: byId("result-stage"),
       sourceCanvas: byId("source-canvas"),
       resultCanvas: byId("result-canvas"),
+      differenceCanvas: byId("difference-canvas"),
       overlayCanvas: byId("overlay-canvas"),
       zoomOut: byId("zoom-out"),
       zoomIn: byId("zoom-in"),
@@ -93,6 +96,7 @@
       actualSize: byId("actual-size"),
       fitImage: byId("fit-image"),
       smoothScaling: byId("smooth-scaling"),
+      showDifference: byId("show-difference"),
       showOverlay: byId("show-overlay"),
       resultCaption: byId("result-caption"),
       structureTitle: byId("structure-title"),

@@ -24,8 +24,12 @@ test("combines BPAL, DCTBS2, and BPDH behind one format selector", () => {
 test("uses one comparison and coordinate inspector for every codec", () => {
   assert.equal((page.match(/id="source-canvas"/g) || []).length, 1);
   assert.equal((page.match(/id="result-canvas"/g) || []).length, 1);
+  assert.equal((page.match(/id="difference-canvas"/g) || []).length, 1);
+  assert.match(page, /id="show-difference" type="checkbox" disabled/);
   assert.match(page, /src\/pages\/codec-comparison-view\.js/);
   assert.match(script, /new root\.CodecComparisonView/);
+  assert.match(script, /differenceCanvas: elements\.differenceCanvas/);
+  assert.match(script, /differenceToggle: elements\.showDifference/);
   assert.match(script, /onSelect: \(x, y\) => renderInspector\(x, y\)/);
   assert.match(script, /const adapter = currentAdapter\(\)/);
   assert.match(script, /adapter\.sample\(result, px, py\)/);
@@ -76,6 +80,8 @@ test("styles the unified settings, comparison, structure, and inspector", () => 
   assert.match(styles, /\.format-settings > label\.check-option > span \{[\s\S]*?letter-spacing: normal;[\s\S]*?text-transform: none;/);
   assert.match(styles, /\.format-settings select,[\s\S]*?\.format-settings input \{[\s\S]*?width: 100%;[\s\S]*?min-width: 0;/);
   assert.match(styles, /\.lab-comparison/);
+  assert.match(styles, /\.lab-difference-canvas \{[\s\S]*?z-index: 1;/);
+  assert.match(styles, /\.lab-difference-canvas\[hidden\] \{[\s\S]*?display: none;/);
   assert.match(styles, /\.lab-structure-flow/);
   assert.match(styles, /\.lab-block-details-body/);
   assert.match(styles, /\.lab-block-details-body \{[\s\S]*?padding: 18px;/);

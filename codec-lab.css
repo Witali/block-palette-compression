@@ -177,6 +177,14 @@
   height: 100%;
 }
 
+.lab-difference-canvas {
+  z-index: 1;
+}
+
+.lab-difference-canvas[hidden] {
+  display: none;
+}
+
 .lab-overlay-canvas {
   z-index: 2;
   pointer-events: none;

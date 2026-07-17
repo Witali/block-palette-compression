@@ -7,6 +7,7 @@
   const VIEWPORT_PADDING = 28;
   const DRAG_THRESHOLD = 5;
   const DRAG_DELAY_MS = 140;
+  const DIFFERENCE_SCALE = 4;
 
   class CodecComparisonView {
     constructor(elements, options = {}) {
@@ -23,6 +24,9 @@
       this.pinch = null;
       this.selectedX = 0;
       this.selectedY = 0;
+      this.sourceImageData = null;
+      this.resultImageData = null;
+      this.differenceDirty = false;
       this.overlayRenderer = null;
       this.listeners = [];
 
@@ -32,13 +36,14 @@
     }
 
     bindEvents() {
-      const { sourceViewport, resultViewport, zoomOut, zoomIn, actualSize, fitImage, smoothScaling } = this.elements;
+      const { sourceViewport, resultViewport, zoomOut, zoomIn, actualSize, fitImage, smoothScaling, differenceToggle } = this.elements;
 
       this.listen(zoomOut, "click", () => this.setZoom(this.zoom / ZOOM_FACTOR));
       this.listen(zoomIn, "click", () => this.setZoom(this.zoom * ZOOM_FACTOR));
       this.listen(actualSize, "click", () => this.showActualSize());
       this.listen(fitImage, "click", () => this.fit());
       this.listen(smoothScaling, "change", () => this.updateImageRendering());
+      if (differenceToggle) this.listen(differenceToggle, "change", () => this.updateDifferenceVisibility());
       this.listen(sourceViewport, "scroll", () => this.synchronizeScroll(sourceViewport, resultViewport), { passive: true });
       this.listen(resultViewport, "scroll", () => this.synchronizeScroll(resultViewport, sourceViewport), { passive: true });
 
@@ -60,10 +65,12 @@
     }
 
     setSource(imageData) {
+      this.sourceImageData = imageData;
       this.imageWidth = imageData.width;
       this.imageHeight = imageData.height;
       this.drawImageData(this.elements.sourceCanvas, imageData);
       this.resizeCanvas(this.elements.resultCanvas, imageData.width, imageData.height);
+      if (this.elements.differenceCanvas) this.resizeCanvas(this.elements.differenceCanvas, imageData.width, imageData.height);
       this.resizeCanvas(this.elements.overlayCanvas, imageData.width, imageData.height);
       this.hasResult = false;
       this.selectedX = 0;
@@ -79,15 +86,40 @@
       }
 
       this.drawImageData(this.elements.resultCanvas, imageData);
+      this.resultImageData = imageData;
+      this.differenceDirty = true;
       this.hasResult = true;
+      if (this.elements.differenceToggle) this.elements.differenceToggle.disabled = false;
+      this.updateDifferenceVisibility();
       this.drawOverlay();
     }
 
     clearResult() {
       const context = this.elements.resultCanvas.getContext("2d");
       context.clearRect(0, 0, this.elements.resultCanvas.width, this.elements.resultCanvas.height);
+      if (this.elements.differenceCanvas) {
+        const differenceContext = this.elements.differenceCanvas.getContext("2d");
+        differenceContext.clearRect(0, 0, this.elements.differenceCanvas.width, this.elements.differenceCanvas.height);
+        this.elements.differenceCanvas.hidden = true;
+      }
+      this.resultImageData = null;
+      this.differenceDirty = false;
       this.hasResult = false;
+      if (this.elements.differenceToggle) this.elements.differenceToggle.disabled = true;
       this.drawOverlay();
+    }
+
+    updateDifferenceVisibility() {
+      if (!this.elements.differenceCanvas) return;
+      const showDifference = this.hasResult && Boolean(this.elements.differenceToggle?.checked);
+      if (showDifference && this.differenceDirty && this.sourceImageData && this.resultImageData) {
+        this.drawImageData(
+          this.elements.differenceCanvas,
+          createDifferenceImageData(this.sourceImageData, this.resultImageData)
+        );
+        this.differenceDirty = false;
+      }
+      this.elements.differenceCanvas.hidden = !showDifference;
     }
 
     setOverlayRenderer(renderer) {
@@ -209,6 +241,7 @@
       this.elements.fitImage.disabled = !enabled;
       this.elements.zoomOut.disabled = !enabled;
       this.elements.zoomIn.disabled = !enabled;
+      if (this.elements.differenceToggle) this.elements.differenceToggle.disabled = !this.hasResult;
     }
 
     synchronizeScroll(source, target) {
@@ -471,6 +504,17 @@
     } catch (_error) {
       // Synthetic events and older browsers may not provide pointer capture.
     }
+  }
+
+  function createDifferenceImageData(source, result) {
+    const difference = new Uint8ClampedArray(source.data.length);
+    for (let offset = 0; offset < difference.length; offset += 4) {
+      difference[offset] = Math.min(255, Math.abs(source.data[offset] - result.data[offset]) * DIFFERENCE_SCALE);
+      difference[offset + 1] = Math.min(255, Math.abs(source.data[offset + 1] - result.data[offset + 1]) * DIFFERENCE_SCALE);
+      difference[offset + 2] = Math.min(255, Math.abs(source.data[offset + 2] - result.data[offset + 2]) * DIFFERENCE_SCALE);
+      difference[offset + 3] = 255;
+    }
+    return new ImageData(difference, source.width, source.height);
   }
 
   function releasePointer(viewport, event) {

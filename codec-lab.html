@@ -11,7 +11,7 @@
     <link rel="stylesheet" href="./block-palette.css?v=codec-lab-2">
     <link rel="stylesheet" href="./bpdh.css?v=codec-lab-2">
     <link rel="stylesheet" href="./dct-compression.css?v=codec-lab-2">
-    <link rel="stylesheet" href="./codec-lab.css?v=codec-lab-10">
+    <link rel="stylesheet" href="./codec-lab.css?v=codec-lab-11">
     <link rel="stylesheet" href="./i18n.css">
   </head>
   <body>
@@ -135,12 +135,14 @@
                 <button id="fit-image" class="text-button" type="button" aria-pressed="true" disabled data-i18n="viewer.fit">Fit</button>
               </span>
               <label><input id="smooth-scaling" type="checkbox" checked><span data-i18n="block.smoothing">Smoothing</span></label>
+              <label><input id="show-difference" type="checkbox" disabled><span data-i18n="lab.showDifference">Difference ×4</span></label>
               <label><input id="show-overlay" type="checkbox" checked><span data-i18n="lab.showOverlay">Block overlay</span></label>
             </span>
           </figcaption>
           <div id="result-viewport" class="canvas-viewport lab-viewport">
             <span id="result-stage" class="canvas-stage result-stage">
               <canvas id="result-canvas"></canvas>
+              <canvas id="difference-canvas" class="lab-difference-canvas" aria-hidden="true" hidden></canvas>
               <canvas id="overlay-canvas" class="lab-overlay-canvas" aria-hidden="true"></canvas>
             </span>
           </div>
@@ -193,11 +195,11 @@
     <script src="./src/dct/dct-format.js?v=codec-lab-2"></script>
     <script src="./src/hybrid/dct420.js?v=hybrid-1"></script>
     <script src="./src/hybrid/bpdh-format.js?v=hybrid-1"></script>
-    <script src="./src/i18n/en.js?v=codec-lab-3"></script>
-    <script src="./src/i18n/ru.js?v=codec-lab-3"></script>
+    <script src="./src/i18n/en.js?v=codec-lab-4"></script>
+    <script src="./src/i18n/ru.js?v=codec-lab-4"></script>
     <script src="./src/i18n/i18n.js"></script>
-    <script src="./src/pages/codec-comparison-view.js?v=codec-lab-2"></script>
-    <script src="./src/pages/codec-lab-page.js?v=codec-lab-6"></script>
+    <script src="./src/pages/codec-comparison-view.js?v=codec-lab-3"></script>
+    <script src="./src/pages/codec-lab-page.js?v=codec-lab-7"></script>
     <script src="./src/pwa/register-service-worker.js?v=1"></script>
   </body>
 </html>
