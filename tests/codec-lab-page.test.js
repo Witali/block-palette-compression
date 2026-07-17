@@ -50,6 +50,8 @@ test("styles the unified settings, comparison, structure, and inspector", () => 
   assert.match(styles, /\.lab-header \{[\s\S]*?width: 100%;[\s\S]*?justify-content: stretch;/);
   assert.match(styles, /\.lab-controls \{[\s\S]*?width: 100%;[\s\S]*?justify-self: stretch;/);
   assert.match(styles, /\.format-settings/);
+  assert.match(styles, /column-gap: 14px;[\s\S]*?row-gap: 14px;/);
+  assert.match(styles, /\.format-settings select,[\s\S]*?\.format-settings input \{[\s\S]*?width: 100%;[\s\S]*?min-width: 0;/);
   assert.match(styles, /\.lab-comparison/);
   assert.match(styles, /\.lab-structure-flow/);
   assert.match(styles, /\.lab-block-details-body/);

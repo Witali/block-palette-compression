@@ -72,7 +72,8 @@
 .format-settings {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 10px;
+  column-gap: 14px;
+  row-gap: 14px;
   min-width: 0;
   margin: 0;
   padding: 13px;
@@ -101,6 +102,14 @@
   color: #98a6b5;
   font-size: 11px;
   font-weight: 700;
+}
+
+.format-settings select,
+.format-settings input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .format-settings .range-label {
