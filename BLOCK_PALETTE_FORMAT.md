@@ -8,6 +8,9 @@ from the most significant bit to the least significant bit. Version 5 supports
 selects one shared palette and stores a small table of indices local to that
 palette.
 
+Each shared palette contains 2–256 power-of-two colors. Header encodings above
+256 colors are invalid and must be rejected by current encoders and decoders.
+
 The decoder accepts BPAL v5 files only. The image compressor writes explicit
 palettes; the v5 vector-palette model remains readable.
 

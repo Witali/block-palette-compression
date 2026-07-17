@@ -31,8 +31,7 @@ node benchmark/profile_search/search.js policy
 The stages perform:
 
 1. A 222-candidate structural screen on one 256×256 crop.
-2. Cross-image validation of 22 finalists on four crops, including targeted
-   1024-color global palettes.
+2. Cross-image validation of the leading finalists on four crops.
 3. An encoder-policy comparison covering RGB/OKLab, three clustering methods,
    diversity, and four dithering modes.
 
@@ -41,8 +40,8 @@ Intermediate reports are `screen-<source-id>.json`, `validate.json`, and
 
 ## Extended 1.5 and 8 bpp search
 
-The range-edge study uses wider structural ranges, targeted 1024/4096-color
-palettes, and a dynamic eight-worker queue for every crop stage:
+The range-edge study uses the full supported 8–256-color structural range and
+a dynamic eight-worker queue for every crop stage:
 
 ```powershell
 node benchmark/profile_search/extended.js screen --jobs 8

@@ -69,10 +69,6 @@ static const encode_preset QUALITY_PRESETS[] = {
 };
 
 static const search_profile FIND_SETTINGS_PROFILES[] = {
-    { 4u, 16u, 4096u },
-    { 4u, 16u, 1024u },
-    { 4u, 8u, 1024u },
-    { 8u, 16u, 1024u },
     { 8u, 8u, 256u },
     { 8u, 4u, 256u },
     { 16u, 16u, 256u },
@@ -524,7 +520,7 @@ static int validate_image_metadata(const bpal5_image *image, char *error, size_t
         return 0;
     }
     if (!is_power_of_two(image->global_color_count) || image->global_color_count < 2u ||
-        image->global_color_count > 4096u) {
+        image->global_color_count > 256u) {
         set_error(error, error_size, "BPAL global color count is out of range");
         return 0;
     }
@@ -1454,7 +1450,7 @@ int bpal5_sample_file_pixel_rgba(
     global_color_count = 1u << global_index_bits;
     palette_count = 1u << palette_index_bits;
     if (x >= width || y >= height || block_size < 2u || block_size > 64u ||
-        local_color_count > 16u || global_color_count > 4096u || palette_count > 128u) {
+        local_color_count > 16u || global_color_count > 256u || palette_count > 128u) {
         set_error(error, error_size, "BPAL random-access coordinate or metadata is invalid");
         return 0;
     }
@@ -2517,7 +2513,7 @@ int bpal5_prepare_rgb_image_internal(
         !is_power_of_two(options->block_size) || options->block_size < 2u || options->block_size > 64u ||
         !is_power_of_two(options->local_color_count) || options->local_color_count < 2u || options->local_color_count > 16u ||
         options->local_color_count > options->block_size * options->block_size ||
-        !is_power_of_two(options->global_color_count) || options->global_color_count < options->local_color_count || options->global_color_count > 4096u ||
+        !is_power_of_two(options->global_color_count) || options->global_color_count < options->local_color_count || options->global_color_count > 256u ||
         !is_power_of_two(options->palette_count) || options->palette_count > 128u ||
         (options->palette_color_bits != 16u && options->palette_color_bits != 24u) ||
         options->channel_mode > BPAL5_CHANNEL_SCALAR ||

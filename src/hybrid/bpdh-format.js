@@ -867,7 +867,7 @@
     }
 
     validatePowerOfTwo(localColorCount, 2, 256, "localColorCount");
-    validatePowerOfTwo(globalColorCount, 2, 4096, "globalColorCount");
+    validatePowerOfTwo(globalColorCount, 2, 256, "globalColorCount");
     validatePowerOfTwo(paletteCount, 1, 128, "paletteCount");
 
     if (paletteColorBits !== 16 && paletteColorBits !== 24) {

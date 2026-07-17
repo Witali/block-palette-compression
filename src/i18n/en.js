@@ -336,8 +336,6 @@
     "block.global64": "64 colors · 6 bits",
     "block.global128": "128 colors · 7 bits",
     "block.global256": "256 colors · 8 bits",
-    "block.global1024": "1024 colors · 10 bits",
-    "block.global4096": "4096 colors · 12 bits",
     "block.rgb888": "24 bits · RGB888",
     "block.rgb565": "16 bits · RGB565",
     "block.refinementPasses": "Refinement passes",

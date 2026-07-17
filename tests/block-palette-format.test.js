@@ -248,7 +248,7 @@ test("round-trips 128 global palettes with seven-bit block selectors", () => {
   assert.equal(layout.blockPaletteSelectorBits, blockCount * 7);
 });
 
-test("stores and restores 12-bit common-palette indices", () => {
+test("rejects BPAL shared palettes larger than 256 colors", () => {
   const palette = Array.from({ length: 4096 }, (_, index) => ({
     r: index & 255,
     g: index >> 4 & 255,
@@ -265,12 +265,10 @@ test("stores and restores 12-bit common-palette indices", () => {
     blockPaletteIndices: new Uint16Array([0, 4095]),
     pixelIndices: new Uint8Array([0, 1, 1, 0]),
   };
-  const decoded = decodeBlockPaletteFile(encodeBlockPaletteFile(image));
-
-  assert.equal(decoded.globalIndexBits, 12);
-  assert.deepEqual(Array.from(decoded.blockPaletteIndices), [0, 4095]);
-  assert.deepEqual(Array.from(decoded.pixelIndices), [0, 1, 1, 0]);
-  assert.deepEqual(Array.from(decoded.pixels.slice(4, 8)), [255, 255, 63, 255]);
+  assert.throws(
+    () => encodeBlockPaletteFile(image),
+    /BPAL globalColorCount must be a power of two from 2 to 256/
+  );
 });
 
 test("losslessly packs narrow shared palettes into independent delta records", () => {

@@ -143,7 +143,7 @@
   `;
 
   function createGlobalAssignmentShader(globalColorCount) {
-    if (!Number.isInteger(globalColorCount) || globalColorCount < 1 || globalColorCount > 4096) {
+    if (!Number.isInteger(globalColorCount) || globalColorCount < 1 || globalColorCount > 256) {
       throw new RangeError("Invalid WebGL2 global color count");
     }
 

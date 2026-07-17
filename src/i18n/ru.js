@@ -336,8 +336,6 @@
     "block.global64": "64 цвета · 6 бит",
     "block.global128": "128 цветов · 7 бит",
     "block.global256": "256 цветов · 8 бит",
-    "block.global1024": "1024 цвета · 10 бит",
-    "block.global4096": "4096 цветов · 12 бит",
     "block.rgb888": "24 бита · RGB888",
     "block.rgb565": "16 бит · RGB565",
     "block.refinementPasses": "Проходов рефайнмента",

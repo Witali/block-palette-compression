@@ -263,55 +263,9 @@ function buildStructuralCandidates() {
       }
     }
   }
-  addTargetedLargePalettes(candidates);
   return Array.from(candidates.values()).sort((left, right) =>
     Math.min(...left.targets) - Math.min(...right.targets) || right.payloadBpp - left.payloadBpp
   );
-}
-
-function addTargetedLargePalettes(candidates) {
-  const targeted = [
-    [1.5, 8, 2, 1024, 4, 16],
-    [1.5, 8, 2, 1024, 8, 16],
-    [1.5, 8, 2, 1024, 4, 24],
-    [1.5, 8, 2, 4096, 1, 16],
-    [1.5, 8, 2, 4096, 1, 24],
-    [8, 8, 16, 1024, 16, 24],
-    [8, 8, 16, 1024, 32, 16],
-    [8, 8, 16, 1024, 32, 24],
-    [8, 8, 16, 1024, 64, 16],
-    [8, 8, 16, 4096, 1, 16],
-    [8, 8, 16, 4096, 1, 24],
-    [8, 8, 16, 4096, 2, 16],
-    [8, 8, 16, 4096, 2, 24],
-    [8, 8, 16, 4096, 4, 16],
-    [8, 8, 16, 4096, 4, 24],
-    [8, 8, 16, 4096, 8, 16],
-    [8, 8, 16, 4096, 8, 24],
-  ];
-
-  for (const [target, blockSize, localColorCount, globalColorCount, paletteCount, paletteColorBits]
-    of targeted) {
-    const candidateSettings = {
-      blockSize,
-      localColorCount,
-      globalColorCount,
-      paletteCount,
-      paletteColorBits,
-    };
-    const payloadBpp = calculateBpp(candidateSettings);
-    if (payloadBpp > target) {
-      continue;
-    }
-    const key = settingsKey(candidateSettings);
-    candidates.set(key, {
-      key,
-      settings: candidateSettings,
-      payloadBpp,
-      targets: [target],
-      targetedLargePalette: true,
-    });
-  }
 }
 
 function buildPolicies() {

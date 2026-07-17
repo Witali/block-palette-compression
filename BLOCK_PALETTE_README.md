@@ -34,7 +34,7 @@ Supported settings:
 | Block size | 4, 8, 16, 32, or 64 pixels |
 | Colors per block | 2, 4, 8, or 16 |
 | Shared palette count | 1, 2, 4, 8, 16, 32, 64, or 128 |
-| Shared palette colors | 8, 16, 32, 64, 128, 256, 1024, or 4096 |
+| Shared palette colors | 8, 16, 32, 64, 128, or 256 |
 | Color format | RGB565, 16 bits; RGB888, 24 bits |
 | Search color space | OKLab or RGB |
 | Clustering method | K-means, uniformly initialized K-means, or K-medians |

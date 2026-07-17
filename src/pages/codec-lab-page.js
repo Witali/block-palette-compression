@@ -327,7 +327,7 @@
     const requestId = ++state.requestId;
     const targetBitsPerPixel = getBpalOptimizationTarget();
     const preview = createOptimizationPreview();
-    const worker = new Worker("./src/palette/block-palette-optimizer-worker.js?v=direct-block-colors-1");
+    const worker = new Worker("./src/palette/block-palette-optimizer-worker.js?v=palette-256-1");
     state.worker = worker;
     showProgress("BPAL SEARCH");
     setBusy(true, t("block.optimizePreparing", { target: targetBitsPerPixel.toFixed(2) }));

@@ -15,7 +15,7 @@ static void print_usage(const char *program) {
         "  --find-settings   Search palette layouts in the preset bpp range\n"
         "  --block N          Block size: 2,4,8,16,32,64 (default 16)\n"
         "  --local N          Colors per block: 2,4,8,16; <= block pixels (default 8)\n"
-        "  --global N         Colors per shared palette: 2..4096 power of two (default 32)\n"
+        "  --global N         Colors per shared palette: 2..256 power of two (default 32)\n"
         "  --palettes N       Shared palettes: 1..128 power of two (default 1)\n"
         "  --rgb565           Store shared colors as RGB565 (default RGB888)\n"
         "  --scalar           Store one 8-bit scalar per shared color\n"

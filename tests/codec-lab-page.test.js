@@ -25,6 +25,8 @@ test("combines BPAL, DCTBS2, and BPDH behind one format selector", () => {
   assert.match(page, /<option value="fixed" selected data-i18n="dct\.componentBudgetFixed"/);
   assert.match(page, /id="dct-quality-value">100<\/output>/);
   assert.match(page, /id="dct-quality"[^>]*value="100"/);
+  const bpalPaletteSelect = page.match(/id="bpal-global-colors"[\s\S]*?<\/select>/)[0];
+  assert.doesNotMatch(bpalPaletteSelect, /(?:1024|4096)/);
 });
 
 test("uses one comparison and coordinate inspector for every codec", () => {

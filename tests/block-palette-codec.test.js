@@ -287,34 +287,19 @@ test("calculates the tightly packed 256-color, four-color block layout", () => {
   assert.equal(result.storage.totalBytes, 788);
 });
 
-test("supports 1024-color and 4096-color common palettes", () => {
+test("rejects shared palettes larger than 256 colors", () => {
   const source = new Uint8ClampedArray(8 * 8 * 4);
 
   for (let offset = 0; offset < source.length; offset += 4) {
     source[offset + 3] = 255;
   }
 
-  const palette1024 = compressImage(source, 8, 8, {
-    blockSize: 8,
-    localColorCount: 4,
-    globalColorCount: 1024,
-  });
-  const palette4096 = compressImage(source, 8, 8, {
-    blockSize: 8,
-    localColorCount: 4,
-    globalColorCount: 4096,
-  });
-
-  assert.equal(palette1024.globalIndexBits, 10);
-  assert.equal(palette1024.storage.globalPaletteBytes, 3072);
-  assert.equal(palette1024.storage.blockPaletteBytes, 5);
-  assert.equal(palette1024.storage.totalBytes, 3093);
-  assert.ok(Array.from(palette1024.blockPaletteIndices).every((index) => index < 1024));
-  assert.equal(palette4096.globalIndexBits, 12);
-  assert.equal(palette4096.storage.globalPaletteBytes, 12288);
-  assert.equal(palette4096.storage.blockPaletteBytes, 6);
-  assert.equal(palette4096.storage.totalBytes, 12310);
-  assert.ok(Array.from(palette4096.blockPaletteIndices).every((index) => index < 4096));
+  for (const globalColorCount of [512, 1024, 4096]) {
+    assert.throws(
+      () => compressImage(source, 8, 8, { blockSize: 8, localColorCount: 4, globalColorCount }),
+      /globalColorCount must be a power of two from 2 to 256/
+    );
+  }
 });
 
 test("stores and reconstructs the common palette as RGB565 in 16-bit mode", () => {
@@ -665,7 +650,7 @@ test("rejects non-power-of-two format settings", () => {
   );
   assert.throws(
     () => compressImage(source, 2, 2, { blockSize: 2, localColorCount: 2, globalColorCount: 8192 }),
-    /globalColorCount must be a power of two from 2 to 4096/
+    /globalColorCount must be a power of two from 2 to 256/
   );
   assert.throws(
     () => compressImage(source, 2, 2, {

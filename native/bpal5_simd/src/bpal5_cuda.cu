@@ -19,7 +19,7 @@ namespace {
 constexpr unsigned int CUDA_THREADS = 256u;
 constexpr unsigned int MAX_BLOCK_PIXELS = 64u * 64u;
 constexpr unsigned int MAX_LOCAL_COLORS = 16u;
-constexpr unsigned int MAX_GLOBAL_COLORS = 4096u;
+constexpr unsigned int MAX_GLOBAL_COLORS = 256u;
 constexpr unsigned int MAX_SAMPLE_PIXELS = 32768u;
 
 struct DeviceImageInfo {

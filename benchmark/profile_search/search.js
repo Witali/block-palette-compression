@@ -115,11 +115,6 @@ function validate(screenSourceId) {
       addCandidate(candidates, winner.settings, Number(targetText), "screen-top-3");
     }
   }
-  addCandidate(candidates, settings(8, 4, 1024, 16, 16), 3, "targeted-large-global-palette");
-  addCandidate(candidates, settings(8, 8, 1024, 16, 24), 5, "targeted-large-global-palette");
-  addCandidate(candidates, settings(8, 8, 1024, 32, 16), 5, "targeted-large-global-palette");
-  addCandidate(candidates, settings(8, 8, 1024, 64, 24), 6, "targeted-large-global-palette");
-
   const jobs = Array.from(candidates.values());
   const sources = new Map(VALIDATION_SOURCES.map((sourceId) => [sourceId, loadCrop(sourceId)]));
   process.stdout.write(`Validating ${jobs.length} candidates on ${sources.size} crops\n`);

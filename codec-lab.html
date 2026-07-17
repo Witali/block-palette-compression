@@ -63,7 +63,7 @@
             </label>
             <label><span data-i18n="block.blockSize">Block size</span><select id="bpal-block-size"><option value="4">4 × 4</option><option value="8" selected>8 × 8</option><option value="16">16 × 16</option><option value="32">32 × 32</option><option value="64">64 × 64</option></select></label>
             <label><span data-i18n="block.localColors">Colors per block</span><select id="bpal-local-colors"><option value="2">2</option><option value="4">4</option><option value="8" selected>8</option><option value="16">16</option></select></label>
-            <label><span data-i18n="block.globalPalette">Shared palette</span><select id="bpal-global-colors"><option value="8">8</option><option value="16">16</option><option value="32">32</option><option value="64">64</option><option value="128" selected>128</option><option value="256">256</option><option value="1024">1024</option><option value="4096">4096</option></select></label>
+            <label><span data-i18n="block.globalPalette">Shared palette</span><select id="bpal-global-colors"><option value="8">8</option><option value="16">16</option><option value="32">32</option><option value="64">64</option><option value="128" selected>128</option><option value="256">256</option></select></label>
             <label><span data-i18n="block.paletteCount">Number of palettes</span><select id="bpal-palette-count"><option value="1">1</option><option value="2">2</option><option value="4">4</option><option value="8">8</option><option value="16" selected>16</option><option value="32">32</option><option value="64">64</option><option value="128">128</option></select></label>
             <label><span data-i18n="block.paletteFormat">Palette color format</span><select id="bpal-palette-bits"><option value="24" selected>RGB888</option><option value="16">RGB565</option></select></label>
             <label><span data-i18n="common.colorSpace">Color space</span><select id="bpal-color-space"><option value="oklab" selected>OKLab</option><option value="rgb">RGB</option></select></label>
@@ -245,7 +245,7 @@
       <button id="progress-cancel" type="button" data-i18n="common.cancel">Cancel</button>
     </dialog>
 
-    <script src="./src/palette/block-palette-format.js?v=direct-block-colors-1"></script>
+    <script src="./src/palette/block-palette-format.js?v=palette-256-1"></script>
     <script src="./src/dct/dct-format.js?v=dct-default-45-1"></script>
     <script src="./src/hybrid/dct420.js?v=hybrid-1"></script>
     <script src="./src/hybrid/bpdh-format.js?v=hybrid-1"></script>
@@ -254,7 +254,7 @@
     <script src="./src/i18n/i18n.js"></script>
     <script src="./src/pages/codec-comparison-view.js?v=codec-lab-3"></script>
     <script src="./src/encoders/codec-encoder-runtime.js?v=shared-encoder-runtime-1"></script>
-    <script src="./src/pages/codec-lab-page.js?v=legacy-features-1"></script>
+    <script src="./src/pages/codec-lab-page.js?v=palette-256-1"></script>
     <script src="./src/pwa/register-service-worker.js?v=1"></script>
   </body>
 </html>

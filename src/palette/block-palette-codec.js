@@ -77,9 +77,7 @@
       targetClusters: paletteCount,
     });
 
-    const maximumSamplePixels = globalColorCount >= 4096
-      ? 8192
-      : MAX_PALETTE_SAMPLE_PIXELS;
+    const maximumSamplePixels = MAX_PALETTE_SAMPLE_PIXELS;
     const paletteBuild = buildGlobalPalettes({
       sourcePixels,
       width,
@@ -653,7 +651,7 @@
         clusteringMethod,
         dithering: "none",
         diversity,
-        maxIterations: globalColorCount >= 4096 ? 6 : 16,
+        maxIterations: 16,
         onProgress,
       }
     );
@@ -2609,8 +2607,8 @@
       throw new RangeError("blockSize must be a power of two from 2 to 64");
     }
 
-    if (!isPowerOfTwo(globalColorCount) || globalColorCount < 2 || globalColorCount > 4096) {
-      throw new RangeError("globalColorCount must be a power of two from 2 to 4096");
+    if (!isPowerOfTwo(globalColorCount) || globalColorCount < 2 || globalColorCount > 256) {
+      throw new RangeError("globalColorCount must be a power of two from 2 to 256");
     }
 
     if (!isPowerOfTwo(paletteCount) || paletteCount < 1 || paletteCount > 128) {

@@ -109,7 +109,7 @@ Encoder options:
 - `--block N`: block width and height, power of two from 2 to 64;
 - `--local N`: colours in each block palette, power of two from 2 to 16 and no
   greater than `--block × --block`;
-- `--global N`: colours in each global palette, power of two from 2 to 4096;
+- `--global N`: colours in each global palette, power of two from 2 to 256;
 - `--palettes N`: global palette count, power of two from 1 to 128;
 - `--rgb565`: store global palette colours as RGB565 instead of RGB888;
 - `--scalar`: store one 8-bit value for each shared-palette entry and replicate

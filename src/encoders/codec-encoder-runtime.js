@@ -12,7 +12,7 @@
   "use strict";
 
   const WORKER_URLS = Object.freeze({
-    bpal: "./src/palette/block-palette-worker.js?v=shared-encoder-runtime-1",
+    bpal: "./src/palette/block-palette-worker.js?v=palette-256-1",
     dct: "./src/dct/dct-worker.js?v=dct-page-20",
     bpdh: "./src/hybrid/bpdh-worker.js?v=hybrid-2",
   });

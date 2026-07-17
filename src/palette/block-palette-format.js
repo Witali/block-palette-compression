@@ -920,8 +920,8 @@
       throw new RangeError("BPAL localColorCount must be a power of two from 2 to 16");
     }
 
-    if (!isPowerOfTwo(image.globalColorCount) || image.globalColorCount < 2 || image.globalColorCount > 4096) {
-      throw new RangeError("BPAL globalColorCount must be a power of two from 2 to 4096");
+    if (!isPowerOfTwo(image.globalColorCount) || image.globalColorCount < 2 || image.globalColorCount > 256) {
+      throw new RangeError("BPAL globalColorCount must be a power of two from 2 to 256");
     }
 
     if (!isPowerOfTwo(image.paletteCount) || image.paletteCount < 1 || image.paletteCount > 128) {
