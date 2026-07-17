@@ -276,10 +276,13 @@ natural-position implicit tails. New non-library encodes set bit 4 by default.
 The browser page can transcode grayscale and three-component YCbCr JPEG files
 without using decoded RGB pixels as encoder input. The CPU parser decodes the
 baseline or progressive Huffman scans and dequantizes the source 8×8 DCT
-blocks. The importer deterministically reconstructs component samples, adapts
-JPEG subsampling to 4:2:0, and transforms those Y/Cb/Cr planes into the
-selected 16×16 or split 8×8 fixed MCU layout. There is no RGB conversion in
-this path. The resulting file uses the same one-MCU coordinate lookup as a
-regular DCTBS2 encode. The page uses the selected quantization quality directly
-and disables the RGB-based automatic quality search while this one-pass import
-mode is active.
+blocks. When a three-component JPEG already uses 4:2:0 and the selected DCTBS2
+mode uses split 8×8 luma records, the importer maps the four Y blocks and one
+block from each chroma component directly into the fixed MCU records. Matching
+grayscale JPEG luma blocks use the same direct path with zero chroma blocks.
+Modes with a merged 16×16 luma record, 4:2:2 output, or incompatible JPEG
+sampling retain the deterministic sample reconstruction, resampling, and
+forward-DCT fallback. Neither path converts the encoder input through RGB. The
+resulting file uses the same one-MCU coordinate lookup as a regular DCTBS2
+encode. The page uses the selected DCTBS2 requantization quality directly and
+disables the RGB-based automatic quality search while import mode is active.

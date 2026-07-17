@@ -134,9 +134,11 @@
   const skipScanCache = new Map();
   const zigzagScanCache = new Map();
   const quantizationStepCache = new Map();
+  const jpegDctMetadataCache = new WeakMap();
   const jpegDctSourceCache = new WeakMap();
   const jpegDctRecordCache = new WeakMap();
   const dctEncodingResultCache = new WeakMap();
+  const ZERO_DCT_BLOCK = new Float64Array(64);
 
   function freezePreset(modeCode, bpp, bytesPerMcu, yBytes, cbBytes, crBytes) {
     return Object.freeze({ modeCode, bpp, bytesPerMcu, yBytes, cbBytes, crBytes });
@@ -492,18 +494,18 @@
   }
 
   function importJpegDctFile(jpeg, options = {}) {
-    const source = getPreparedJpegDctSource(jpeg);
+    const metadata = getJpegDctMetadata(jpeg);
     const quality = validateQuality(options.quality === undefined ? 72 : options.quality);
-    const layout = getDctFileLayout(source.width, source.height, options.preset);
+    const layout = getDctFileLayout(metadata.width, metadata.height, options.preset);
     const chroma420 = resolveChroma420(options);
     const chromaHeight = chroma420 ? CHROMA_HEIGHT_420 : CHROMA_HEIGHT_422;
 
     if (shouldAutoSelectMaskedTail(layout.key, options) && options.referencePixels) {
-      validatePixels(options.referencePixels, source.width, source.height);
+      validatePixels(options.referencePixels, metadata.width, metadata.height);
       return selectBetterHighRateEncoding(
         options.referencePixels,
-        source.width,
-        source.height,
+        metadata.width,
+        metadata.height,
         options,
         (candidateOptions) => importJpegDctFile(jpeg, candidateOptions)
       );
@@ -511,9 +513,18 @@
 
     const coefficientCoding = resolveCoefficientCoding(options.coefficientCoding, layout.key, options);
     const splitLuma8x8 = shouldSplitLuma(layout, options);
+    const directCoefficients = canUseDirectJpegDctCoefficients(
+      metadata,
+      layout,
+      chroma420,
+      splitLuma8x8,
+      options
+    );
+    const source = directCoefficients ? metadata : getPreparedJpegDctSource(jpeg);
     const output = createDctOutput(layout, quality, options, splitLuma8x8, coefficientCoding);
     const reportProgress = createDctProgressReporter(options, layout.mcuCount, quality);
-    const cacheKey = `${chroma420 ? "420" : "422"}:${splitLuma8x8 ? "split" : "merged"}`;
+    const cacheKey = `${directCoefficients ? "direct" : "samples"}:` +
+      `${chroma420 ? "420" : "422"}:${splitLuma8x8 ? "split" : "merged"}`;
     let records = getJpegDctRecordMap(jpeg).get(cacheKey);
     const cacheRecords = !records;
     if (!records) records = new Array(layout.mcuCount);
@@ -522,13 +533,9 @@
     for (let mcuIndex = 0; mcuIndex < layout.mcuCount; mcuIndex += 1) {
       const mcuX = mcuIndex % layout.mcuColumns;
       const mcuY = Math.floor(mcuIndex / layout.mcuColumns);
-      const record = records[mcuIndex] || transformJpegMcuCoefficients(
-        source,
-        mcuX,
-        mcuY,
-        chroma420,
-        splitLuma8x8
-      );
+      const record = records[mcuIndex] || (directCoefficients
+        ? mapDirectJpegMcuCoefficients(source, mcuX, mcuY)
+        : transformJpegMcuCoefficients(source, mcuX, mcuY, chroma420, splitLuma8x8));
       records[mcuIndex] = record;
       const byteOffset = HEADER_BYTES + mcuIndex * layout.bytesPerMcu;
 
@@ -573,10 +580,19 @@
     return output;
   }
 
+  function getJpegDctMetadata(jpeg) {
+    let metadata = jpegDctMetadataCache.get(jpeg);
+    if (!metadata) {
+      metadata = prepareJpegDctMetadata(jpeg);
+      jpegDctMetadataCache.set(jpeg, metadata);
+    }
+    return metadata;
+  }
+
   function getPreparedJpegDctSource(jpeg) {
     let source = jpegDctSourceCache.get(jpeg);
     if (!source) {
-      source = prepareJpegDctSource(jpeg);
+      source = reconstructJpegDctSource(getJpegDctMetadata(jpeg));
       jpegDctSourceCache.set(jpeg, source);
     }
     return source;
@@ -589,6 +605,62 @@
       jpegDctRecordCache.set(jpeg, records);
     }
     return records;
+  }
+
+  function canUseDirectJpegDctCoefficients(
+    source,
+    layout,
+    chroma420,
+    splitLuma8x8,
+    options
+  ) {
+    if (options.directJpegCoefficients === false || !chroma420 || !splitLuma8x8) {
+      return false;
+    }
+    if (source.components.length === 1) {
+      const y = source.components[0];
+      return source.maxHorizontalSampling === 1 && source.maxVerticalSampling === 1 &&
+        y.horizontalSampling === 1 && y.verticalSampling === 1 &&
+        y.blockCountX >= Math.ceil(layout.width / 8) &&
+        y.blockCountY >= Math.ceil(layout.height / 8);
+    }
+    if (source.components.length !== 3 ||
+        source.maxHorizontalSampling !== 2 || source.maxVerticalSampling !== 2) {
+      return false;
+    }
+
+    const [y, cb, cr] = source.components;
+    return y.horizontalSampling === 2 && y.verticalSampling === 2 &&
+      cb.horizontalSampling === 1 && cb.verticalSampling === 1 &&
+      cr.horizontalSampling === 1 && cr.verticalSampling === 1 &&
+      y.blockCountX >= layout.mcuColumns * 2 && y.blockCountY >= layout.mcuRows * 2 &&
+      cb.blockCountX >= layout.mcuColumns && cb.blockCountY >= layout.mcuRows &&
+      cr.blockCountX >= layout.mcuColumns && cr.blockCountY >= layout.mcuRows;
+  }
+
+  function mapDirectJpegMcuCoefficients(source, mcuX, mcuY) {
+    const y = source.components[0];
+    return {
+      y: [
+        getJpegDctBlock(y, mcuX * 2, mcuY * 2),
+        getJpegDctBlock(y, mcuX * 2 + 1, mcuY * 2),
+        getJpegDctBlock(y, mcuX * 2, mcuY * 2 + 1),
+        getJpegDctBlock(y, mcuX * 2 + 1, mcuY * 2 + 1),
+      ],
+      cb: source.components.length === 3
+        ? getJpegDctBlock(source.components[1], mcuX, mcuY) : ZERO_DCT_BLOCK,
+      cr: source.components.length === 3
+        ? getJpegDctBlock(source.components[2], mcuX, mcuY) : ZERO_DCT_BLOCK,
+    };
+  }
+
+  function getJpegDctBlock(component, blockX, blockY) {
+    if (blockX < 0 || blockY < 0 ||
+        blockX >= component.blockCountX || blockY >= component.blockCountY) {
+      return ZERO_DCT_BLOCK;
+    }
+    const offset = (blockY * component.blockCountX + blockX) * 64;
+    return component.blocks.subarray(offset, offset + 64);
   }
 
   function transformJpegMcuCoefficients(source, mcuX, mcuY, chroma420, splitLuma8x8) {
@@ -3108,7 +3180,7 @@
     return { y: yPlane, cb: cbPlane, cr: crPlane };
   }
 
-  function prepareJpegDctSource(jpeg) {
+  function prepareJpegDctMetadata(jpeg) {
     if (!jpeg || typeof jpeg !== "object") {
       throw new TypeError("JPEG DCT import requires parsed JPEG coefficient data");
     }
@@ -3121,7 +3193,7 @@
 
     const maxHorizontalSampling = validateJpegSampling(jpeg.maxHorizontalSampling);
     const maxVerticalSampling = validateJpegSampling(jpeg.maxVerticalSampling);
-    const components = jpeg.components.map((component) => prepareJpegComponent(
+    const components = jpeg.components.map((component) => prepareJpegComponentMetadata(
       component,
       jpeg.width,
       jpeg.height,
@@ -3145,7 +3217,13 @@
     };
   }
 
-  function prepareJpegComponent(component, imageWidth, imageHeight, maxHorizontalSampling, maxVerticalSampling) {
+  function prepareJpegComponentMetadata(
+    component,
+    imageWidth,
+    imageHeight,
+    maxHorizontalSampling,
+    maxVerticalSampling
+  ) {
     if (!component || typeof component !== "object") {
       throw new RangeError("Invalid JPEG component data");
     }
@@ -3171,6 +3249,34 @@
       throw new RangeError("JPEG DCT blocks do not cover the image dimensions");
     }
 
+    return {
+      horizontalSampling,
+      verticalSampling,
+      blockCountX,
+      blockCountY,
+      blocks,
+      sampleWidth,
+      sampleHeight,
+      activeWidth,
+      activeHeight,
+    };
+  }
+
+  function reconstructJpegDctSource(metadata) {
+    return {
+      ...metadata,
+      components: metadata.components.map(reconstructJpegComponent),
+    };
+  }
+
+  function reconstructJpegComponent(component) {
+    const {
+      blockCountX,
+      blockCountY,
+      blocks,
+      sampleWidth,
+      sampleHeight,
+    } = component;
     const samples = new Uint8Array(sampleWidth * sampleHeight);
     const basis = getBasis(8);
     const vertical = new Float64Array(64);
@@ -3206,12 +3312,7 @@
     }
 
     return {
-      horizontalSampling,
-      verticalSampling,
-      sampleWidth,
-      sampleHeight,
-      activeWidth,
-      activeHeight,
+      ...component,
       samples,
     };
   }

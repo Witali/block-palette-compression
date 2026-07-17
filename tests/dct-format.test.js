@@ -339,6 +339,47 @@ test("imports JPEG Huffman coefficients without an RGB encoder input", () => {
   }
 });
 
+test("maps matching JPEG 4:2:0 blocks directly and retains transformed fallbacks", () => {
+  const jpegBytes = fs.readFileSync(path.join(root, "assets/stone-texture-small.jpg"));
+  const jpeg = GpuJpegDecoder.parse(jpegBytes);
+  const direct = importJpegDctFile(jpeg, {
+    preset: "6",
+    quality: 72,
+    coefficientCoding: "grouped-5-front",
+  });
+  const transformed = importJpegDctFile(jpeg, {
+    preset: "6",
+    quality: 72,
+    coefficientCoding: "grouped-5-front",
+    directJpegCoefficients: false,
+  });
+
+  assert.notDeepEqual(direct, transformed);
+  assert.equal(decodeDctFile(direct).width, jpeg.width);
+  assert.equal(decodeDctFile(direct).height, jpeg.height);
+
+  const merged = importJpegDctFile(jpeg, { preset: "2", quality: 72 });
+  const mergedFallback = importJpegDctFile(jpeg, {
+    preset: "2",
+    quality: 72,
+    directJpegCoefficients: false,
+  });
+  assert.deepEqual(merged, mergedFallback);
+
+  const chroma422 = importJpegDctFile(jpeg, {
+    preset: "6",
+    quality: 72,
+    chromaSubsampling: "4:2:2",
+  });
+  const chroma422Fallback = importJpegDctFile(jpeg, {
+    preset: "6",
+    quality: 72,
+    chromaSubsampling: "4:2:2",
+    directJpegCoefficients: false,
+  });
+  assert.deepEqual(chroma422, chroma422Fallback);
+});
+
 test("reuses the selected JPEG import preview after high-rate comparison", () => {
   const jpegBytes = fs.readFileSync(path.join(root, "assets/benchmark-jpegs/clipart-apple.jpg"));
   const jpeg = GpuJpegDecoder.parse(jpegBytes);
