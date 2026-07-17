@@ -769,6 +769,8 @@ test("stores deterministic clustered DCT prototypes without losing coordinate ac
   assert.equal(info.library.cr.count, 3);
   assert.equal(first.length, HEADER_BYTES + info.payloadBytes + info.libraryBytes);
   assert.ok(mcu.components.y.blocks.every((block) => block.libraryIndex >= 0 && block.libraryIndex <= 3));
+  assert.ok(mcu.components.y.blocks.every((block) => block.profile < 4));
+  assert.ok([mcu.components.cb, mcu.components.cr].every((block) => block.profile < 4));
 
   for (const [x, y] of [[0, 0], [9, 7], [16, 15], [31, 23]]) {
     const sampled = sampleDctFilePixel(first, x, y);

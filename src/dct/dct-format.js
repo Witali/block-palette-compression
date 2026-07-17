@@ -1879,7 +1879,8 @@
       coding,
       0,
       0,
-      allowSkip
+      allowSkip,
+      Infinity
     );
     writeComponentCandidate(output, offset, byteCount, candidate, coding, null);
   }
@@ -1900,6 +1901,8 @@
   ) {
     let best = null;
     const reservedAcCount = referenceCoding === "tail" ? 1 : 0;
+    // Header references reserve two of the four profile bits for the library index.
+    const maximumProfileCount = referenceCoding === "header" ? 4 : Infinity;
     const prototypes = libraryComponent.coefficients;
     const libraryIndices = selectDctLibraryCandidateIndices(
       coefficients,
@@ -1924,7 +1927,9 @@
         chroma,
         coding,
         reservedAcCount,
-        libraryIndex === 0 ? 0 : frequencySplit
+        libraryIndex === 0 ? 0 : frequencySplit,
+        false,
+        maximumProfileCount
       );
       candidate.libraryIndex = libraryIndex;
 
@@ -2095,7 +2100,8 @@
     coding,
     reservedAcCount = 0,
     libraryFrequencySplit = 0,
-    allowSkip = false
+    allowSkip = false,
+    maximumProfileCount = Infinity
   ) {
     let baseline;
 
@@ -2120,7 +2126,8 @@
         chroma,
         coding,
         reservedAcCount,
-        libraryFrequencySplit
+        libraryFrequencySplit,
+        maximumProfileCount
       );
     } else {
       baseline = chooseLegacyComponentEncoding(
@@ -2132,7 +2139,8 @@
         chroma,
         coding,
         reservedAcCount,
-        libraryFrequencySplit
+        libraryFrequencySplit,
+        maximumProfileCount
       );
     }
 
@@ -2371,12 +2379,14 @@
     chroma,
     coding,
     reservedAcCount = 0,
-    libraryFrequencySplit = 0
+    libraryFrequencySplit = 0,
+    maximumProfileCount = Infinity
   ) {
     const acCount = Math.max(0, Math.floor((byteCount * 8 - 18) / 6) - reservedAcCount);
     let best = null;
 
-    for (let profile = 0; profile < getProfileCount(coding); profile += 1) {
+    const profileCount = Math.min(getProfileCount(coding), maximumProfileCount);
+    for (let profile = 0; profile < profileCount; profile += 1) {
       const scan = getLibraryCoefficientScan(
         coding,
         profile,
@@ -2812,7 +2822,8 @@
     chroma,
     coding,
     reservedAcCount = 0,
-    libraryFrequencySplit = 0
+    libraryFrequencySplit = 0,
+    maximumProfileCount = Infinity
   ) {
     const layout = getGroupedAcLayout(
       byteCount,
@@ -2834,7 +2845,8 @@
     const baseError = squaredNorm(coefficients) + dcChoice.errorDelta;
     let best = null;
 
-    for (let profile = 0; profile < getProfileCount(coding); profile += 1) {
+    const profileCount = Math.min(getProfileCount(coding), maximumProfileCount);
+    for (let profile = 0; profile < profileCount; profile += 1) {
       const scan = getLibraryCoefficientScan(
         coding,
         profile,
