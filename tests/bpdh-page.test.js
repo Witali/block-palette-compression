@@ -11,6 +11,7 @@ const worker = read("src/hybrid/bpdh-worker.js");
 const home = read("index.html");
 const serviceWorker = read("service-worker.js");
 const sharedStyles = read("block-palette.css");
+const bpdhStyles = read("bpdh.css");
 
 test("provides a dedicated BPDH compression page", () => {
   assert.match(page, /id="target-bpp"/);
@@ -103,6 +104,21 @@ test("supports Ctrl-wheel, dragging, and two-finger pinch in either preview", ()
   assert.match(pageScript, /state\.pinch\.startZoom \* distance \/ state\.pinch\.startDistance/);
   assert.match(pageScript, /selectPixelFromPointer\(event\)/);
   assert.doesNotMatch(pageScript, /resultCanvas\.addEventListener\("click"/);
+});
+
+test("reveals the selected BPAL or DCT block contents", () => {
+  assert.match(page, /<details id="block-details" class="block-details">/);
+  assert.match(page, /id="block-local-colors"/);
+  assert.match(page, /id="block-index-grid"/);
+  assert.match(page, /id="block-dct-matrices"/);
+  assert.match(pageScript, /elements\.blockDetails\.open = true/);
+  assert.match(pageScript, /function renderBpalBlockDetails/);
+  assert.match(pageScript, /decoded\.blockPaletteIndices/);
+  assert.match(pageScript, /decoded\.pixelIndices/);
+  assert.match(pageScript, /function renderDctBlockDetails/);
+  assert.match(pageScript, /format\.getDctMacroblockBitLength/);
+  assert.match(bpdhStyles, /\.block-index-grid/);
+  assert.match(bpdhStyles, /\.dct-coefficient-grid/);
 });
 
 function read(fileName) {

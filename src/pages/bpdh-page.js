@@ -31,6 +31,7 @@
   const DRAG_THRESHOLD = 5;
   const DRAG_DELAY_MS = 140;
   const PROGRESS_STAGE_COUNT = 5;
+  const DCT_COMPONENT_NAMES = ["Y0", "Y1", "Y2", "Y3", "Cb", "Cr"];
   const BPAL_PROGRESS_STAGE_KEYS = {
     "preparing": "block.progressStagePreparing",
     "analyzing-blocks": "block.progressStageAnalyzing",
@@ -163,6 +164,18 @@
       pixelMatch: byId("pixel-match"),
       pixelMatchCard: byId("pixel-match").parentElement,
       pixelSwatch: byId("pixel-swatch"),
+      blockDetails: byId("block-details"),
+      blockDetailsSummary: byId("block-details-summary"),
+      blockDetailCoordinate: byId("block-detail-coordinate"),
+      blockDetailMode: byId("block-detail-mode"),
+      blockDetailExtent: byId("block-detail-extent"),
+      blockDetailSize: byId("block-detail-size"),
+      blockBpalDetails: byId("block-bpal-details"),
+      blockDctDetails: byId("block-dct-details"),
+      blockPaletteSelector: byId("block-palette-selector"),
+      blockLocalColors: byId("block-local-colors"),
+      blockIndexGrid: byId("block-index-grid"),
+      blockDctMatrices: byId("block-dct-matrices"),
     };
   }
 
@@ -400,24 +413,26 @@
 
     context.clearRect(0, 0, elements.modeCanvas.width, elements.modeCanvas.height);
 
-    if (!decoded || !elements.showModes.checked) {
+    if (!decoded) {
       return;
     }
 
-    for (let blockIndex = 0; blockIndex < decoded.blockCount; blockIndex += 1) {
-      const blockX = blockIndex % decoded.blocksX;
-      const blockY = Math.floor(blockIndex / decoded.blocksX);
-      const x = blockX * decoded.codingUnitSize;
-      const y = blockY * decoded.codingUnitSize;
-      const width = Math.min(decoded.codingUnitSize, decoded.width - x);
-      const height = Math.min(decoded.codingUnitSize, decoded.height - y);
-      const isDct = decoded.modes[blockIndex] === format.MODE_DCT;
+    if (elements.showModes.checked) {
+      for (let blockIndex = 0; blockIndex < decoded.blockCount; blockIndex += 1) {
+        const blockX = blockIndex % decoded.blocksX;
+        const blockY = Math.floor(blockIndex / decoded.blocksX);
+        const x = blockX * decoded.codingUnitSize;
+        const y = blockY * decoded.codingUnitSize;
+        const width = Math.min(decoded.codingUnitSize, decoded.width - x);
+        const height = Math.min(decoded.codingUnitSize, decoded.height - y);
+        const isDct = decoded.modes[blockIndex] === format.MODE_DCT;
 
-      context.fillStyle = isDct ? "rgba(255, 155, 66, 0.24)" : "rgba(47, 140, 255, 0.24)";
-      context.fillRect(x, y, width, height);
-      context.strokeStyle = isDct ? "rgba(255, 180, 105, 0.8)" : "rgba(106, 174, 255, 0.8)";
-      context.lineWidth = 1;
-      context.strokeRect(x + 0.5, y + 0.5, Math.max(0, width - 1), Math.max(0, height - 1));
+        context.fillStyle = isDct ? "rgba(255, 155, 66, 0.24)" : "rgba(47, 140, 255, 0.24)";
+        context.fillRect(x, y, width, height);
+        context.strokeStyle = isDct ? "rgba(255, 180, 105, 0.8)" : "rgba(106, 174, 255, 0.8)";
+        context.lineWidth = 1;
+        context.strokeRect(x + 0.5, y + 0.5, Math.max(0, width - 1), Math.max(0, height - 1));
+      }
     }
 
     const selectedBlockX = Math.floor(state.selectedX / decoded.codingUnitSize);
@@ -441,6 +456,7 @@
     state.selectedX = clamp(Math.floor((event.clientX - rect.left) * state.decoded.width / rect.width), 0, state.decoded.width - 1);
     state.selectedY = clamp(Math.floor((event.clientY - rect.top) * state.decoded.height / rect.height), 0, state.decoded.height - 1);
     renderInspector();
+    elements.blockDetails.open = true;
     drawModeOverlay();
   }
 
@@ -480,6 +496,119 @@
     elements.pixelMatchCard.classList.toggle("is-match", matches);
     elements.pixelMatchCard.classList.toggle("is-mismatch", !matches);
     elements.pixelSwatch.style.backgroundColor = `rgb(${sampled.r}, ${sampled.g}, ${sampled.b})`;
+    renderBlockDetails(decoded, blockIndex, blockX, blockY, modeName, isDct);
+  }
+
+  function renderBlockDetails(decoded, blockIndex, blockX, blockY, modeName, isDct) {
+    const startX = blockX * decoded.codingUnitSize;
+    const startY = blockY * decoded.codingUnitSize;
+    const width = Math.min(decoded.codingUnitSize, decoded.width - startX);
+    const height = Math.min(decoded.codingUnitSize, decoded.height - startY);
+    const modeBitCount = decoded.bpalBlockCount > 0 && decoded.dctBlockCount > 0 ? 1 : 0;
+    const payloadBits = isDct
+      ? format.getDctMacroblockBitLength(decoded.dctBlocks[blockIndex])
+      : decoded.paletteIndexBits + decoded.localColorCount * decoded.globalIndexBits +
+        width * height * decoded.localIndexBits;
+    const storedBits = payloadBits + modeBitCount;
+
+    elements.blockDetailsSummary.textContent = t("hybrid.blockSummary", {
+      mode: modeName,
+      bits: formatInteger(storedBits),
+    });
+    elements.blockDetailCoordinate.textContent = `#${blockIndex} · (${blockX}, ${blockY})`;
+    elements.blockDetailMode.textContent = modeName;
+    elements.blockDetailExtent.textContent = `${width} × ${height} px · ` +
+      `x ${startX}–${startX + width - 1}, y ${startY}–${startY + height - 1}`;
+    elements.blockDetailSize.textContent = t("hybrid.blockBitCount", {
+      count: formatInteger(storedBits),
+    });
+    elements.blockBpalDetails.hidden = isDct;
+    elements.blockDctDetails.hidden = !isDct;
+
+    if (isDct) {
+      elements.blockLocalColors.replaceChildren();
+      elements.blockIndexGrid.replaceChildren();
+      renderDctBlockDetails(decoded.dctBlocks[blockIndex]);
+    } else {
+      elements.blockDctMatrices.replaceChildren();
+      renderBpalBlockDetails(decoded, blockIndex, startX, startY, width, height);
+    }
+  }
+
+  function renderBpalBlockDetails(decoded, blockIndex, startX, startY, width, height) {
+    const paletteSelector = decoded.blockPaletteSelectors[blockIndex];
+    const paletteBase = paletteSelector * decoded.globalColorCount;
+    const blockPaletteOffset = blockIndex * decoded.localColorCount;
+    const colorEntries = [];
+
+    elements.blockPaletteSelector.textContent = `#${paletteSelector}`;
+
+    for (let localIndex = 0; localIndex < decoded.localColorCount; localIndex += 1) {
+      const globalIndex = decoded.blockPaletteIndices[blockPaletteOffset + localIndex];
+      const color = decoded.palette[paletteBase + globalIndex];
+      const entry = document.createElement("div");
+      const swatch = document.createElement("span");
+      const mapping = document.createElement("code");
+      const value = document.createElement("strong");
+
+      entry.className = "block-color-entry";
+      swatch.className = "block-color-swatch";
+      swatch.style.backgroundColor = `rgb(${color.r}, ${color.g}, ${color.b})`;
+      mapping.textContent = `L${localIndex} → G${globalIndex}`;
+      value.textContent = colorHex(color);
+      entry.append(swatch, mapping, value);
+      colorEntries.push(entry);
+    }
+
+    elements.blockLocalColors.replaceChildren(...colorEntries);
+    elements.blockIndexGrid.style.setProperty("--block-columns", String(width));
+    const cells = [];
+
+    for (let y = startY; y < startY + height; y += 1) {
+      for (let x = startX; x < startX + width; x += 1) {
+        const localIndex = decoded.pixelIndices[y * decoded.width + x];
+        const globalIndex = decoded.blockPaletteIndices[blockPaletteOffset + localIndex];
+        const color = decoded.palette[paletteBase + globalIndex];
+        const cell = document.createElement("span");
+
+        cell.setAttribute("role", "gridcell");
+        cell.textContent = String(localIndex);
+        cell.title = `${x}, ${y} · L${localIndex} → G${globalIndex} · ${colorHex(color)}`;
+        cell.style.backgroundColor = `rgb(${color.r}, ${color.g}, ${color.b})`;
+        cell.style.color = contrastingTextColor(color);
+        cell.classList.toggle("is-selected-pixel", x === state.selectedX && y === state.selectedY);
+        cells.push(cell);
+      }
+    }
+
+    elements.blockIndexGrid.replaceChildren(...cells);
+  }
+
+  function renderDctBlockDetails(blocks) {
+    const matrices = blocks.map((coefficients, componentIndex) => {
+      const figure = document.createElement("figure");
+      const caption = document.createElement("figcaption");
+      const grid = document.createElement("div");
+
+      caption.textContent = DCT_COMPONENT_NAMES[componentIndex];
+      grid.className = "dct-coefficient-grid";
+
+      for (let coefficientIndex = 0; coefficientIndex < coefficients.length; coefficientIndex += 1) {
+        const value = coefficients[coefficientIndex];
+        const cell = document.createElement("span");
+
+        cell.textContent = String(value);
+        cell.title = `u=${coefficientIndex % 8}, v=${Math.floor(coefficientIndex / 8)}`;
+        cell.classList.toggle("is-zero", value === 0);
+        cell.classList.toggle("is-dc", coefficientIndex === 0);
+        grid.append(cell);
+      }
+
+      figure.append(caption, grid);
+      return figure;
+    });
+
+    elements.blockDctMatrices.replaceChildren(...matrices);
   }
 
   function verifyCoordinateSample(x, y) {
@@ -1151,6 +1280,18 @@
 
   function colorText(color) {
     return `rgba(${color.r}, ${color.g}, ${color.b}, ${color.a})`;
+  }
+
+  function colorHex(color) {
+    return `#${[color.r, color.g, color.b]
+      .map((value) => value.toString(16).padStart(2, "0"))
+      .join("")}`.toUpperCase();
+  }
+
+  function contrastingTextColor(color) {
+    const luma = color.r * 0.2126 + color.g * 0.7152 + color.b * 0.0722;
+
+    return luma >= 145 ? "#101318" : "#f7fbff";
   }
 
   function formatBytes(bytes) {

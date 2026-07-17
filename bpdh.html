@@ -9,7 +9,7 @@
     <link rel="icon" href="./assets/icons/app-icon.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="./assets/icons/app-icon-192.png">
     <link rel="stylesheet" href="./block-palette.css?v=hybrid-1">
-    <link rel="stylesheet" href="./bpdh.css?v=hybrid-3">
+    <link rel="stylesheet" href="./bpdh.css?v=hybrid-4">
     <link rel="stylesheet" href="./i18n.css">
   </head>
   <body>
@@ -231,6 +231,42 @@
           <div class="pixel-match"><span data-i18n="hybrid.determinism">Determinism</span><strong id="pixel-match">—</strong></div>
           <span id="pixel-swatch" class="pixel-swatch" aria-hidden="true"></span>
         </div>
+
+        <details id="block-details" class="block-details">
+          <summary>
+            <span data-i18n="hybrid.blockDetailsTitle">Selected block contents</span>
+            <strong id="block-details-summary">—</strong>
+          </summary>
+          <div class="block-details-body">
+            <dl class="block-detail-metrics">
+              <div><dt data-i18n="hybrid.blockCoordinate">Block</dt><dd id="block-detail-coordinate">—</dd></div>
+              <div><dt data-i18n="hybrid.selectedMode">Selected mode</dt><dd id="block-detail-mode">—</dd></div>
+              <div><dt data-i18n="hybrid.blockExtent">Pixel extent</dt><dd id="block-detail-extent">—</dd></div>
+              <div><dt data-i18n="hybrid.blockStoredSize">Stored size</dt><dd id="block-detail-size">—</dd></div>
+            </dl>
+
+            <section id="block-bpal-details" class="block-mode-details">
+              <div class="block-details-heading">
+                <h3 data-i18n="hybrid.bpalBlockTitle">BPAL palette and indices</h3>
+                <span><span data-i18n="hybrid.bpalSharedPalette">Shared palette</span> <strong id="block-palette-selector">—</strong></span>
+              </div>
+              <h4 data-i18n="hybrid.bpalLocalTable">Local to global colors</h4>
+              <div id="block-local-colors" class="block-local-colors"></div>
+              <h4 data-i18n="hybrid.bpalPixelIndices">Pixel local indices</h4>
+              <div class="block-index-grid-scroll">
+                <div id="block-index-grid" class="block-index-grid" role="grid" data-i18n-aria-label="hybrid.bpalPixelIndices"></div>
+              </div>
+            </section>
+
+            <section id="block-dct-details" class="block-mode-details" hidden>
+              <div class="block-details-heading">
+                <h3 data-i18n="hybrid.dctBlockTitle">Quantized DCT coefficients</h3>
+                <span data-i18n="hybrid.dctBlockComponents">Y0–Y3, Cb, and Cr · 8×8 each</span>
+              </div>
+              <div id="block-dct-matrices" class="block-dct-matrices"></div>
+            </section>
+          </div>
+        </details>
       </section>
     </main>
 
@@ -264,10 +300,10 @@
 
     <script src="./src/hybrid/dct420.js?v=hybrid-1"></script>
     <script src="./src/hybrid/bpdh-format.js?v=hybrid-1"></script>
-    <script src="./src/i18n/en.js?v=hybrid-2"></script>
-    <script src="./src/i18n/ru.js?v=hybrid-2"></script>
+    <script src="./src/i18n/en.js?v=hybrid-3"></script>
+    <script src="./src/i18n/ru.js?v=hybrid-3"></script>
     <script src="./src/i18n/i18n.js"></script>
-    <script src="./src/pages/bpdh-page.js?v=hybrid-3"></script>
+    <script src="./src/pages/bpdh-page.js?v=hybrid-4"></script>
     <script src="./src/pwa/register-service-worker.js?v=1"></script>
   </body>
 </html>
