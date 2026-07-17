@@ -4,6 +4,10 @@
 
 .lab-header {
   display: grid;
+  width: 100%;
+  align-items: stretch;
+  justify-content: stretch;
+  justify-items: stretch;
   gap: 18px;
 }
 
@@ -37,6 +41,8 @@
 
 .lab-controls {
   display: grid;
+  width: 100%;
+  justify-self: stretch;
   gap: 12px;
 }
 
