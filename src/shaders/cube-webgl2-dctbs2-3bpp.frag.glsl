@@ -83,47 +83,55 @@ const int DCT_QUANT_C[64] = int[64](
   99, 99, 99, 99, 99, 99, 99, 99
 );
 
-// Four deterministic significance scans trimmed for 3 bpp records.
-const int DCT_SCAN_Y[388] = int[388](
-  16, 1, 2, 17, 32, 48, 33, 18, 3, 4, 19, 34, 49, 64, 80, 65, 50,
-  35, 20, 5, 6, 21, 36, 51, 66, 81, 96, 112, 97, 82, 67, 52, 37, 22,
-  7, 8, 23, 38, 53, 68, 83, 98, 113, 128, 144, 129, 114, 99, 84, 69, 54,
-  39, 24, 9, 10, 25, 40, 55, 70, 85, 100, 115, 130, 145, 160, 176, 161, 146,
-  131, 116, 101, 86, 71, 56, 41, 26, 11, 12, 27, 42, 57, 72, 87, 102, 117,
-  132, 147, 162, 177, 192, 208, 193, 178, 163, 148, 133, 118, 1, 2, 16, 3, 17,
-  4, 18, 32, 5, 19, 33, 6, 20, 34, 7, 48, 21, 35, 8, 49, 22, 36,
-  9, 50, 23, 64, 37, 10, 51, 24, 65, 38, 11, 52, 25, 66, 39, 80, 12,
-  53, 26, 67, 40, 81, 13, 54, 27, 68, 41, 82, 14, 55, 96, 28, 69, 42,
-  83, 15, 56, 97, 29, 70, 43, 84, 57, 98, 30, 71, 112, 44, 85, 58, 99,
-  31, 72, 113, 45, 86, 59, 100, 73, 114, 46, 87, 128, 60, 101, 74, 115, 47,
-  88, 129, 61, 102, 75, 116, 89, 16, 32, 1, 48, 17, 64, 33, 2, 80, 49,
-  18, 96, 65, 34, 112, 3, 81, 50, 128, 19, 97, 66, 144, 35, 113, 4, 82,
-  160, 51, 129, 20, 98, 176, 67, 145, 36, 114, 5, 192, 83, 161, 52, 130, 21,
-  208, 99, 177, 68, 146, 37, 224, 115, 6, 193, 84, 162, 53, 240, 131, 22, 209,
-  100, 178, 69, 147, 38, 225, 116, 7, 194, 85, 163, 54, 241, 132, 23, 210, 101,
-  179, 70, 148, 39, 226, 117, 8, 195, 86, 164, 55, 242, 133, 24, 211, 102, 180,
-  71, 149, 17, 1, 16, 34, 18, 33, 2, 32, 51, 35, 50, 19, 49, 3, 48,
-  68, 52, 67, 36, 66, 20, 65, 4, 64, 85, 69, 84, 53, 83, 37, 82, 21,
-  81, 5, 80, 102, 86, 101, 70, 100, 54, 99, 38, 98, 22, 97, 6, 96, 119,
-  103, 118, 87, 117, 71, 116, 55, 115, 39, 114, 23, 113, 7, 112, 136, 120, 135,
-  104, 134, 88, 133, 72, 132, 56, 131, 40, 130, 24, 129, 8, 128, 153, 137, 152,
-  121, 151, 105, 150, 89, 149, 73, 148, 57, 147, 41, 146, 25, 145
+// Zigzag plus four legacy significance scans trimmed for 3 bpp records.
+const int DCT_SCAN_Y[485] = int[485](
+  1, 16, 32, 17, 2, 3, 18, 33, 48, 64, 49, 34, 19, 4, 5, 20, 35,
+  50, 65, 80, 96, 81, 66, 51, 36, 21, 6, 7, 22, 37, 52, 67, 82, 97,
+  112, 128, 113, 98, 83, 68, 53, 38, 23, 8, 9, 24, 39, 54, 69, 84, 99,
+  114, 129, 144, 160, 145, 130, 115, 100, 85, 70, 55, 40, 25, 10, 11, 26, 41,
+  56, 71, 86, 101, 116, 131, 146, 161, 176, 192, 177, 162, 147, 132, 117, 102, 87,
+  72, 57, 42, 27, 12, 13, 28, 43, 58, 73, 88, 103, 16, 1, 2, 17, 32,
+  48, 33, 18, 3, 4, 19, 34, 49, 64, 80, 65, 50, 35, 20, 5, 6, 21,
+  36, 51, 66, 81, 96, 112, 97, 82, 67, 52, 37, 22, 7, 8, 23, 38, 53,
+  68, 83, 98, 113, 128, 144, 129, 114, 99, 84, 69, 54, 39, 24, 9, 10, 25,
+  40, 55, 70, 85, 100, 115, 130, 145, 160, 176, 161, 146, 131, 116, 101, 86, 71,
+  56, 41, 26, 11, 12, 27, 42, 57, 72, 87, 102, 117, 132, 147, 162, 177, 192,
+  208, 193, 178, 163, 148, 133, 118, 1, 2, 16, 3, 17, 4, 18, 32, 5, 19,
+  33, 6, 20, 34, 7, 48, 21, 35, 8, 49, 22, 36, 9, 50, 23, 64, 37,
+  10, 51, 24, 65, 38, 11, 52, 25, 66, 39, 80, 12, 53, 26, 67, 40, 81,
+  13, 54, 27, 68, 41, 82, 14, 55, 96, 28, 69, 42, 83, 15, 56, 97, 29,
+  70, 43, 84, 57, 98, 30, 71, 112, 44, 85, 58, 99, 31, 72, 113, 45, 86,
+  59, 100, 73, 114, 46, 87, 128, 60, 101, 74, 115, 47, 88, 129, 61, 102, 75,
+  116, 89, 16, 32, 1, 48, 17, 64, 33, 2, 80, 49, 18, 96, 65, 34, 112,
+  3, 81, 50, 128, 19, 97, 66, 144, 35, 113, 4, 82, 160, 51, 129, 20, 98,
+  176, 67, 145, 36, 114, 5, 192, 83, 161, 52, 130, 21, 208, 99, 177, 68, 146,
+  37, 224, 115, 6, 193, 84, 162, 53, 240, 131, 22, 209, 100, 178, 69, 147, 38,
+  225, 116, 7, 194, 85, 163, 54, 241, 132, 23, 210, 101, 179, 70, 148, 39, 226,
+  117, 8, 195, 86, 164, 55, 242, 133, 24, 211, 102, 180, 71, 149, 17, 1, 16,
+  34, 18, 33, 2, 32, 51, 35, 50, 19, 49, 3, 48, 68, 52, 67, 36, 66,
+  20, 65, 4, 64, 85, 69, 84, 53, 83, 37, 82, 21, 81, 5, 80, 102, 86,
+  101, 70, 100, 54, 99, 38, 98, 22, 97, 6, 96, 119, 103, 118, 87, 117, 71,
+  116, 55, 115, 39, 114, 23, 113, 7, 112, 136, 120, 135, 104, 134, 88, 133, 72,
+  132, 56, 131, 40, 130, 24, 129, 8, 128, 153, 137, 152, 121, 151, 105, 150, 89,
+  149, 73, 148, 57, 147, 41, 146, 25, 145
 );
 
-const int DCT_SCAN_C422[80] = int[80](
-  8, 1, 2, 9, 16, 24, 17, 10, 3, 4, 11, 18, 25, 32, 40, 33, 26,
-  19, 12, 5, 1, 2, 8, 3, 9, 4, 10, 16, 5, 11, 17, 6, 12, 18,
-  7, 24, 13, 19, 25, 14, 8, 16, 1, 24, 9, 32, 17, 2, 40, 25, 10,
-  48, 33, 18, 56, 3, 41, 26, 64, 11, 9, 1, 8, 18, 10, 17, 2, 16,
-  27, 19, 26, 11, 25, 3, 24, 36, 28, 35, 20, 34
+const int DCT_SCAN_C422[100] = int[100](
+  1, 8, 16, 9, 2, 3, 10, 17, 24, 32, 25, 18, 11, 4, 5, 12, 19,
+  26, 33, 40, 8, 1, 2, 9, 16, 24, 17, 10, 3, 4, 11, 18, 25, 32,
+  40, 33, 26, 19, 12, 5, 1, 2, 8, 3, 9, 4, 10, 16, 5, 11, 17,
+  6, 12, 18, 7, 24, 13, 19, 25, 14, 8, 16, 1, 24, 9, 32, 17, 2,
+  40, 25, 10, 48, 33, 18, 56, 3, 41, 26, 64, 11, 9, 1, 8, 18, 10,
+  17, 2, 16, 27, 19, 26, 11, 25, 3, 24, 36, 28, 35, 20, 34
 );
 
-const int DCT_SCAN_C420[80] = int[80](
-  8, 1, 2, 9, 16, 24, 17, 10, 3, 4, 11, 18, 25, 32, 40, 33, 26,
-  19, 12, 5, 1, 2, 8, 3, 9, 4, 10, 16, 5, 11, 17, 6, 12, 18,
-  7, 24, 13, 19, 25, 14, 8, 16, 1, 24, 9, 32, 17, 2, 40, 25, 10,
-  48, 33, 18, 56, 3, 41, 26, 11, 49, 9, 1, 8, 18, 10, 17, 2, 16,
-  27, 19, 26, 11, 25, 3, 24, 36, 28, 35, 20, 34
+const int DCT_SCAN_C420[100] = int[100](
+  1, 8, 16, 9, 2, 3, 10, 17, 24, 32, 25, 18, 11, 4, 5, 12, 19,
+  26, 33, 40, 8, 1, 2, 9, 16, 24, 17, 10, 3, 4, 11, 18, 25, 32,
+  40, 33, 26, 19, 12, 5, 1, 2, 8, 3, 9, 4, 10, 16, 5, 11, 17,
+  6, 12, 18, 7, 24, 13, 19, 25, 14, 8, 16, 1, 24, 9, 32, 17, 2,
+  40, 25, 10, 48, 33, 18, 56, 3, 41, 26, 11, 49, 9, 1, 8, 18, 10,
+  17, 2, 16, 27, 19, 26, 11, 25, 3, 24, 36, 28, 35, 20, 34
 );
 
 uint dctByteAt(int byteOffset) {
@@ -220,6 +228,7 @@ void addDctCompensated(float value, inout float sum, inout float correction) {
 float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
   uint headerWord = dctWordAt(recordOffset);
   int profile = int(headerWord >> 28u);
+  int storedProfile = (dctByteAt(52) & 16u) != 0u ? profile : profile + 1;
   int dcScaleIndex = int((headerWord >> 24u) & 15u);
   int dc = dctSigned10((headerWord >> 14u) & 1023u);
   float scale0 = exp2(float((headerWord >> 11u) & 7u));
@@ -238,7 +247,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
   uint currentWord = headerWord;
   uint nextWord = dctWordAt(recordOffset + 4);
   {
-    int position = DCT_SCAN_Y[profile * 97 + 0];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 0];
     int stored = dctSigned5((currentWord >> 0u) & 31u);
     addDctCompensated(
       float(stored) * scale0 * dctQuantizationStep(position, false, 16) *
@@ -251,7 +260,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
   currentWord = nextWord;
   nextWord = dctWordAt(recordOffset + 8);
   {
-    int position = DCT_SCAN_Y[profile * 97 + 1];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 1];
     int stored = dctSigned5((currentWord >> 27u) & 31u);
     addDctCompensated(
       float(stored) * scale0 * dctQuantizationStep(position, false, 16) *
@@ -262,7 +271,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 2];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 2];
     int stored = dctSigned5((currentWord >> 22u) & 31u);
     addDctCompensated(
       float(stored) * scale0 * dctQuantizationStep(position, false, 16) *
@@ -273,7 +282,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 3];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 3];
     int stored = dctSigned5((currentWord >> 17u) & 31u);
     addDctCompensated(
       float(stored) * scale0 * dctQuantizationStep(position, false, 16) *
@@ -284,7 +293,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 4];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 4];
     int stored = dctSigned5((currentWord >> 12u) & 31u);
     addDctCompensated(
       float(stored) * scale0 * dctQuantizationStep(position, false, 16) *
@@ -295,7 +304,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 5];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 5];
     int stored = dctSigned5((currentWord >> 7u) & 31u);
     addDctCompensated(
       float(stored) * scale0 * dctQuantizationStep(position, false, 16) *
@@ -306,7 +315,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 6];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 6];
     int stored = dctSigned5((currentWord >> 2u) & 31u);
     addDctCompensated(
       float(stored) * scale0 * dctQuantizationStep(position, false, 16) *
@@ -317,7 +326,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 7];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 7];
     int stored = dctSigned5(((currentWord << 3u) | (nextWord >> 29u)) & 31u);
     addDctCompensated(
       float(stored) * scale0 * dctQuantizationStep(position, false, 16) *
@@ -330,7 +339,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
   currentWord = nextWord;
   nextWord = dctWordAt(recordOffset + 12);
   {
-    int position = DCT_SCAN_Y[profile * 97 + 8];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 8];
     int stored = dctSigned5((currentWord >> 24u) & 31u);
     addDctCompensated(
       float(stored) * scale0 * dctQuantizationStep(position, false, 16) *
@@ -341,7 +350,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 9];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 9];
     int stored = dctSigned5((currentWord >> 19u) & 31u);
     addDctCompensated(
       float(stored) * scale0 * dctQuantizationStep(position, false, 16) *
@@ -352,7 +361,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 10];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 10];
     int stored = dctSigned5((currentWord >> 14u) & 31u);
     addDctCompensated(
       float(stored) * scale0 * dctQuantizationStep(position, false, 16) *
@@ -363,7 +372,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 11];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 11];
     int stored = dctSigned5((currentWord >> 9u) & 31u);
     addDctCompensated(
       float(stored) * scale0 * dctQuantizationStep(position, false, 16) *
@@ -374,7 +383,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 12];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 12];
     int stored = dctSigned5((currentWord >> 4u) & 31u);
     addDctCompensated(
       float(stored) * scale0 * dctQuantizationStep(position, false, 16) *
@@ -385,7 +394,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 13];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 13];
     int stored = dctSigned5(((currentWord << 1u) | (nextWord >> 31u)) & 31u);
     addDctCompensated(
       float(stored) * scale0 * dctQuantizationStep(position, false, 16) *
@@ -398,7 +407,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
   currentWord = nextWord;
   nextWord = dctWordAt(recordOffset + 16);
   {
-    int position = DCT_SCAN_Y[profile * 97 + 14];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 14];
     int stored = dctSigned5((currentWord >> 26u) & 31u);
     addDctCompensated(
       float(stored) * scale0 * dctQuantizationStep(position, false, 16) *
@@ -409,7 +418,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 15];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 15];
     int stored = dctSigned5((currentWord >> 21u) & 31u);
     addDctCompensated(
       float(stored) * scale0 * dctQuantizationStep(position, false, 16) *
@@ -420,7 +429,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 16];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 16];
     int stored = dctSigned5((currentWord >> 16u) & 31u);
     addDctCompensated(
       float(stored) * scale0 * dctQuantizationStep(position, false, 16) *
@@ -431,7 +440,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 17];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 17];
     int stored = dctSigned5((currentWord >> 11u) & 31u);
     addDctCompensated(
       float(stored) * scale1 * dctQuantizationStep(position, false, 16) *
@@ -442,7 +451,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 18];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 18];
     int stored = dctSigned5((currentWord >> 6u) & 31u);
     addDctCompensated(
       float(stored) * scale1 * dctQuantizationStep(position, false, 16) *
@@ -453,7 +462,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 19];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 19];
     int stored = dctSigned5((currentWord >> 1u) & 31u);
     addDctCompensated(
       float(stored) * scale1 * dctQuantizationStep(position, false, 16) *
@@ -464,7 +473,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 20];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 20];
     int stored = dctSigned5(((currentWord << 4u) | (nextWord >> 28u)) & 31u);
     addDctCompensated(
       float(stored) * scale1 * dctQuantizationStep(position, false, 16) *
@@ -477,7 +486,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
   currentWord = nextWord;
   nextWord = dctWordAt(recordOffset + 20);
   {
-    int position = DCT_SCAN_Y[profile * 97 + 21];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 21];
     int stored = dctSigned5((currentWord >> 23u) & 31u);
     addDctCompensated(
       float(stored) * scale1 * dctQuantizationStep(position, false, 16) *
@@ -488,7 +497,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 22];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 22];
     int stored = dctSigned5((currentWord >> 18u) & 31u);
     addDctCompensated(
       float(stored) * scale1 * dctQuantizationStep(position, false, 16) *
@@ -499,7 +508,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 23];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 23];
     int stored = dctSigned5((currentWord >> 13u) & 31u);
     addDctCompensated(
       float(stored) * scale1 * dctQuantizationStep(position, false, 16) *
@@ -510,7 +519,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 24];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 24];
     int stored = dctSigned5((currentWord >> 8u) & 31u);
     addDctCompensated(
       float(stored) * scale1 * dctQuantizationStep(position, false, 16) *
@@ -521,7 +530,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 25];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 25];
     int stored = dctSigned5((currentWord >> 3u) & 31u);
     addDctCompensated(
       float(stored) * scale1 * dctQuantizationStep(position, false, 16) *
@@ -532,7 +541,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 26];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 26];
     int stored = dctSigned5(((currentWord << 2u) | (nextWord >> 30u)) & 31u);
     addDctCompensated(
       float(stored) * scale1 * dctQuantizationStep(position, false, 16) *
@@ -545,7 +554,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
   currentWord = nextWord;
   nextWord = dctWordAt(recordOffset + 24);
   {
-    int position = DCT_SCAN_Y[profile * 97 + 27];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 27];
     int stored = dctSigned5((currentWord >> 25u) & 31u);
     addDctCompensated(
       float(stored) * scale1 * dctQuantizationStep(position, false, 16) *
@@ -556,7 +565,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 28];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 28];
     int stored = dctSigned5((currentWord >> 20u) & 31u);
     addDctCompensated(
       float(stored) * scale1 * dctQuantizationStep(position, false, 16) *
@@ -567,7 +576,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 29];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 29];
     int stored = dctSigned5((currentWord >> 15u) & 31u);
     addDctCompensated(
       float(stored) * scale1 * dctQuantizationStep(position, false, 16) *
@@ -578,7 +587,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 30];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 30];
     int stored = dctSigned5((currentWord >> 10u) & 31u);
     addDctCompensated(
       float(stored) * scale1 * dctQuantizationStep(position, false, 16) *
@@ -589,7 +598,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 31];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 31];
     int stored = dctSigned5((currentWord >> 5u) & 31u);
     addDctCompensated(
       float(stored) * scale1 * dctQuantizationStep(position, false, 16) *
@@ -600,7 +609,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 32];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 32];
     int stored = dctSigned5((currentWord >> 0u) & 31u);
     addDctCompensated(
       float(stored) * scale1 * dctQuantizationStep(position, false, 16) *
@@ -613,7 +622,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
   currentWord = nextWord;
   nextWord = dctWordAt(recordOffset + 28);
   {
-    int position = DCT_SCAN_Y[profile * 97 + 33];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 33];
     int stored = dctSigned5((currentWord >> 27u) & 31u);
     addDctCompensated(
       float(stored) * scale1 * dctQuantizationStep(position, false, 16) *
@@ -624,7 +633,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 34];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 34];
     int stored = dctSigned5((currentWord >> 22u) & 31u);
     addDctCompensated(
       float(stored) * scale1 * dctQuantizationStep(position, false, 16) *
@@ -635,7 +644,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 35];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 35];
     int stored = dctSigned5((currentWord >> 17u) & 31u);
     addDctCompensated(
       float(stored) * scale1 * dctQuantizationStep(position, false, 16) *
@@ -646,7 +655,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 36];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 36];
     int stored = dctSigned5((currentWord >> 12u) & 31u);
     addDctCompensated(
       float(stored) * scale1 * dctQuantizationStep(position, false, 16) *
@@ -657,7 +666,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 37];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 37];
     int stored = dctSigned5((currentWord >> 7u) & 31u);
     addDctCompensated(
       float(stored) * scale1 * dctQuantizationStep(position, false, 16) *
@@ -668,7 +677,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 38];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 38];
     int stored = dctSigned5((currentWord >> 2u) & 31u);
     addDctCompensated(
       float(stored) * scale1 * dctQuantizationStep(position, false, 16) *
@@ -679,7 +688,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 39];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 39];
     int stored = dctSigned5(((currentWord << 3u) | (nextWord >> 29u)) & 31u);
     addDctCompensated(
       float(stored) * scale1 * dctQuantizationStep(position, false, 16) *
@@ -692,7 +701,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
   currentWord = nextWord;
   nextWord = dctWordAt(recordOffset + 32);
   {
-    int position = DCT_SCAN_Y[profile * 97 + 40];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 40];
     int stored = dctSigned5((currentWord >> 24u) & 31u);
     addDctCompensated(
       float(stored) * scale1 * dctQuantizationStep(position, false, 16) *
@@ -703,7 +712,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 41];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 41];
     int stored = dctSigned5((currentWord >> 19u) & 31u);
     addDctCompensated(
       float(stored) * scale1 * dctQuantizationStep(position, false, 16) *
@@ -714,7 +723,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 42];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 42];
     int stored = dctSigned5((currentWord >> 14u) & 31u);
     addDctCompensated(
       float(stored) * scale1 * dctQuantizationStep(position, false, 16) *
@@ -725,7 +734,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 43];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 43];
     int stored = dctSigned5((currentWord >> 9u) & 31u);
     addDctCompensated(
       float(stored) * scale1 * dctQuantizationStep(position, false, 16) *
@@ -736,7 +745,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 44];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 44];
     int stored = dctSigned5((currentWord >> 4u) & 31u);
     addDctCompensated(
       float(stored) * scale1 * dctQuantizationStep(position, false, 16) *
@@ -747,7 +756,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 45];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 45];
     int stored = dctSigned5(((currentWord << 1u) | (nextWord >> 31u)) & 31u);
     addDctCompensated(
       float(stored) * scale1 * dctQuantizationStep(position, false, 16) *
@@ -760,7 +769,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
   currentWord = nextWord;
   nextWord = dctWordAt(recordOffset + 36);
   {
-    int position = DCT_SCAN_Y[profile * 97 + 46];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 46];
     int stored = dctSigned5((currentWord >> 26u) & 31u);
     addDctCompensated(
       float(stored) * scale1 * dctQuantizationStep(position, false, 16) *
@@ -771,7 +780,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 47];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 47];
     int stored = dctSigned5((currentWord >> 21u) & 31u);
     addDctCompensated(
       float(stored) * scale1 * dctQuantizationStep(position, false, 16) *
@@ -782,7 +791,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 48];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 48];
     int stored = dctSigned5((currentWord >> 16u) & 31u);
     addDctCompensated(
       float(stored) * scale1 * dctQuantizationStep(position, false, 16) *
@@ -793,7 +802,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 49];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 49];
     int stored = dctSigned5((currentWord >> 11u) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, false, 16) *
@@ -804,7 +813,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 50];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 50];
     int stored = dctSigned5((currentWord >> 6u) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, false, 16) *
@@ -815,7 +824,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 51];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 51];
     int stored = dctSigned5((currentWord >> 1u) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, false, 16) *
@@ -826,7 +835,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 52];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 52];
     int stored = dctSigned5(((currentWord << 4u) | (nextWord >> 28u)) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, false, 16) *
@@ -839,7 +848,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
   currentWord = nextWord;
   nextWord = dctWordAt(recordOffset + 40);
   {
-    int position = DCT_SCAN_Y[profile * 97 + 53];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 53];
     int stored = dctSigned5((currentWord >> 23u) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, false, 16) *
@@ -850,7 +859,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 54];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 54];
     int stored = dctSigned5((currentWord >> 18u) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, false, 16) *
@@ -861,7 +870,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 55];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 55];
     int stored = dctSigned5((currentWord >> 13u) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, false, 16) *
@@ -872,7 +881,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 56];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 56];
     int stored = dctSigned5((currentWord >> 8u) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, false, 16) *
@@ -883,7 +892,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 57];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 57];
     int stored = dctSigned5((currentWord >> 3u) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, false, 16) *
@@ -894,7 +903,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 58];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 58];
     int stored = dctSigned5(((currentWord << 2u) | (nextWord >> 30u)) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, false, 16) *
@@ -907,7 +916,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
   currentWord = nextWord;
   nextWord = dctWordAt(recordOffset + 44);
   {
-    int position = DCT_SCAN_Y[profile * 97 + 59];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 59];
     int stored = dctSigned5((currentWord >> 25u) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, false, 16) *
@@ -918,7 +927,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 60];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 60];
     int stored = dctSigned5((currentWord >> 20u) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, false, 16) *
@@ -929,7 +938,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 61];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 61];
     int stored = dctSigned5((currentWord >> 15u) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, false, 16) *
@@ -940,7 +949,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 62];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 62];
     int stored = dctSigned5((currentWord >> 10u) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, false, 16) *
@@ -951,7 +960,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 63];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 63];
     int stored = dctSigned5((currentWord >> 5u) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, false, 16) *
@@ -962,7 +971,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 64];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 64];
     int stored = dctSigned5((currentWord >> 0u) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, false, 16) *
@@ -975,7 +984,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
   currentWord = nextWord;
   nextWord = dctWordAt(recordOffset + 48);
   {
-    int position = DCT_SCAN_Y[profile * 97 + 65];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 65];
     int stored = dctSigned5((currentWord >> 27u) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, false, 16) *
@@ -986,7 +995,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 66];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 66];
     int stored = dctSigned5((currentWord >> 22u) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, false, 16) *
@@ -997,7 +1006,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 67];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 67];
     int stored = dctSigned5((currentWord >> 17u) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, false, 16) *
@@ -1008,7 +1017,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 68];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 68];
     int stored = dctSigned5((currentWord >> 12u) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, false, 16) *
@@ -1019,7 +1028,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 69];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 69];
     int stored = dctSigned5((currentWord >> 7u) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, false, 16) *
@@ -1030,7 +1039,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 70];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 70];
     int stored = dctSigned5((currentWord >> 2u) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, false, 16) *
@@ -1041,7 +1050,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 71];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 71];
     int stored = dctSigned5(((currentWord << 3u) | (nextWord >> 29u)) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, false, 16) *
@@ -1054,7 +1063,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
   currentWord = nextWord;
   nextWord = dctWordAt(recordOffset + 52);
   {
-    int position = DCT_SCAN_Y[profile * 97 + 72];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 72];
     int stored = dctSigned5((currentWord >> 24u) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, false, 16) *
@@ -1065,7 +1074,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 73];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 73];
     int stored = dctSigned5((currentWord >> 19u) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, false, 16) *
@@ -1076,7 +1085,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 74];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 74];
     int stored = dctSigned5((currentWord >> 14u) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, false, 16) *
@@ -1087,7 +1096,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 75];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 75];
     int stored = dctSigned5((currentWord >> 9u) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, false, 16) *
@@ -1098,7 +1107,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 76];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 76];
     int stored = dctSigned5((currentWord >> 4u) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, false, 16) *
@@ -1109,7 +1118,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 77];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 77];
     int stored = dctSigned5(((currentWord << 1u) | (nextWord >> 31u)) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, false, 16) *
@@ -1122,7 +1131,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
   currentWord = nextWord;
   nextWord = dctWordAt(recordOffset + 56);
   {
-    int position = DCT_SCAN_Y[profile * 97 + 78];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 78];
     int stored = dctSigned5((currentWord >> 26u) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, false, 16) *
@@ -1133,7 +1142,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 79];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 79];
     int stored = dctSigned5((currentWord >> 21u) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, false, 16) *
@@ -1144,7 +1153,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 80];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 80];
     int stored = dctSigned5((currentWord >> 16u) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, false, 16) *
@@ -1155,7 +1164,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 81];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 81];
     int stored = dctSigned5((currentWord >> 11u) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, false, 16) *
@@ -1166,7 +1175,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 82];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 82];
     int stored = dctSigned5((currentWord >> 6u) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, false, 16) *
@@ -1177,7 +1186,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 83];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 83];
     int stored = dctSigned5((currentWord >> 1u) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, false, 16) *
@@ -1188,7 +1197,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 84];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 84];
     int stored = dctSigned5(((currentWord << 4u) | (nextWord >> 28u)) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, false, 16) *
@@ -1201,7 +1210,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
   currentWord = nextWord;
   nextWord = dctWordAt(recordOffset + 60);
   {
-    int position = DCT_SCAN_Y[profile * 97 + 85];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 85];
     int stored = dctSigned5((currentWord >> 23u) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, false, 16) *
@@ -1212,7 +1221,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 86];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 86];
     int stored = dctSigned5((currentWord >> 18u) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, false, 16) *
@@ -1223,7 +1232,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 87];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 87];
     int stored = dctSigned5((currentWord >> 13u) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, false, 16) *
@@ -1234,7 +1243,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 88];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 88];
     int stored = dctSigned5((currentWord >> 8u) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, false, 16) *
@@ -1245,7 +1254,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 89];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 89];
     int stored = dctSigned5((currentWord >> 3u) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, false, 16) *
@@ -1256,7 +1265,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 90];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 90];
     int stored = dctSigned5(((currentWord << 2u) | (nextWord >> 30u)) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, false, 16) *
@@ -1268,7 +1277,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
   }
   currentWord = nextWord;
   {
-    int position = DCT_SCAN_Y[profile * 97 + 91];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 91];
     int stored = dctSigned5((currentWord >> 25u) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, false, 16) *
@@ -1279,7 +1288,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 92];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 92];
     int stored = dctSigned5((currentWord >> 20u) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, false, 16) *
@@ -1290,7 +1299,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 93];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 93];
     int stored = dctSigned5((currentWord >> 15u) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, false, 16) *
@@ -1301,7 +1310,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 94];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 94];
     int stored = dctSigned5((currentWord >> 10u) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, false, 16) *
@@ -1312,7 +1321,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 95];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 95];
     int stored = dctSigned5((currentWord >> 5u) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, false, 16) *
@@ -1323,7 +1332,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_Y[profile * 97 + 96];
+    int position = DCT_SCAN_Y[storedProfile * 97 + 96];
     int stored = dctSigned5((currentWord >> 0u) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, false, 16) *
@@ -1340,6 +1349,7 @@ float sampleDctLumaRecord(int recordOffset, int localX, int localY) {
 float sampleDctChroma422Record(int recordOffset, int localX, int localY) {
   uint headerWord = dctWordAt(recordOffset);
   int profile = int(headerWord >> 28u);
+  int storedProfile = (dctByteAt(52) & 16u) != 0u ? profile : profile + 1;
   int dcScaleIndex = int((headerWord >> 24u) & 15u);
   int dc = dctSigned10((headerWord >> 14u) & 1023u);
   float scale0 = exp2(float((headerWord >> 11u) & 7u));
@@ -1358,7 +1368,7 @@ float sampleDctChroma422Record(int recordOffset, int localX, int localY) {
   uint currentWord = headerWord;
   uint nextWord = dctWordAt(recordOffset + 4);
   {
-    int position = DCT_SCAN_C422[profile * 20 + 0];
+    int position = DCT_SCAN_C422[storedProfile * 20 + 0];
     int stored = dctSigned5((currentWord >> 0u) & 31u);
     addDctCompensated(
       float(stored) * scale0 * dctQuantizationStep(position, true, 16) *
@@ -1371,7 +1381,7 @@ float sampleDctChroma422Record(int recordOffset, int localX, int localY) {
   currentWord = nextWord;
   nextWord = dctWordAt(recordOffset + 8);
   {
-    int position = DCT_SCAN_C422[profile * 20 + 1];
+    int position = DCT_SCAN_C422[storedProfile * 20 + 1];
     int stored = dctSigned5((currentWord >> 27u) & 31u);
     addDctCompensated(
       float(stored) * scale0 * dctQuantizationStep(position, true, 16) *
@@ -1382,7 +1392,7 @@ float sampleDctChroma422Record(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_C422[profile * 20 + 2];
+    int position = DCT_SCAN_C422[storedProfile * 20 + 2];
     int stored = dctSigned5((currentWord >> 22u) & 31u);
     addDctCompensated(
       float(stored) * scale0 * dctQuantizationStep(position, true, 16) *
@@ -1393,7 +1403,7 @@ float sampleDctChroma422Record(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_C422[profile * 20 + 3];
+    int position = DCT_SCAN_C422[storedProfile * 20 + 3];
     int stored = dctSigned5((currentWord >> 17u) & 31u);
     addDctCompensated(
       float(stored) * scale0 * dctQuantizationStep(position, true, 16) *
@@ -1404,7 +1414,7 @@ float sampleDctChroma422Record(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_C422[profile * 20 + 4];
+    int position = DCT_SCAN_C422[storedProfile * 20 + 4];
     int stored = dctSigned5((currentWord >> 12u) & 31u);
     addDctCompensated(
       float(stored) * scale1 * dctQuantizationStep(position, true, 16) *
@@ -1415,7 +1425,7 @@ float sampleDctChroma422Record(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_C422[profile * 20 + 5];
+    int position = DCT_SCAN_C422[storedProfile * 20 + 5];
     int stored = dctSigned5((currentWord >> 7u) & 31u);
     addDctCompensated(
       float(stored) * scale1 * dctQuantizationStep(position, true, 16) *
@@ -1426,7 +1436,7 @@ float sampleDctChroma422Record(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_C422[profile * 20 + 6];
+    int position = DCT_SCAN_C422[storedProfile * 20 + 6];
     int stored = dctSigned5((currentWord >> 2u) & 31u);
     addDctCompensated(
       float(stored) * scale1 * dctQuantizationStep(position, true, 16) *
@@ -1437,7 +1447,7 @@ float sampleDctChroma422Record(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_C422[profile * 20 + 7];
+    int position = DCT_SCAN_C422[storedProfile * 20 + 7];
     int stored = dctSigned5(((currentWord << 3u) | (nextWord >> 29u)) & 31u);
     addDctCompensated(
       float(stored) * scale1 * dctQuantizationStep(position, true, 16) *
@@ -1450,7 +1460,7 @@ float sampleDctChroma422Record(int recordOffset, int localX, int localY) {
   currentWord = nextWord;
   nextWord = dctWordAt(recordOffset + 12);
   {
-    int position = DCT_SCAN_C422[profile * 20 + 8];
+    int position = DCT_SCAN_C422[storedProfile * 20 + 8];
     int stored = dctSigned5((currentWord >> 24u) & 31u);
     addDctCompensated(
       float(stored) * scale1 * dctQuantizationStep(position, true, 16) *
@@ -1461,7 +1471,7 @@ float sampleDctChroma422Record(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_C422[profile * 20 + 9];
+    int position = DCT_SCAN_C422[storedProfile * 20 + 9];
     int stored = dctSigned5((currentWord >> 19u) & 31u);
     addDctCompensated(
       float(stored) * scale1 * dctQuantizationStep(position, true, 16) *
@@ -1472,7 +1482,7 @@ float sampleDctChroma422Record(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_C422[profile * 20 + 10];
+    int position = DCT_SCAN_C422[storedProfile * 20 + 10];
     int stored = dctSigned5((currentWord >> 14u) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, true, 16) *
@@ -1483,7 +1493,7 @@ float sampleDctChroma422Record(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_C422[profile * 20 + 11];
+    int position = DCT_SCAN_C422[storedProfile * 20 + 11];
     int stored = dctSigned5((currentWord >> 9u) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, true, 16) *
@@ -1494,7 +1504,7 @@ float sampleDctChroma422Record(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_C422[profile * 20 + 12];
+    int position = DCT_SCAN_C422[storedProfile * 20 + 12];
     int stored = dctSigned5((currentWord >> 4u) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, true, 16) *
@@ -1505,7 +1515,7 @@ float sampleDctChroma422Record(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_C422[profile * 20 + 13];
+    int position = DCT_SCAN_C422[storedProfile * 20 + 13];
     int stored = dctSigned5(((currentWord << 1u) | (nextWord >> 31u)) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, true, 16) *
@@ -1517,7 +1527,7 @@ float sampleDctChroma422Record(int recordOffset, int localX, int localY) {
   }
   currentWord = nextWord;
   {
-    int position = DCT_SCAN_C422[profile * 20 + 14];
+    int position = DCT_SCAN_C422[storedProfile * 20 + 14];
     int stored = dctSigned5((currentWord >> 26u) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, true, 16) *
@@ -1528,7 +1538,7 @@ float sampleDctChroma422Record(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_C422[profile * 20 + 15];
+    int position = DCT_SCAN_C422[storedProfile * 20 + 15];
     int stored = dctSigned5((currentWord >> 21u) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, true, 16) *
@@ -1539,7 +1549,7 @@ float sampleDctChroma422Record(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_C422[profile * 20 + 16];
+    int position = DCT_SCAN_C422[storedProfile * 20 + 16];
     int stored = dctSigned5((currentWord >> 16u) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, true, 16) *
@@ -1550,7 +1560,7 @@ float sampleDctChroma422Record(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_C422[profile * 20 + 17];
+    int position = DCT_SCAN_C422[storedProfile * 20 + 17];
     int stored = dctSigned5((currentWord >> 11u) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, true, 16) *
@@ -1561,7 +1571,7 @@ float sampleDctChroma422Record(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_C422[profile * 20 + 18];
+    int position = DCT_SCAN_C422[storedProfile * 20 + 18];
     int stored = dctSigned5((currentWord >> 6u) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, true, 16) *
@@ -1572,7 +1582,7 @@ float sampleDctChroma422Record(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_C422[profile * 20 + 19];
+    int position = DCT_SCAN_C422[storedProfile * 20 + 19];
     int stored = dctSigned5((currentWord >> 1u) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, true, 16) *
@@ -1589,6 +1599,7 @@ float sampleDctChroma422Record(int recordOffset, int localX, int localY) {
 float sampleDctChroma420Record(int recordOffset, int localX, int localY) {
   uint headerWord = dctWordAt(recordOffset);
   int profile = int(headerWord >> 28u);
+  int storedProfile = (dctByteAt(52) & 16u) != 0u ? profile : profile + 1;
   int dcScaleIndex = int((headerWord >> 24u) & 15u);
   int dc = dctSigned10((headerWord >> 14u) & 1023u);
   float scale0 = exp2(float((headerWord >> 11u) & 7u));
@@ -1607,7 +1618,7 @@ float sampleDctChroma420Record(int recordOffset, int localX, int localY) {
   uint currentWord = headerWord;
   uint nextWord = dctWordAt(recordOffset + 4);
   {
-    int position = DCT_SCAN_C420[profile * 20 + 0];
+    int position = DCT_SCAN_C420[storedProfile * 20 + 0];
     int stored = dctSigned5((currentWord >> 0u) & 31u);
     addDctCompensated(
       float(stored) * scale0 * dctQuantizationStep(position, true, 8) *
@@ -1620,7 +1631,7 @@ float sampleDctChroma420Record(int recordOffset, int localX, int localY) {
   currentWord = nextWord;
   nextWord = dctWordAt(recordOffset + 8);
   {
-    int position = DCT_SCAN_C420[profile * 20 + 1];
+    int position = DCT_SCAN_C420[storedProfile * 20 + 1];
     int stored = dctSigned5((currentWord >> 27u) & 31u);
     addDctCompensated(
       float(stored) * scale0 * dctQuantizationStep(position, true, 8) *
@@ -1631,7 +1642,7 @@ float sampleDctChroma420Record(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_C420[profile * 20 + 2];
+    int position = DCT_SCAN_C420[storedProfile * 20 + 2];
     int stored = dctSigned5((currentWord >> 22u) & 31u);
     addDctCompensated(
       float(stored) * scale0 * dctQuantizationStep(position, true, 8) *
@@ -1642,7 +1653,7 @@ float sampleDctChroma420Record(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_C420[profile * 20 + 3];
+    int position = DCT_SCAN_C420[storedProfile * 20 + 3];
     int stored = dctSigned5((currentWord >> 17u) & 31u);
     addDctCompensated(
       float(stored) * scale0 * dctQuantizationStep(position, true, 8) *
@@ -1653,7 +1664,7 @@ float sampleDctChroma420Record(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_C420[profile * 20 + 4];
+    int position = DCT_SCAN_C420[storedProfile * 20 + 4];
     int stored = dctSigned5((currentWord >> 12u) & 31u);
     addDctCompensated(
       float(stored) * scale1 * dctQuantizationStep(position, true, 8) *
@@ -1664,7 +1675,7 @@ float sampleDctChroma420Record(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_C420[profile * 20 + 5];
+    int position = DCT_SCAN_C420[storedProfile * 20 + 5];
     int stored = dctSigned5((currentWord >> 7u) & 31u);
     addDctCompensated(
       float(stored) * scale1 * dctQuantizationStep(position, true, 8) *
@@ -1675,7 +1686,7 @@ float sampleDctChroma420Record(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_C420[profile * 20 + 6];
+    int position = DCT_SCAN_C420[storedProfile * 20 + 6];
     int stored = dctSigned5((currentWord >> 2u) & 31u);
     addDctCompensated(
       float(stored) * scale1 * dctQuantizationStep(position, true, 8) *
@@ -1686,7 +1697,7 @@ float sampleDctChroma420Record(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_C420[profile * 20 + 7];
+    int position = DCT_SCAN_C420[storedProfile * 20 + 7];
     int stored = dctSigned5(((currentWord << 3u) | (nextWord >> 29u)) & 31u);
     addDctCompensated(
       float(stored) * scale1 * dctQuantizationStep(position, true, 8) *
@@ -1699,7 +1710,7 @@ float sampleDctChroma420Record(int recordOffset, int localX, int localY) {
   currentWord = nextWord;
   nextWord = dctWordAt(recordOffset + 12);
   {
-    int position = DCT_SCAN_C420[profile * 20 + 8];
+    int position = DCT_SCAN_C420[storedProfile * 20 + 8];
     int stored = dctSigned5((currentWord >> 24u) & 31u);
     addDctCompensated(
       float(stored) * scale1 * dctQuantizationStep(position, true, 8) *
@@ -1710,7 +1721,7 @@ float sampleDctChroma420Record(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_C420[profile * 20 + 9];
+    int position = DCT_SCAN_C420[storedProfile * 20 + 9];
     int stored = dctSigned5((currentWord >> 19u) & 31u);
     addDctCompensated(
       float(stored) * scale1 * dctQuantizationStep(position, true, 8) *
@@ -1721,7 +1732,7 @@ float sampleDctChroma420Record(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_C420[profile * 20 + 10];
+    int position = DCT_SCAN_C420[storedProfile * 20 + 10];
     int stored = dctSigned5((currentWord >> 14u) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, true, 8) *
@@ -1732,7 +1743,7 @@ float sampleDctChroma420Record(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_C420[profile * 20 + 11];
+    int position = DCT_SCAN_C420[storedProfile * 20 + 11];
     int stored = dctSigned5((currentWord >> 9u) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, true, 8) *
@@ -1743,7 +1754,7 @@ float sampleDctChroma420Record(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_C420[profile * 20 + 12];
+    int position = DCT_SCAN_C420[storedProfile * 20 + 12];
     int stored = dctSigned5((currentWord >> 4u) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, true, 8) *
@@ -1754,7 +1765,7 @@ float sampleDctChroma420Record(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_C420[profile * 20 + 13];
+    int position = DCT_SCAN_C420[storedProfile * 20 + 13];
     int stored = dctSigned5(((currentWord << 1u) | (nextWord >> 31u)) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, true, 8) *
@@ -1766,7 +1777,7 @@ float sampleDctChroma420Record(int recordOffset, int localX, int localY) {
   }
   currentWord = nextWord;
   {
-    int position = DCT_SCAN_C420[profile * 20 + 14];
+    int position = DCT_SCAN_C420[storedProfile * 20 + 14];
     int stored = dctSigned5((currentWord >> 26u) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, true, 8) *
@@ -1777,7 +1788,7 @@ float sampleDctChroma420Record(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_C420[profile * 20 + 15];
+    int position = DCT_SCAN_C420[storedProfile * 20 + 15];
     int stored = dctSigned5((currentWord >> 21u) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, true, 8) *
@@ -1788,7 +1799,7 @@ float sampleDctChroma420Record(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_C420[profile * 20 + 16];
+    int position = DCT_SCAN_C420[storedProfile * 20 + 16];
     int stored = dctSigned5((currentWord >> 16u) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, true, 8) *
@@ -1799,7 +1810,7 @@ float sampleDctChroma420Record(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_C420[profile * 20 + 17];
+    int position = DCT_SCAN_C420[storedProfile * 20 + 17];
     int stored = dctSigned5((currentWord >> 11u) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, true, 8) *
@@ -1810,7 +1821,7 @@ float sampleDctChroma420Record(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_C420[profile * 20 + 18];
+    int position = DCT_SCAN_C420[storedProfile * 20 + 18];
     int stored = dctSigned5((currentWord >> 6u) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, true, 8) *
@@ -1821,7 +1832,7 @@ float sampleDctChroma420Record(int recordOffset, int localX, int localY) {
     );
   }
   {
-    int position = DCT_SCAN_C420[profile * 20 + 19];
+    int position = DCT_SCAN_C420[storedProfile * 20 + 19];
     int stored = dctSigned5((currentWord >> 1u) & 31u);
     addDctCompensated(
       float(stored) * scale2 * dctQuantizationStep(position, true, 8) *

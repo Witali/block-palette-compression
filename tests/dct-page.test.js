@@ -73,9 +73,11 @@ test("shows component record bits, DCT coefficient positions, and every packing 
   assert.match(pageScript, /presetKey === "9" \? \[2, 6, 7\]/);
   assert.match(pageScript, /function renderDctLayoutZigzag\(/);
   assert.match(pageScript, /function getDctLayoutZigzagPositions\(/);
-  assert.match(pageScript, /diagonal % 2 === 0 \? v : u/);
+  assert.match(pageScript, /for \(let diagonal = 0; diagonal <= width \+ height - 2/);
+  assert.match(pageScript, /for \(let u = maximumU; u >= minimumU; u -= 1\)/);
   assert.match(pageScript, /marker-end="url\(#dct-layout-zigzag-arrowhead\)"/);
-  assert.match(pageScript, /const showZigzag = shape\.component !== "y"/);
+  assert.match(pageScript, /const showZigzag = true/);
+  assert.match(pageScript, /const zigzagRank = new Map/);
   assert.match(pageScript, /shape\.width === 8 && shape\.height === 8 && Number\(presetKey\) >= 6/);
   assert.match(pageStyles, /\.dct-layout-bit-strip/);
   assert.match(pageStyles, /\.dct-layout-coefficient\.is-mask-tail/);

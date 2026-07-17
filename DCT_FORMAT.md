@@ -62,15 +62,18 @@ All multi-byte integers are unsigned little-endian values.
 | 40 | 4 | Cb bytes per MCU |
 | 44 | 4 | Cr bytes per MCU |
 | 48 | 4 | JPEG-style quality value (1–100) |
-| 52 | 4 | flags; bit 0 means quality was selected automatically; bit 1 selects four 8×8 Y records; bit 2 enables a DCT prototype library; bit 3 selects 4:2:0 chroma (unset means legacy 4:2:2); bits 8–11 select coefficient coding |
+| 52 | 4 | flags; bit 0 means quality was selected automatically; bit 1 selects four 8×8 Y records; bit 2 enables a DCT prototype library; bit 3 selects 4:2:0 chroma (unset means legacy 4:2:2); bit 4 enables zigzag coefficient order; bits 8–11 select coefficient coding |
 | 56 | 4 | payload bytes |
 | 60 | 4 | number of quality candidates, or prototype-library bytes when flag bit 2 is set |
 
 ## Component record
 
-Every component record starts with one byte. In legacy and grouped records its
-high nibble selects one of four fixed coefficient scans (low-frequency,
-horizontal, vertical, or diagonal). Bits 0–2 select the quantizer multiplier
+Every component record starts with one byte. When header flag bit 4 is unset,
+the high nibble of legacy and grouped records selects one of four compatible
+coefficient scans (low-frequency, horizontal, vertical, or diagonal). When bit
+4 is set, profile 0 is the JPEG-style alternating-diagonal zigzag and profiles
+1 through 4 retain the four older scans. This lets the encoder choose zigzag
+without discarding a better old profile. Bits 0–2 select the quantizer multiplier
 1, 2, 4, 8, 16, 32, 64, or 128. The legacy coding then stores a signed 10-bit
 DC coefficient followed by as many signed 6-bit AC coefficients as fit in the
 fixed component record. Unused tail bits are zero. A split-luma MCU places its
@@ -87,8 +90,9 @@ component size and coding flag, so their parsing remains bounded and does not
 depend on another MCU.
 
 Adaptive skip codings retain grouped coding as a per-record fallback. When bit
-3 of the first byte is set, the high nibble instead selects one of eight fixed
-frequency scans and the payload after the signed 10-bit DC is a bounded token
+3 of the first byte is set, the high nibble selects one of eight compatible
+frequency scans, or zigzag plus those eight scans when header bit 4 is set. The
+payload after the signed 10-bit DC is a bounded token
 sequence. Each token stores a signed coefficient followed by a 2-bit skip; the
 next scan index is `current + skip + 1`. Skip-RLE uses signed 6-bit values for
 all tokens. Dual-scale skip uses signed 6-bit coarse tokens followed by signed
@@ -109,16 +113,17 @@ PSNR. Low-rate chroma keeps grouped coding; high-rate split-luma files may use
 adaptive skip for both luma and chroma records.
 
 Masked-tail 8x8 records begin with a 64-bit little-endian word. Bits 0 through
-61 are an explicit AC mask: bit 0 selects `DCT[1]` (the first AC coefficient),
-bit 61 selects `DCT[62]`, and DC never has a mask bit. Bits 62 and 63 select the
+61 are an explicit AC mask. With zigzag enabled, bit 0 selects zigzag AC1
+(`DCT[1]`), bit 1 selects zigzag AC2 (`DCT[8]`), and bit 61 selects AC62 in
+zigzag order. DC never has a mask bit. Bits 62 and 63 select the
 shared multiplier 1, 2, 4, or 8. The value stream after the mask is packed
 least-significant bit first and starts with a separately stored signed DC.
 
 If the mask contains `M` set bits and the record has an AC capacity of `N`, the
-remaining `N - M` slots are an implicit contiguous tail at
-`DCT[64 - (N - M)] ... DCT[63]`. Explicit mask positions must precede that tail,
+remaining `N - M` slots are an implicit contiguous tail at zigzag ranks
+`64 - (N - M) ... 63`. Explicit mask ranks must precede that tail,
 so a record can never store the same coefficient twice. Explicit values are
-written in increasing coefficient-position order, followed by the tail values.
+written in increasing zigzag rank, followed by the tail values.
 The fixed layouts are:
 
 | Record bytes | DC bits | AC bits | AC capacity |
@@ -136,8 +141,8 @@ references occupy fields that masked-tail records do not expose.
 
 Coding ID 7 is a separate 48-byte 8x8 layout. `DCT[1]` (`u=1,v=0`) and
 `DCT[8]` (`u=0,v=1`) are always present and therefore have no mask bits. The
-remaining positions `DCT[2] ... DCT[62]`, excluding `DCT[8]`, use 60
-little-endian mask bits in increasing natural position order. The following
+remaining AC positions through zigzag rank 62 use 60 little-endian mask bits
+in increasing zigzag order. The following
 two bits store the shared multiplier, followed immediately by signed DC10,
 the two implicit AC8 values in position order `DCT[1], DCT[8]`, the explicitly
 masked AC8 values, and the implicit tail. Its exact 384-bit allocation is
@@ -145,6 +150,12 @@ masked AC8 values, and the implicit tail. Its exact 384-bit allocation is
 bits, the tail contains `37 - M` values. ID 7 falls back to ID 2 semantics for
 records other than 48-byte 8x8 components and is not used with prototype
 libraries.
+
+For backward compatibility, an unset header bit 4 preserves the original
+natural-position masked tail and the original profile numbering exactly. The
+automatic high-rate encoder compares both masked orders in reconstructed RGB
+space and keeps the lower-error file. Prototype-library encodes currently keep
+bit 4 unset because header-reference records reserve only two profile bits.
 
 Coefficient coding identifiers are:
 
@@ -255,6 +266,10 @@ remain valid: an unset bit 1 always means one 16×16 Y record, including for a
 DCTBS2 v2 files written before the 4:2:0 flag was introduced also remain valid:
 an unset bit 3 always means the original 8×16 4:2:2 chroma layout. New encoders
 set bit 3 and write 8×8 4:2:0 chroma without changing any preset's byte count.
+
+DCTBS2 v2 files written before zigzag ordering was introduced remain valid:
+an unset bit 4 preserves all original profile numbers, mask-bit meanings, and
+natural-position implicit tails. New non-library encodes set bit 4 by default.
 
 ## JPEG DCT import
 

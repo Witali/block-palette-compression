@@ -65,8 +65,30 @@ function scanScore(profile, u, v) {
   return u + v + ((u + v) % 2 === 0 ? v : u) * 0.001;
 }
 
+function buildZigzagScan(width, height) {
+  const positions = [];
+  for (let diagonal = 0; diagonal <= width + height - 2; diagonal += 1) {
+    const minimumU = Math.max(0, diagonal - height + 1);
+    const maximumU = Math.min(width - 1, diagonal);
+    if ((diagonal & 1) === 0) {
+      for (let u = minimumU; u <= maximumU; u += 1) {
+        const v = diagonal - u;
+        if (u !== 0 || v !== 0) positions.push(v * width + u);
+      }
+    } else {
+      for (let u = maximumU; u >= minimumU; u -= 1) {
+        const v = diagonal - u;
+        if (u !== 0 || v !== 0) positions.push(v * width + u);
+      }
+    }
+  }
+  return positions;
+}
+
 function allScans(width, height) {
-  return Array.from({ length: 4 }, (_, profile) => buildScan(profile, width, height)).flat();
+  return [buildZigzagScan(width, height), ...Array.from(
+    { length: 4 }, (_, profile) => buildScan(profile, width, height)
+  )].flat();
 }
 
 function buildSkipScan(profile, width, height) {
@@ -106,7 +128,9 @@ function skipScanScore(profile, u, v) {
 }
 
 function allSkipScans(width, height) {
-  return Array.from({ length: 8 }, (_, profile) => buildSkipScan(profile, width, height)).flat();
+  return [buildZigzagScan(width, height), ...Array.from(
+    { length: 8 }, (_, profile) => buildSkipScan(profile, width, height)
+  )].flat();
 }
 
 function glslIntArray(name, values) {
@@ -122,10 +146,10 @@ function cubeShaderFile(preset) {
 }
 
 function trimmedScans(width, height, count) {
-  return Array.from(
+  return [buildZigzagScan(width, height), ...Array.from(
     { length: 4 },
     (_, profile) => buildScan(profile, width, height).slice(0, count)
-  ).flat();
+  )].map((scan) => scan.slice(0, count)).flat();
 }
 
 function renderCubeIntArray(name, values) {
@@ -175,6 +199,7 @@ function renderUnrolledComponentDecoder(options) {
     `float ${functionName}(int recordOffset, int localX, int localY) {`,
     "  uint headerWord = dctWordAt(recordOffset);",
     "  int profile = int(headerWord >> 28u);",
+    "  int storedProfile = (dctByteAt(52) & 16u) != 0u ? profile : profile + 1;",
     "  int dcScaleIndex = int((headerWord >> 24u) & 15u);",
     "  int dc = dctSigned10((headerWord >> 14u) & 1023u);",
     "  float scale0 = exp2(float((headerWord >> 11u) & 7u));",
@@ -208,7 +233,7 @@ function renderUnrolledComponentDecoder(options) {
       const positionMask = width - 1;
       lines.push(
         "  {",
-        `    int position = ${scanName}[profile * ${coefficientCount} + ${index}];`,
+        `    int position = ${scanName}[storedProfile * ${coefficientCount} + ${index}];`,
         `    int stored = dctSigned5(${renderWordExtract(wordBit, 5)});`,
         "    addDctCompensated(",
         `      float(stored) * ${scale} * dctQuantizationStep(position, ${chroma}, ${height}) *`,
@@ -295,8 +320,8 @@ function renderCubeFragmentShader(preset) {
     .replace(/const int DCT_CB_BYTES = \d+;/, `const int DCT_CB_BYTES = ${preset.cb};`)
     .replace(/const int DCT_Y_AC_COUNT = \d+;/, `const int DCT_Y_AC_COUNT = ${yCount};`)
     .replace(/const int DCT_C_AC_COUNT = \d+;/, `const int DCT_C_AC_COUNT = ${chromaCount};`)
-    .replace(/\/\/ Four deterministic significance profiles,[\s\S]*?(?=const int DCT_SCAN_Y)/,
-      `// Four deterministic significance scans trimmed for ${preset.key} bpp records.\n`)
+    .replace(/\/\/ (?:Four|Five)[\s\S]*?(?=const int DCT_SCAN_Y)/,
+      `// Zigzag plus four legacy significance scans trimmed for ${preset.key} bpp records.\n`)
     .replace(/const int DCT_SCAN_Y\[\d+\] = int\[\d+\]\([\s\S]*?\);/, yScan)
     .replace(/const int DCT_SCAN_C422\[\d+\] = int\[\d+\]\([\s\S]*?\);/, chroma422Scan)
     .replace(/const int DCT_SCAN_C420\[\d+\] = int\[\d+\]\([\s\S]*?\);/, chroma420Scan)
@@ -465,18 +490,24 @@ int scanLength(int kind) {
     return componentWidth(kind) * componentHeight(kind) - 1;
 }
 
-int scanPosition(int kind, int profile, int index) {
-    if (kind == 0) return SCAN_Y16[profile * 255 + index];
-    if (kind == 1) return SCAN_Y8[profile * 63 + index];
-    if (kind == 3) return SCAN_Y8[profile * 63 + index];
-    return SCAN_C422[profile * 127 + index];
+int scanPosition(int kind, int profile, int index, bool zigzagOrder) {
+    int storedProfile = zigzagOrder ? profile : profile + 1;
+    if (kind == 0) return SCAN_Y16[storedProfile * 255 + index];
+    if (kind == 1) return SCAN_Y8[storedProfile * 63 + index];
+    if (kind == 3) return SCAN_Y8[storedProfile * 63 + index];
+    return SCAN_C422[storedProfile * 127 + index];
 }
 
-int skipScanPosition(int kind, int profile, int index) {
-    if (kind == 0) return SKIP_SCAN_Y16[profile * 255 + index];
-    if (kind == 1) return SKIP_SCAN_Y8[profile * 63 + index];
-    if (kind == 3) return SKIP_SCAN_Y8[profile * 63 + index];
-    return SKIP_SCAN_C422[profile * 127 + index];
+int skipScanPosition(int kind, int profile, int index, bool zigzagOrder) {
+    int storedProfile = zigzagOrder ? profile : profile + 1;
+    if (kind == 0) return SKIP_SCAN_Y16[storedProfile * 255 + index];
+    if (kind == 1) return SKIP_SCAN_Y8[storedProfile * 63 + index];
+    if (kind == 3) return SKIP_SCAN_Y8[storedProfile * 63 + index];
+    return SKIP_SCAN_C422[storedProfile * 127 + index];
+}
+
+int coefficientOrderPosition(int rank, bool zigzagOrder) {
+    return zigzagOrder && rank > 0 ? scanPosition(3, 0, rank - 1, true) : rank;
 }
 
 int groupCount(int coding) {
@@ -577,8 +608,8 @@ int readSignedSidecarBits(int byteOffset, int bitOffset, int bitCount) {
     return (raw & sign) == 0u ? int(raw) : int(raw) - int(1u << uint(bitCount));
 }
 
-bool maskedTailPosition(uint maskLow, uint maskHigh, int position) {
-    int bit = position - 1;
+bool maskedTailPosition(uint maskLow, uint maskHigh, int rank) {
+    int bit = rank - 1;
     return bit < 32 ? ((maskLow >> uint(bit)) & 1u) != 0u :
         ((maskHigh >> uint(bit - 32)) & 1u) != 0u;
 }
@@ -588,7 +619,8 @@ float sampleMaskedTailRecord(
     int recordBytes,
     int localX,
     int localY,
-    int quality
+    int quality,
+    bool zigzagOrder
 ) {
     int dcBits = recordBytes == 24 ? 9 : recordBytes == 32 || recordBytes == 40 ? 8 : 10;
     int acBits = recordBytes == 16 ? 6 : recordBytes == 24 ? 7 : 8;
@@ -603,8 +635,8 @@ float sampleMaskedTailRecord(
     if (explicitCount > maxAc) return 0.0;
     int tailCount = maxAc - explicitCount;
     int tailStart = 64 - tailCount;
-    for (int position = 1; position <= 62; ++position) {
-        if (position >= tailStart && maskedTailPosition(maskLow, maskHigh, position)) return 0.0;
+    for (int rank = 1; rank <= 62; ++rank) {
+        if (rank >= tailStart && maskedTailPosition(maskLow, maskHigh, rank)) return 0.0;
     }
 
     int bitOffset = 0;
@@ -619,10 +651,11 @@ float sampleMaskedTailRecord(
         sum,
         correction
     );
-    for (int position = 1; position < 64; ++position) {
-        bool storedPosition = position >= tailStart ||
-            (position <= 62 && maskedTailPosition(maskLow, maskHigh, position));
+    for (int rank = 1; rank < 64; ++rank) {
+        bool storedPosition = rank >= tailStart ||
+            (rank <= 62 && maskedTailPosition(maskLow, maskHigh, rank));
         if (!storedPosition) continue;
+        int position = coefficientOrderPosition(rank, zigzagOrder);
         int stored = readSignedSidecarBits(recordOffset + 8, bitOffset, acBits);
         bitOffset += acBits;
         int u = position & 7;
@@ -637,11 +670,12 @@ float sampleMaskedTailRecord(
     return sum;
 }
 
-bool implicit2MaskedPosition(int recordOffset, int position) {
-    if (position == 1 || position == 8 || position < 1 || position > 62) return false;
-    int bit = position - 1;
-    if (position > 1) bit -= 1;
-    if (position > 8) bit -= 1;
+bool implicit2MaskedPosition(int recordOffset, int rank, bool zigzagOrder) {
+    int implicitRank2 = zigzagOrder ? 2 : 8;
+    if (rank == 1 || rank == implicitRank2 || rank < 1 || rank > 62) return false;
+    int bit = rank - 1;
+    if (rank > 1) bit -= 1;
+    if (rank > implicitRank2) bit -= 1;
     return readSidecarBits(recordOffset, bit, 1) != 0u;
 }
 
@@ -650,20 +684,21 @@ float sampleImplicit2MaskedTailRecord(
     int recordBytes,
     int localX,
     int localY,
-    int quality
+    int quality,
+    bool zigzagOrder
 ) {
     if (recordBytes != 48) return 0.0;
     int explicitCount = 0;
-    for (int position = 1; position <= 62; ++position) {
-        if (implicit2MaskedPosition(recordOffset, position)) explicitCount += 1;
+    for (int rank = 1; rank <= 62; ++rank) {
+        if (implicit2MaskedPosition(recordOffset, rank, zigzagOrder)) explicitCount += 1;
     }
     const int maxAc = 39;
     const int implicitCount = 2;
     int tailCount = maxAc - implicitCount - explicitCount;
     if (tailCount < 0) return 0.0;
     int tailStart = 64 - tailCount;
-    for (int position = 1; position <= 62; ++position) {
-        if (position >= tailStart && implicit2MaskedPosition(recordOffset, position)) return 0.0;
+    for (int rank = 1; rank <= 62; ++rank) {
+        if (rank >= tailStart && implicit2MaskedPosition(recordOffset, rank, zigzagOrder)) return 0.0;
     }
 
     int bitOffset = 60;
@@ -694,10 +729,11 @@ float sampleImplicit2MaskedTailRecord(
             correction
         );
     }
-    for (int position = 1; position < 64; ++position) {
-        bool storedPosition = position >= tailStart ||
-            implicit2MaskedPosition(recordOffset, position);
+    for (int rank = 1; rank < 64; ++rank) {
+        bool storedPosition = rank >= tailStart ||
+            implicit2MaskedPosition(recordOffset, rank, zigzagOrder);
         if (!storedPosition) continue;
+        int position = coefficientOrderPosition(rank, zigzagOrder);
         int stored = readSignedSidecarBits(recordOffset, bitOffset, 8);
         bitOffset += 8;
         int u = position & 7;
@@ -721,17 +757,20 @@ float sampleRecord(
     int quality,
     int coding,
     int libraryVersion,
-    int libraryIndex
+    int libraryIndex,
+    bool zigzagOrder
 ) {
     if (coding == 6 && (kind == 1 || kind == 3)) {
         return libraryVersion == 0
-            ? sampleMaskedTailRecord(recordOffset, recordBytes, localX, localY, quality)
+            ? sampleMaskedTailRecord(
+                recordOffset, recordBytes, localX, localY, quality, zigzagOrder
+            )
             : 0.0;
     }
     if (coding == 7 && (kind == 1 || kind == 3) && recordBytes == 48) {
         return libraryVersion == 0
             ? sampleImplicit2MaskedTailRecord(
-                recordOffset, recordBytes, localX, localY, quality
+                recordOffset, recordBytes, localX, localY, quality, zigzagOrder
             )
             : 0.0;
     }
@@ -742,7 +781,8 @@ float sampleRecord(
     int profile = skipRecord ? packedProfile :
         headerReferenceVersion(libraryVersion) ? packedProfile & 3 : packedProfile;
     int dcScaleIndex = packedScale & 7;
-    if (profile < 0 || profile >= (skipRecord ? 8 : 4) ||
+    if (profile < 0 || profile >= (skipRecord ? (zigzagOrder ? 9 : 8) :
+        (zigzagOrder ? 5 : 4)) ||
         (!skipRecord && packedScale >= 8) || (skipRecord && libraryVersion != 0)) return 0.0;
 
     int width = componentWidth(kind);
@@ -777,7 +817,7 @@ float sampleRecord(
             bitOffset += tokenValueBits;
             int skip = int(readComponentBits(recordOffset, bitOffset, 2));
             bitOffset += 2;
-            int position = skipScanPosition(kind, profile, scanIndex);
+            int position = skipScanPosition(kind, profile, scanIndex, zigzagOrder);
             int u = position % width;
             int v = position / width;
             addCompensated(
@@ -799,7 +839,7 @@ float sampleRecord(
     for (int index = 0; index < 256; ++index) {
         if (index >= count) break;
         int scanIndex = index < lowCount ? index : count + index - lowCount;
-        int position = scanPosition(kind, profile, scanIndex);
+        int position = scanPosition(kind, profile, scanIndex, zigzagOrder);
         int u = position % width;
         int v = position / width;
         int stored = readSignedComponentBits(recordOffset, valuesStart + index * valueBits, valueBits);
@@ -826,7 +866,8 @@ float sampleWithPrototype(
     int localY,
     int quality,
     int coding,
-    int libraryVersion
+    int libraryVersion,
+    bool zigzagOrder
 ) {
     int libraryIndex = resolveLibraryIndex(
         recordOffset, recordBytes, kind, coding, libraryVersion, sidecarIndex
@@ -834,12 +875,13 @@ float sampleWithPrototype(
     if (libraryIndex < 0 || libraryIndex > prototypeCount) return 128.0;
     float centered = sampleRecord(
         recordOffset, recordBytes, kind, localX, localY, quality, coding,
-        libraryVersion, libraryIndex
+        libraryVersion, libraryIndex, zigzagOrder
     );
     if (libraryIndex > 0) {
         int prototypeOffset = prototypeBase + (libraryIndex - 1) * recordBytes;
         centered += sampleRecord(
-            prototypeOffset, recordBytes, kind, localX, localY, quality, coding, 0, 0
+            prototypeOffset, recordBytes, kind, localX, localY, quality, coding,
+            0, 0, zigzagOrder
         );
     }
     return centered + 128.0;
@@ -855,7 +897,8 @@ float sampleChroma420WithPrototype(
     int localY,
     int quality,
     int coding,
-    int libraryVersion
+    int libraryVersion,
+    bool zigzagOrder
 ) {
     int floorX = (localX & 1) == 0 ? (localX >> 1) - 1 : localX >> 1;
     int floorY = (localY & 1) == 0 ? (localY >> 1) - 1 : localY >> 1;
@@ -867,17 +910,17 @@ float sampleChroma420WithPrototype(
     int fractionY = (localY & 1) == 0 ? 3 : 1;
     float top = float(4 - fractionX) * sampleWithPrototype(
         recordOffset, recordBytes, prototypeBase, prototypeCount, sidecarIndex,
-        3, x0, y0, quality, coding, libraryVersion
+        3, x0, y0, quality, coding, libraryVersion, zigzagOrder
     ) + float(fractionX) * sampleWithPrototype(
         recordOffset, recordBytes, prototypeBase, prototypeCount, sidecarIndex,
-        3, x1, y0, quality, coding, libraryVersion
+        3, x1, y0, quality, coding, libraryVersion, zigzagOrder
     );
     float bottom = float(4 - fractionX) * sampleWithPrototype(
         recordOffset, recordBytes, prototypeBase, prototypeCount, sidecarIndex,
-        3, x0, y1, quality, coding, libraryVersion
+        3, x0, y1, quality, coding, libraryVersion, zigzagOrder
     ) + float(fractionX) * sampleWithPrototype(
         recordOffset, recordBytes, prototypeBase, prototypeCount, sidecarIndex,
-        3, x1, y1, quality, coding, libraryVersion
+        3, x1, y1, quality, coding, libraryVersion, zigzagOrder
     );
     return (float(4 - fractionY) * top + float(fractionY) * bottom) / 16.0;
 }
@@ -915,7 +958,7 @@ bool validMainHeader(uint flags) {
         u32le(8) == 2u && u32le(12) == EXPECTED_MODE &&
         u32le(32) == EXPECTED_MCU_BYTES && u32le(36) == EXPECTED_Y_BYTES &&
         u32le(40) == EXPECTED_CB_BYTES && u32le(44) == EXPECTED_CR_BYTES &&
-        (flags & ~0x00000f0fu) == 0u && ((flags >> 8u) & 15u) <= 7u &&
+        (flags & ~0x00000f1fu) == 0u && ((flags >> 8u) & 15u) <= 7u &&
         (((flags & FLAG_LIBRARY) == 0u) ||
             (((flags >> 8u) & 15u) != 6u && ((flags >> 8u) & 15u) != 7u)) &&
         (ALLOW_SPLIT_LUMA || (flags & FLAG_SPLIT_LUMA) == 0u);
@@ -937,6 +980,7 @@ void main() {
     int mcuOffset = HEADER_SIZE + mcuIndex * int(EXPECTED_MCU_BYTES);
     int quality = int(u32le(48));
     int coding = int((flags >> 8u) & 15u);
+    bool zigzagOrder = (flags & 16u) != 0u;
     bool splitLuma = (flags & FLAG_SPLIT_LUMA) != 0u;
     bool chroma420 = (flags & FLAG_CHROMA_420) != 0u;
 
@@ -1008,25 +1052,25 @@ void main() {
 
     float y = sampleWithPrototype(
         yRecordOffset, yRecordBytes, yPrototypeBase, yPrototypeCount, ySidecarIndex,
-        yKind, yLocal.x, yLocal.y, quality, coding, libraryVersion
+        yKind, yLocal.x, yLocal.y, quality, coding, libraryVersion, zigzagOrder
     );
     float cb = chroma420 ? sampleChroma420WithPrototype(
         mcuOffset + int(EXPECTED_Y_BYTES), int(EXPECTED_CB_BYTES),
         cbPrototypeBase, cbPrototypeCount, cbSidecarIndex,
-        local.x, local.y, quality, coding, libraryVersion
+        local.x, local.y, quality, coding, libraryVersion, zigzagOrder
     ) : sampleWithPrototype(
         mcuOffset + int(EXPECTED_Y_BYTES), int(EXPECTED_CB_BYTES),
         cbPrototypeBase, cbPrototypeCount, cbSidecarIndex,
-        2, local.x >> 1, local.y, quality, coding, libraryVersion
+        2, local.x >> 1, local.y, quality, coding, libraryVersion, zigzagOrder
     );
     float cr = chroma420 ? sampleChroma420WithPrototype(
         mcuOffset + int(EXPECTED_Y_BYTES + EXPECTED_CB_BYTES), int(EXPECTED_CR_BYTES),
         crPrototypeBase, crPrototypeCount, crSidecarIndex,
-        local.x, local.y, quality, coding, libraryVersion
+        local.x, local.y, quality, coding, libraryVersion, zigzagOrder
     ) : sampleWithPrototype(
         mcuOffset + int(EXPECTED_Y_BYTES + EXPECTED_CB_BYTES), int(EXPECTED_CR_BYTES),
         crPrototypeBase, crPrototypeCount, crSidecarIndex,
-        2, local.x >> 1, local.y, quality, coding, libraryVersion
+        2, local.x >> 1, local.y, quality, coding, libraryVersion, zigzagOrder
     );
     outColor = vec4(yCbCrToRgb(y, cb, cr), 1.0);
 }
@@ -1056,6 +1100,7 @@ if (require.main === module) {
 module.exports = {
   buildScan,
   buildSkipScan,
+  buildZigzagScan,
   cubePresets,
   cubeShaderFile,
   generatedFiles,

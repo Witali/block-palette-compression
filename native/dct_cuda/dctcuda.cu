@@ -35,10 +35,11 @@ constexpr uint32_t FLAG_AUTO_QUALITY = 1u;
 constexpr uint32_t FLAG_SPLIT_LUMA_8X8 = 2u;
 constexpr uint32_t FLAG_DCT_LIBRARY = 4u;
 constexpr uint32_t FLAG_CHROMA_420 = 8u;
+constexpr uint32_t FLAG_ZIGZAG_ORDER = 16u;
 constexpr uint32_t COEFFICIENT_CODING_SHIFT = 8u;
 constexpr uint32_t COEFFICIENT_CODING_MASK = 15u << COEFFICIENT_CODING_SHIFT;
 constexpr uint32_t SUPPORTED_FLAGS = FLAG_AUTO_QUALITY | FLAG_SPLIT_LUMA_8X8 |
-    FLAG_DCT_LIBRARY | FLAG_CHROMA_420 | COEFFICIENT_CODING_MASK;
+    FLAG_DCT_LIBRARY | FLAG_CHROMA_420 | FLAG_ZIGZAG_ORDER | COEFFICIENT_CODING_MASK;
 constexpr int COEFFICIENT_CODING_LEGACY = 0;
 constexpr int COEFFICIENT_CODING_GROUPED_EQUAL_2 = 1;
 constexpr int COEFFICIENT_CODING_GROUPED_FRONT = 2;
@@ -103,6 +104,9 @@ __constant__ double DEVICE_BASIS_8[8 * 8];
 __constant__ int DEVICE_SCAN_Y[4 * 255];
 __constant__ int DEVICE_SCAN_8[4 * 63];
 __constant__ int DEVICE_SCAN_C[4 * 127];
+__constant__ int DEVICE_ZIGZAG_Y[255];
+__constant__ int DEVICE_ZIGZAG_8[63];
+__constant__ int DEVICE_ZIGZAG_C[127];
 __constant__ int DEVICE_SKIP_SCAN_Y[8 * 255];
 __constant__ int DEVICE_SKIP_SCAN_8[8 * 63];
 __constant__ int DEVICE_SKIP_SCAN_C[8 * 127];
@@ -120,6 +124,7 @@ struct DctInfo {
     bool auto_quality = false;
     bool split_luma_8x8 = false;
     bool chroma_420 = false;
+    bool zigzag_order = false;
     bool library_enabled = false;
     int coefficient_coding = COEFFICIENT_CODING_LEGACY;
     uint32_t search_candidate_count = 0;
@@ -347,6 +352,28 @@ std::array<int, 4 * (WIDTH * HEIGHT - 1)> make_scans() {
     return output;
 }
 
+template <int WIDTH, int HEIGHT>
+std::array<int, WIDTH * HEIGHT - 1> make_zigzag_scan() {
+    std::array<int, WIDTH * HEIGHT - 1> output{};
+    int index = 0;
+    for (int diagonal = 0; diagonal <= WIDTH + HEIGHT - 2; ++diagonal) {
+        const int minimum_u = std::max(0, diagonal - HEIGHT + 1);
+        const int maximum_u = std::min(WIDTH - 1, diagonal);
+        if ((diagonal & 1) == 0) {
+            for (int u = minimum_u; u <= maximum_u; ++u) {
+                const int v = diagonal - u;
+                if (u != 0 || v != 0) output[index++] = v * WIDTH + u;
+            }
+        } else {
+            for (int u = maximum_u; u >= minimum_u; --u) {
+                const int v = diagonal - u;
+                if (u != 0 || v != 0) output[index++] = v * WIDTH + u;
+            }
+        }
+    }
+    return output;
+}
+
 double skip_scan_score(int profile, double u, double v) {
     const double radius = std::sqrt(u * u + v * v);
     if (profile == 1) return 0.22 * u * u + 2.1 * v * v;
@@ -426,6 +453,9 @@ void initialize_device_tables() {
     const auto scans_y = make_scans<16, 16>();
     const auto scans_8 = make_scans<8, 8>();
     const auto scans_c = make_scans<8, 16>();
+    const auto zigzag_y = make_zigzag_scan<16, 16>();
+    const auto zigzag_8 = make_zigzag_scan<8, 8>();
+    const auto zigzag_c = make_zigzag_scan<8, 16>();
     const auto skip_scans_y = make_skip_scans<16, 16>();
     const auto skip_scans_8 = make_skip_scans<8, 8>();
     const auto skip_scans_c = make_skip_scans<8, 16>();
@@ -434,6 +464,9 @@ void initialize_device_tables() {
     cuda_check(cudaMemcpyToSymbol(DEVICE_SCAN_Y, scans_y.data(), sizeof(scans_y)), "Upload luma scans");
     cuda_check(cudaMemcpyToSymbol(DEVICE_SCAN_8, scans_8.data(), sizeof(scans_8)), "Upload 8x8 scans");
     cuda_check(cudaMemcpyToSymbol(DEVICE_SCAN_C, scans_c.data(), sizeof(scans_c)), "Upload chroma scans");
+    cuda_check(cudaMemcpyToSymbol(DEVICE_ZIGZAG_Y, zigzag_y.data(), sizeof(zigzag_y)), "Upload luma zigzag");
+    cuda_check(cudaMemcpyToSymbol(DEVICE_ZIGZAG_8, zigzag_8.data(), sizeof(zigzag_8)), "Upload 8x8 zigzag");
+    cuda_check(cudaMemcpyToSymbol(DEVICE_ZIGZAG_C, zigzag_c.data(), sizeof(zigzag_c)), "Upload chroma zigzag");
     cuda_check(cudaMemcpyToSymbol(
         DEVICE_SKIP_SCAN_Y, skip_scans_y.data(), sizeof(skip_scans_y)
     ), "Upload luma skip scans");
@@ -475,7 +508,25 @@ __device__ __forceinline__ double basis_value(int size, int frequency, int posit
         : DEVICE_BASIS_8[frequency * 8 + position];
 }
 
-__device__ __forceinline__ int scan_position(int width, int height, int profile, int index) {
+// Keep this lookup out of the already large codec kernels. CUDA 13.3's sm_120
+// optimizer can overflow its own stack when the three table branches are
+// force-inlined through every grouped, skip, and masked-tail loop.
+__device__ __noinline__ int zigzag_position(int width, int height, int index) {
+    if (width == 16) return DEVICE_ZIGZAG_Y[index];
+    return height == 8 ? DEVICE_ZIGZAG_8[index] : DEVICE_ZIGZAG_C[index];
+}
+
+__device__ __forceinline__ int scan_position(
+    int width,
+    int height,
+    int profile,
+    int index,
+    bool zigzag_order
+) {
+    if (zigzag_order) {
+        if (profile == 0) return zigzag_position(width, height, index);
+        --profile;
+    }
     if (width == 16) {
         return DEVICE_SCAN_Y[profile * 255 + index];
     }
@@ -488,14 +539,28 @@ __device__ __forceinline__ int skip_scan_position(
     int width,
     int height,
     int profile,
-    int index
+    int index,
+    bool zigzag_order
 ) {
+    if (zigzag_order) {
+        if (profile == 0) return zigzag_position(width, height, index);
+        --profile;
+    }
     if (width == 16) {
         return DEVICE_SKIP_SCAN_Y[profile * 255 + index];
     }
     return height == 8
         ? DEVICE_SKIP_SCAN_8[profile * 63 + index]
         : DEVICE_SKIP_SCAN_C[profile * 127 + index];
+}
+
+__device__ __forceinline__ int coefficient_order_position(
+    int width,
+    int height,
+    int rank,
+    bool zigzag_order
+) {
+    return zigzag_order && rank > 0 ? zigzag_position(width, height, rank - 1) : rank;
 }
 
 __device__ double quantization_step(
@@ -557,12 +622,16 @@ __device__ int read_signed_bits(const uint8_t *record, int *bit_offset, int bit_
         : static_cast<int>(value);
 }
 
+// Candidate encoders are invoked once per component. Keeping them as device
+// calls prevents the runtime coding dispatcher from expanding every complete
+// implementation into one enormous sm_120 kernel.
 template <int WIDTH, int HEIGHT, bool CHROMA>
-__device__ void encode_legacy_component_record(
+__device__ __noinline__ void encode_legacy_component_record(
     const double *coefficients,
     uint8_t *record,
     int byte_count,
-    int quality
+    int quality,
+    bool zigzag_order
 ) {
     const int ac_count = (byte_count * 8 - 18) / 6;
     double base_error = 0.0;
@@ -575,7 +644,7 @@ __device__ void encode_legacy_component_record(
     int best_scale_index = 0;
     int best_dc = 0;
 
-    for (int profile = 0; profile < 4; ++profile) {
+    for (int profile = 0; profile < (zigzag_order ? 5 : 4); ++profile) {
         for (int scale_index = 0; scale_index < 8; ++scale_index) {
             const int scale = 1 << scale_index;
             const double dc_step = quantization_step(0, 0, WIDTH, HEIGHT, quality, CHROMA) * scale;
@@ -586,7 +655,7 @@ __device__ void encode_legacy_component_record(
             error = rn_add(error, -rn_square(coefficients[0]));
 
             for (int index = 0; index < ac_count; ++index) {
-                const int position = scan_position(WIDTH, HEIGHT, profile, index);
+                const int position = scan_position(WIDTH, HEIGHT, profile, index, zigzag_order);
                 const int u = position % WIDTH;
                 const int v = position / WIDTH;
                 const double step = quantization_step(u, v, WIDTH, HEIGHT, quality, CHROMA) * scale;
@@ -613,7 +682,9 @@ __device__ void encode_legacy_component_record(
     write_signed_bits(record, &bit_offset, best_dc, 10);
     const int scale = 1 << best_scale_index;
     for (int index = 0; index < ac_count; ++index) {
-        const int position = scan_position(WIDTH, HEIGHT, best_profile, index);
+        const int position = scan_position(
+            WIDTH, HEIGHT, best_profile, index, zigzag_order
+        );
         const int u = position % WIDTH;
         const int v = position / WIDTH;
         const double step = quantization_step(u, v, WIDTH, HEIGHT, quality, CHROMA) * scale;
@@ -750,12 +821,13 @@ __device__ int grouped_end(int coefficient_coding, int group, int ac_count) {
 }
 
 template <int WIDTH, int HEIGHT, bool CHROMA>
-__device__ double encode_grouped_component_record(
+__device__ __noinline__ double encode_grouped_component_record(
     const double *coefficients,
     uint8_t *record,
     int byte_count,
     int quality,
-    int coefficient_coding
+    int coefficient_coding,
+    bool zigzag_order
 ) {
     const int group_count = grouped_count(coefficient_coding);
     const int ac_count = min(
@@ -789,7 +861,7 @@ __device__ double encode_grouped_component_record(
     double best_error = DBL_MAX;
     int best_profile = 0;
     int best_group_scales[3] = {0, 0, 0};
-    for (int profile = 0; profile < 4; ++profile) {
+    for (int profile = 0; profile < (zigzag_order ? 5 : 4); ++profile) {
         double error = rn_add(base_error, best_dc_delta);
         int group_scales[3] = {0, 0, 0};
         int group_start = 0;
@@ -803,7 +875,9 @@ __device__ double encode_grouped_component_record(
                 const int scale = 1 << scale_index;
                 double delta = 0.0;
                 for (int index = group_start; index < group_finish; ++index) {
-                    const int position = scan_position(WIDTH, HEIGHT, profile, index);
+                    const int position = scan_position(
+                        WIDTH, HEIGHT, profile, index, zigzag_order
+                    );
                     const int u = position % WIDTH;
                     const int v = position / WIDTH;
                     const double step = quantization_step(u, v, WIDTH, HEIGHT, quality, CHROMA) * scale;
@@ -848,7 +922,9 @@ __device__ double encode_grouped_component_record(
         const int group_finish = grouped_end(coefficient_coding, group, ac_count);
         const int scale = 1 << best_group_scales[group];
         for (int index = group_start; index < group_finish; ++index) {
-            const int position = scan_position(WIDTH, HEIGHT, best_profile, index);
+            const int position = scan_position(
+                WIDTH, HEIGHT, best_profile, index, zigzag_order
+            );
             const int u = position % WIDTH;
             const int v = position / WIDTH;
             const double step = quantization_step(u, v, WIDTH, HEIGHT, quality, CHROMA) * scale;
@@ -917,13 +993,14 @@ __device__ double skip_coefficient_benefit(
 }
 
 template <int WIDTH, int HEIGHT, bool CHROMA>
-__device__ void encode_skip_component_record(
+__device__ __noinline__ void encode_skip_component_record(
     const double *coefficients,
     uint8_t *record,
     int byte_count,
     int quality,
     int coefficient_coding,
-    double baseline_error
+    double baseline_error,
+    bool zigzag_order
 ) {
     constexpr int MAX_TOKENS = 32;
     constexpr int MAX_POSITIONS = 256;
@@ -934,6 +1011,7 @@ __device__ void encode_skip_component_record(
     if (token_count < 1 || token_count > MAX_TOKENS) return;
 
     double base_error = 0.0;
+#pragma unroll 1
     for (int position = 0; position < WIDTH * HEIGHT; ++position) {
         base_error = rn_add(base_error, rn_square(coefficients[position]));
     }
@@ -947,7 +1025,12 @@ __device__ void encode_skip_component_record(
     double current[MAX_POSITIONS];
     int16_t back[MAX_TOKENS][MAX_POSITIONS];
 
-    for (int profile = 0; profile < 8; ++profile) {
+// These dynamic-programming loops must remain loops. Fully unrolling the
+// 32 x 256 state space makes CUDA 13.3 emit roughly 600k PTX instructions
+// for each component specialization and can overflow ptxas on sm_120.
+#pragma unroll 1
+    for (int profile = 0; profile < (zigzag_order ? 9 : 8); ++profile) {
+#pragma unroll 1
         for (int scale_index = 0; scale_index < 8; ++scale_index) {
             const int scale = 1 << scale_index;
             const double dc_step = quantization_step(0, 0, WIDTH, HEIGHT, quality, CHROMA) * scale;
@@ -958,20 +1041,23 @@ __device__ void encode_skip_component_record(
                 -rn_square(coefficients[0])
             );
             const int maximum_index = min(WIDTH * HEIGHT - 2, 4 * (token_count - 1));
+#pragma unroll 1
             for (int index = 0; index <= maximum_index; ++index) {
                 previous[index] = -DBL_MAX;
             }
             int ignored_stored = 0;
             previous[0] = skip_coefficient_benefit<WIDTH, HEIGHT, CHROMA>(
                 coefficients,
-                skip_scan_position(WIDTH, HEIGHT, profile, 0),
+                skip_scan_position(WIDTH, HEIGHT, profile, 0, zigzag_order),
                 quality,
                 scale_index,
                 6,
                 &ignored_stored
             );
 
+#pragma unroll 1
             for (int token_index = 1; token_index < token_count; ++token_index) {
+#pragma unroll 1
                 for (int index = 0; index <= maximum_index; ++index) {
                     current[index] = -DBL_MAX;
                     back[token_index][index] = -1;
@@ -982,6 +1068,7 @@ __device__ void encode_skip_component_record(
                 const int value_scale_index = fine ? (scale_index >= 3 ? 1 : 0) : scale_index;
                 const int first_index = token_index;
                 const int last_index = min(maximum_index, 4 * token_index);
+#pragma unroll 1
                 for (int index = first_index; index <= last_index; ++index) {
                     double previous_benefit = -DBL_MAX;
                     int previous_index = -1;
@@ -995,7 +1082,7 @@ __device__ void encode_skip_component_record(
                     if (previous_index < 0) continue;
                     const double benefit = skip_coefficient_benefit<WIDTH, HEIGHT, CHROMA>(
                         coefficients,
-                        skip_scan_position(WIDTH, HEIGHT, profile, index),
+                        skip_scan_position(WIDTH, HEIGHT, profile, index, zigzag_order),
                         quality,
                         value_scale_index,
                         value_bits,
@@ -1004,6 +1091,7 @@ __device__ void encode_skip_component_record(
                     current[index] = rn_add(previous_benefit, benefit);
                     back[token_index][index] = static_cast<int16_t>(previous_index);
                 }
+#pragma unroll 1
                 for (int index = 0; index <= maximum_index; ++index) {
                     previous[index] = current[index];
                 }
@@ -1011,6 +1099,7 @@ __device__ void encode_skip_component_record(
 
             int end_index = 0;
             double total_benefit = -DBL_MAX;
+#pragma unroll 1
             for (int index = 0; index <= maximum_index; ++index) {
                 if (previous[index] > total_benefit) {
                     total_benefit = previous[index];
@@ -1028,6 +1117,7 @@ __device__ void encode_skip_component_record(
             best_scale_index = scale_index;
             best_dc = dc;
             best_path[token_count - 1] = static_cast<int16_t>(end_index);
+#pragma unroll 1
             for (int token_index = token_count - 1; token_index > 0; --token_index) {
                 best_path[token_index - 1] = back[token_index][best_path[token_index]];
             }
@@ -1035,19 +1125,21 @@ __device__ void encode_skip_component_record(
     }
 
     if (best_profile < 0) return;
+#pragma unroll 1
     for (int byte = 0; byte < byte_count; ++byte) record[byte] = 0u;
     int bit_offset = 0;
     write_bits(record, &bit_offset, static_cast<uint32_t>(
         (best_profile << 4) | best_scale_index | 8
     ), 8);
     write_signed_bits(record, &bit_offset, best_dc, 10);
+#pragma unroll 1
     for (int token_index = 0; token_index < token_count; ++token_index) {
         const bool fine = coefficient_coding != COEFFICIENT_CODING_SKIP_RLE_EQUAL_2 &&
             token_index >= coarse_count;
         const int value_bits = fine ? 4 : 6;
         const int value_scale_index = fine ? (best_scale_index >= 3 ? 1 : 0) : best_scale_index;
         const int position = skip_scan_position(
-            WIDTH, HEIGHT, best_profile, best_path[token_index]
+            WIDTH, HEIGHT, best_profile, best_path[token_index], zigzag_order
         );
         int stored = 0;
         skip_coefficient_benefit<WIDTH, HEIGHT, CHROMA>(
@@ -1061,12 +1153,13 @@ __device__ void encode_skip_component_record(
 }
 
 template <int WIDTH, int HEIGHT, bool CHROMA>
-__device__ bool encode_masked_tail_component_record(
+__device__ __noinline__ bool encode_masked_tail_component_record(
     const double *coefficients,
     uint8_t *record,
     int byte_count,
     int quality,
-    bool implicit2
+    bool implicit2,
+    bool zigzag_order
 ) {
     if (WIDTH != 8 || HEIGHT != 8) return false;
     int dc_bits = 0;
@@ -1081,6 +1174,7 @@ __device__ bool encode_masked_tail_component_record(
         return false;
     }
     const int implicit_count = implicit2 ? 2 : 0;
+    const int implicit_rank_2 = zigzag_order ? 2 : 8;
     const int flexible_ac = max_ac - implicit_count;
 
     double base_error = 0.0;
@@ -1110,7 +1204,8 @@ __device__ bool encode_masked_tail_component_record(
             -rn_square(coefficients[0])
         );
         double benefits[64];
-        for (int position = 1; position < 64; ++position) {
+        for (int rank = 1; rank < 64; ++rank) {
+            const int position = coefficient_order_position(8, 8, rank, zigzag_order);
             const int u = position & 7;
             const int v = position >> 3;
             const double step = quantization_step(u, v, 8, 8, quality, CHROMA) * scale;
@@ -1121,7 +1216,7 @@ __device__ bool encode_masked_tail_component_record(
                 coefficients[position] - static_cast<double>(stored) * step
             );
             const double drop_error = rn_square(coefficients[position]);
-            benefits[position] = keep_error < drop_error
+            benefits[rank] = keep_error < drop_error
                 ? rn_add(drop_error, -keep_error) : 0.0;
         }
 
@@ -1130,12 +1225,12 @@ __device__ bool encode_masked_tail_component_record(
         uint32_t mask_high = 0u;
         double implicit_benefit = 0.0;
         if (implicit2) {
-            implicit_benefit = rn_add(benefits[1], benefits[8]);
+            implicit_benefit = rn_add(benefits[1], benefits[implicit_rank_2]);
         }
         double explicit_benefit = 0.0;
         double tail_benefit = 0.0;
-        for (int position = 64 - flexible_ac; position < 64; ++position) {
-            tail_benefit = rn_add(tail_benefit, benefits[position]);
+        for (int rank = 64 - flexible_ac; rank < 64; ++rank) {
+            tail_benefit = rn_add(tail_benefit, benefits[rank]);
         }
 
         for (int explicit_count = 0; explicit_count <= flexible_ac; ++explicit_count) {
@@ -1157,20 +1252,19 @@ __device__ bool encode_masked_tail_component_record(
 
             if (explicit_count == flexible_ac) break;
             tail_benefit = rn_add(tail_benefit, -benefits[tail_start]);
-            int best_position = -1;
-            for (int position = 1; position <= min(62, tail_start); ++position) {
-                if (selected[position] || (implicit2 && (position == 1 || position == 8))) {
+            int best_rank = -1;
+            for (int rank = 1; rank <= min(62, tail_start); ++rank) {
+                if (selected[rank] || (implicit2 && (rank == 1 || rank == implicit_rank_2))) {
                     continue;
                 }
-                if (best_position < 0 || benefits[position] > benefits[best_position] ||
-                    (benefits[position] == benefits[best_position] &&
-                        position < best_position)) {
-                    best_position = position;
+                if (best_rank < 0 || benefits[rank] > benefits[best_rank] ||
+                    (benefits[rank] == benefits[best_rank] && rank < best_rank)) {
+                    best_rank = rank;
                 }
             }
-            selected[best_position] = true;
-            explicit_benefit = rn_add(explicit_benefit, benefits[best_position]);
-            const int mask_bit = best_position - 1;
+            selected[best_rank] = true;
+            explicit_benefit = rn_add(explicit_benefit, benefits[best_rank]);
+            const int mask_bit = best_rank - 1;
             if (mask_bit < 32) mask_low |= 1u << mask_bit;
             else mask_high |= 1u << (mask_bit - 32);
         }
@@ -1178,9 +1272,9 @@ __device__ bool encode_masked_tail_component_record(
 
     if (implicit2) {
         int bit_offset = 0;
-        for (int position = 1; position <= 62; ++position) {
-            if (position == 1 || position == 8) continue;
-            write_bits_lsb(record, &bit_offset, best_selected[position] ? 1u : 0u, 1);
+        for (int rank = 1; rank <= 62; ++rank) {
+            if (rank == 1 || rank == implicit_rank_2) continue;
+            write_bits_lsb(record, &bit_offset, best_selected[rank] ? 1u : 0u, 1);
         }
         write_bits_lsb(record, &bit_offset, static_cast<uint32_t>(best_scale_index), 2);
         write_signed_bits_lsb(record, &bit_offset, best_dc, dc_bits);
@@ -1202,8 +1296,9 @@ __device__ bool encode_masked_tail_component_record(
             if (keep_error >= rn_square(coefficients[position])) stored = 0;
             write_signed_bits_lsb(record, &bit_offset, stored, ac_bits);
         }
-        for (int position = 1; position < best_tail_start && position <= 62; ++position) {
-            if (!best_selected[position]) continue;
+        for (int rank = 1; rank < best_tail_start && rank <= 62; ++rank) {
+            if (!best_selected[rank]) continue;
+            const int position = coefficient_order_position(8, 8, rank, zigzag_order);
             const double step = quantization_step(
                 position & 7, position >> 3, 8, 8, quality, CHROMA
             ) * scale;
@@ -1216,7 +1311,8 @@ __device__ bool encode_masked_tail_component_record(
             if (keep_error >= rn_square(coefficients[position])) stored = 0;
             write_signed_bits_lsb(record, &bit_offset, stored, ac_bits);
         }
-        for (int position = best_tail_start; position < 64; ++position) {
+        for (int rank = best_tail_start; rank < 64; ++rank) {
+            const int position = coefficient_order_position(8, 8, rank, zigzag_order);
             const double step = quantization_step(
                 position & 7, position >> 3, 8, 8, quality, CHROMA
             ) * scale;
@@ -1242,8 +1338,9 @@ __device__ bool encode_masked_tail_component_record(
     const int scale = 1 << best_scale_index;
     const int ac_minimum = -(1 << (ac_bits - 1));
     const int ac_maximum = (1 << (ac_bits - 1)) - 1;
-    for (int position = 1; position < best_tail_start && position <= 62; ++position) {
-        if (!masked_tail_has_position(best_mask_low, best_mask_high, position)) continue;
+    for (int rank = 1; rank < best_tail_start && rank <= 62; ++rank) {
+        if (!masked_tail_has_position(best_mask_low, best_mask_high, rank)) continue;
+        const int position = coefficient_order_position(8, 8, rank, zigzag_order);
         const double step = quantization_step(
             position & 7, position >> 3, 8, 8, quality, CHROMA
         ) * scale;
@@ -1256,7 +1353,8 @@ __device__ bool encode_masked_tail_component_record(
         if (keep_error >= rn_square(coefficients[position])) stored = 0;
         write_signed_bits_lsb(record + 8, &bit_offset, stored, ac_bits);
     }
-    for (int position = best_tail_start; position < 64; ++position) {
+    for (int rank = best_tail_start; rank < 64; ++rank) {
+        const int position = coefficient_order_position(8, 8, rank, zigzag_order);
         const double step = quantization_step(
             position & 7, position >> 3, 8, 8, quality, CHROMA
         ) * scale;
@@ -1279,27 +1377,30 @@ __device__ void encode_component_record(
     int byte_count,
     int quality,
     int coefficient_coding,
-    bool allow_skip
+    bool allow_skip,
+    bool zigzag_order
 ) {
     if (coefficient_coding == COEFFICIENT_CODING_LEGACY) {
         encode_legacy_component_record<WIDTH, HEIGHT, CHROMA>(
-            coefficients, record, byte_count, quality
+            coefficients, record, byte_count, quality, zigzag_order
         );
     } else if ((coefficient_coding == COEFFICIENT_CODING_MASKED_TAIL_8X8 ||
         coefficient_coding == COEFFICIENT_CODING_MASKED_TAIL_IMPLICIT2_48) &&
         encode_masked_tail_component_record<WIDTH, HEIGHT, CHROMA>(
             coefficients, record, byte_count, quality,
-            coefficient_coding == COEFFICIENT_CODING_MASKED_TAIL_IMPLICIT2_48
+            coefficient_coding == COEFFICIENT_CODING_MASKED_TAIL_IMPLICIT2_48,
+            zigzag_order
         )) {
         return;
     } else {
         const double baseline_error = encode_grouped_component_record<WIDTH, HEIGHT, CHROMA>(
-            coefficients, record, byte_count, quality, coefficient_coding
+            coefficients, record, byte_count, quality, coefficient_coding, zigzag_order
         );
         if (allow_skip && coefficient_coding >= COEFFICIENT_CODING_SKIP_RLE_EQUAL_2 &&
             coefficient_coding <= COEFFICIENT_CODING_DUAL_SKIP_FRONT) {
             encode_skip_component_record<WIDTH, HEIGHT, CHROMA>(
-                coefficients, record, byte_count, quality, coefficient_coding, baseline_error
+                coefficients, record, byte_count, quality, coefficient_coding,
+                baseline_error, zigzag_order
             );
         }
     }
@@ -1320,6 +1421,7 @@ __global__ void encode_component_kernel(
     int quality,
     int coefficient_coding,
     bool allow_skip,
+    bool zigzag_order,
     uint8_t *output
 ) {
     const uint32_t mcu_index = blockIdx.x;
@@ -1423,7 +1525,8 @@ __global__ void encode_component_kernel(
             static_cast<int>(component_bytes),
             quality,
             coefficient_coding,
-            allow_skip
+            allow_skip,
+            zigzag_order
         );
     }
 }
@@ -1498,13 +1601,14 @@ __device__ int read_sidecar_reference(
 }
 
 template <int WIDTH, int HEIGHT, bool CHROMA>
-__device__ bool decode_masked_tail_component_record(
+__device__ __noinline__ bool decode_masked_tail_component_record(
     const uint8_t *record,
     int byte_count,
     int quality,
     int library_version,
     double *coefficients,
-    bool implicit2
+    bool implicit2,
+    bool zigzag_order
 ) {
     if (WIDTH != 8 || HEIGHT != 8 || library_version != 0) return false;
     int dc_bits = 0;
@@ -1524,11 +1628,12 @@ __device__ bool decode_masked_tail_component_record(
     int scale_index = 0;
     int bit_offset = 0;
     int explicit_count = 0;
+    const int implicit_rank_2 = zigzag_order ? 2 : 8;
     if (implicit2) {
-        for (int position = 1; position <= 62; ++position) {
-            if (position == 1 || position == 8) continue;
-            selected[position] = read_bits_lsb(record, &bit_offset, 1) != 0u;
-            explicit_count += selected[position] ? 1 : 0;
+        for (int rank = 1; rank <= 62; ++rank) {
+            if (rank == 1 || rank == implicit_rank_2) continue;
+            selected[rank] = read_bits_lsb(record, &bit_offset, 1) != 0u;
+            explicit_count += selected[rank] ? 1 : 0;
         }
         scale_index = static_cast<int>(read_bits_lsb(record, &bit_offset, 2));
     } else {
@@ -1538,8 +1643,8 @@ __device__ bool decode_masked_tail_component_record(
         scale_index = static_cast<int>(raw_mask_high >> 30u);
         explicit_count = __popc(mask_low) + __popc(mask_high);
         bit_offset = 64;
-        for (int position = 1; position <= 62; ++position) {
-            selected[position] = masked_tail_has_position(mask_low, mask_high, position);
+        for (int rank = 1; rank <= 62; ++rank) {
+            selected[rank] = masked_tail_has_position(mask_low, mask_high, rank);
         }
     }
     const int implicit_count = implicit2 ? 2 : 0;
@@ -1547,8 +1652,8 @@ __device__ bool decode_masked_tail_component_record(
     if (explicit_count > flexible_ac) return false;
     const int tail_count = flexible_ac - explicit_count;
     const int tail_start = 64 - tail_count;
-    for (int position = max(1, tail_start); position <= 62; ++position) {
-        if (selected[position]) return false;
+    for (int rank = max(1, tail_start); rank <= 62; ++rank) {
+        if (selected[rank]) return false;
     }
 
     const int scale = 1 << scale_index;
@@ -1565,14 +1670,16 @@ __device__ bool decode_masked_tail_component_record(
             ) * scale;
         }
     }
-    for (int position = 1; position < tail_start && position <= 62; ++position) {
-        if (!selected[position]) continue;
+    for (int rank = 1; rank < tail_start && rank <= 62; ++rank) {
+        if (!selected[rank]) continue;
+        const int position = coefficient_order_position(8, 8, rank, zigzag_order);
         const int stored = read_signed_bits_lsb(record, &bit_offset, ac_bits);
         coefficients[position] = static_cast<double>(stored) * quantization_step(
             position & 7, position >> 3, 8, 8, quality, CHROMA
         ) * scale;
     }
-    for (int position = tail_start; position < 64; ++position) {
+    for (int rank = tail_start; rank < 64; ++rank) {
+        const int position = coefficient_order_position(8, 8, rank, zigzag_order);
         const int stored = read_signed_bits_lsb(record, &bit_offset, ac_bits);
         coefficients[position] = static_cast<double>(stored) * quantization_step(
             position & 7, position >> 3, 8, 8, quality, CHROMA
@@ -1582,7 +1689,7 @@ __device__ bool decode_masked_tail_component_record(
 }
 
 template <int WIDTH, int HEIGHT, bool CHROMA>
-__device__ bool decode_legacy_component_record(
+__device__ __noinline__ bool decode_legacy_component_record(
     const uint8_t *record,
     int byte_count,
     int quality,
@@ -1590,7 +1697,8 @@ __device__ bool decode_legacy_component_record(
     int external_library_index,
     double *coefficients,
     int *library_index,
-    bool add_coefficients
+    bool add_coefficients,
+    bool zigzag_order
 ) {
     if (!add_coefficients) {
         for (int position = 0; position < WIDTH * HEIGHT; ++position) {
@@ -1604,7 +1712,7 @@ __device__ bool decode_legacy_component_record(
     const int profile = header_reference
         ? packed_profile & 3 : packed_profile;
     const int scale_index = static_cast<int>(header & 15u);
-    if (profile >= 4 || scale_index >= 8) {
+    if (profile >= (zigzag_order ? 5 : 4) || scale_index >= 8) {
         return false;
     }
     const int scale = 1 << scale_index;
@@ -1619,7 +1727,9 @@ __device__ bool decode_legacy_component_record(
     for (int index = 0; index < ac_count; ++index) {
         const int scan_index = resolved_library_index > 0
             ? spectral_scan_index(index, ac_count, WIDTH * HEIGHT - 1, library_version) : index;
-        const int position = scan_position(WIDTH, HEIGHT, profile, scan_index);
+        const int position = scan_position(
+            WIDTH, HEIGHT, profile, scan_index, zigzag_order
+        );
         const int u = position % WIDTH;
         const int v = position / WIDTH;
         const int stored = read_signed_bits(record, &bit_offset, 6);
@@ -1635,7 +1745,7 @@ __device__ bool decode_legacy_component_record(
 }
 
 template <int WIDTH, int HEIGHT, bool CHROMA>
-__device__ bool decode_grouped_component_record(
+__device__ __noinline__ bool decode_grouped_component_record(
     const uint8_t *record,
     int byte_count,
     int quality,
@@ -1644,7 +1754,8 @@ __device__ bool decode_grouped_component_record(
     int external_library_index,
     double *coefficients,
     int *library_index,
-    bool add_coefficients
+    bool add_coefficients,
+    bool zigzag_order
 ) {
     if (!add_coefficients) {
         for (int position = 0; position < WIDTH * HEIGHT; ++position) {
@@ -1662,7 +1773,8 @@ __device__ bool decode_grouped_component_record(
     const int profile = skip_record ? packed_profile :
         header_reference ? packed_profile & 3 : packed_profile;
     const int dc_scale_index = packed_scale & 7;
-    if (profile >= (skip_record ? 8 : 4) || (!skip_record && packed_scale >= 8) ||
+    if (profile >= (skip_record ? (zigzag_order ? 9 : 8) : (zigzag_order ? 5 : 4)) ||
+        (!skip_record && packed_scale >= 8) ||
         (skip_record && library_version != 0)) {
         return false;
     }
@@ -1686,7 +1798,9 @@ __device__ bool decode_grouped_component_record(
             const int scale_index = fine ? (dc_scale_index >= 3 ? 1 : 0) : dc_scale_index;
             const int stored = read_signed_bits(record, &bit_offset, value_bits);
             const int skip = static_cast<int>(read_bits(record, &bit_offset, 2));
-            const int position = skip_scan_position(WIDTH, HEIGHT, profile, scan_index);
+            const int position = skip_scan_position(
+                WIDTH, HEIGHT, profile, scan_index, zigzag_order
+            );
             const int u = position % WIDTH;
             const int v = position / WIDTH;
             const double restored = static_cast<double>(stored) *
@@ -1718,7 +1832,9 @@ __device__ bool decode_grouped_component_record(
         for (int index = group_start; index < group_finish; ++index) {
             const int scan_index = resolved_library_index > 0
                 ? spectral_scan_index(index, ac_count, WIDTH * HEIGHT - 1, library_version) : index;
-            const int position = scan_position(WIDTH, HEIGHT, profile, scan_index);
+            const int position = scan_position(
+                WIDTH, HEIGHT, profile, scan_index, zigzag_order
+            );
             const int u = position % WIDTH;
             const int v = position / WIDTH;
             const int stored = read_signed_bits(record, &bit_offset, 5);
@@ -1736,7 +1852,7 @@ __device__ bool decode_grouped_component_record(
 }
 
 template <int WIDTH, int HEIGHT, bool CHROMA>
-__device__ bool decode_component_record(
+__device__ __noinline__ bool decode_component_record(
     const uint8_t *record,
     int byte_count,
     int quality,
@@ -1747,7 +1863,8 @@ __device__ bool decode_component_record(
     uint32_t library_count,
     uint32_t library_offset,
     int library_record_bytes,
-    double *coefficients
+    double *coefficients,
+    bool zigzag_order
 ) {
     int library_index = 0;
     bool valid;
@@ -1757,17 +1874,18 @@ __device__ bool decode_component_record(
         WIDTH == 8 && HEIGHT == 8) {
         valid = decode_masked_tail_component_record<WIDTH, HEIGHT, CHROMA>(
             record, byte_count, quality, library_version, coefficients,
-            coefficient_coding == COEFFICIENT_CODING_MASKED_TAIL_IMPLICIT2_48
+            coefficient_coding == COEFFICIENT_CODING_MASKED_TAIL_IMPLICIT2_48,
+            zigzag_order
         );
     } else if (coefficient_coding == COEFFICIENT_CODING_LEGACY) {
         valid = decode_legacy_component_record<WIDTH, HEIGHT, CHROMA>(
             record, byte_count, quality, library_version, external_library_index,
-            coefficients, &library_index, false
+            coefficients, &library_index, false, zigzag_order
         );
     } else {
         valid = decode_grouped_component_record<WIDTH, HEIGHT, CHROMA>(
             record, byte_count, quality, coefficient_coding, library_version,
-            external_library_index, coefficients, &library_index, false
+            external_library_index, coefficients, &library_index, false, zigzag_order
         );
     }
     if (!valid || library_index < 0 || static_cast<uint32_t>(library_index) > library_count) {
@@ -1789,12 +1907,12 @@ __device__ bool decode_component_record(
     } else if (coefficient_coding == COEFFICIENT_CODING_LEGACY) {
         valid = decode_legacy_component_record<WIDTH, HEIGHT, CHROMA>(
             prototype_record, library_record_bytes, quality, 0, 0,
-            coefficients, &ignored_index, true
+            coefficients, &ignored_index, true, zigzag_order
         );
     } else {
         valid = decode_grouped_component_record<WIDTH, HEIGHT, CHROMA>(
             prototype_record, library_record_bytes, quality, coefficient_coding, 0,
-            0, coefficients, &ignored_index, true
+            0, coefficients, &ignored_index, true, zigzag_order
         );
     }
     if (!valid) {
@@ -1804,7 +1922,7 @@ __device__ bool decode_component_record(
 }
 
 template <int WIDTH, int HEIGHT>
-__device__ double sample_inverse_dct(const double *coefficients, int x, int y) {
+__device__ __noinline__ double sample_inverse_dct(const double *coefficients, int x, int y) {
     double output = 0.0;
     for (int u = 0; u < WIDTH; ++u) {
         double vertical = 0.0;
@@ -1819,7 +1937,11 @@ __device__ double sample_inverse_dct(const double *coefficients, int x, int y) {
     return output;
 }
 
-__device__ double sample_chroma_420(const double *coefficients, int local_x, int local_y) {
+__device__ __noinline__ double sample_chroma_420(
+    const double *coefficients,
+    int local_x,
+    int local_y
+) {
     const int floor_x = (local_x & 1) == 0 ? (local_x >> 1) - 1 : local_x >> 1;
     const int floor_y = (local_y & 1) == 0 ? (local_y >> 1) - 1 : local_y >> 1;
     const int x0 = clamp_int(floor_x, 0, 7);
@@ -1872,6 +1994,7 @@ __global__ void decode_image_kernel(
     bool split_luma_8x8,
     bool chroma_420,
     int coefficient_coding,
+    bool zigzag_order,
     uint8_t *rgb,
     int *error_flag
 ) {
@@ -1907,7 +2030,8 @@ __global__ void decode_image_kernel(
                     library_layout.y_count,
                     library_layout.y_offset,
                     block_bytes,
-                    y_coefficients + block * 64
+                    y_coefficients + block * 64,
+                    zigzag_order
                 ) && y_ok;
             }
         } else {
@@ -1928,7 +2052,8 @@ __global__ void decode_image_kernel(
                 library_layout.y_count,
                 library_layout.y_offset,
                 static_cast<int>(preset.y_bytes),
-                y_coefficients
+                y_coefficients,
+                zigzag_order
             );
         }
         const int cb_library_index = read_sidecar_reference(
@@ -1949,7 +2074,8 @@ __global__ void decode_image_kernel(
                 library_layout.cb_count,
                 library_layout.cb_offset,
                 static_cast<int>(preset.cb_bytes),
-                cb_coefficients
+                cb_coefficients,
+                zigzag_order
             )
             : decode_component_record<8, 16, true>(
                 record + preset.y_bytes,
@@ -1962,7 +2088,8 @@ __global__ void decode_image_kernel(
                 library_layout.cb_count,
                 library_layout.cb_offset,
                 static_cast<int>(preset.cb_bytes),
-                cb_coefficients
+                cb_coefficients,
+                zigzag_order
             );
         const int cr_library_index = read_sidecar_reference(
             library,
@@ -1982,7 +2109,8 @@ __global__ void decode_image_kernel(
                 library_layout.cr_count,
                 library_layout.cr_offset,
                 static_cast<int>(preset.cr_bytes),
-                cr_coefficients
+                cr_coefficients,
+                zigzag_order
             )
             : decode_component_record<8, 16, true>(
                 record + preset.y_bytes + preset.cb_bytes,
@@ -1995,7 +2123,8 @@ __global__ void decode_image_kernel(
                 library_layout.cr_count,
                 library_layout.cr_offset,
                 static_cast<int>(preset.cr_bytes),
-                cr_coefficients
+                cr_coefficients,
+                zigzag_order
             );
         if (!y_ok || !cb_ok || !cr_ok) {
             atomicExch(error_flag, 1);
@@ -2051,6 +2180,7 @@ __global__ void sample_pixel_kernel(
     bool split_luma_8x8,
     bool chroma_420,
     int coefficient_coding,
+    bool zigzag_order,
     uint32_t mcu_index,
     int local_x,
     int local_y,
@@ -2082,7 +2212,8 @@ __global__ void sample_pixel_kernel(
                 library_layout.y_count,
                 library_layout.y_offset,
                 block_bytes,
-                y_coefficients
+                y_coefficients,
+                zigzag_order
             );
         } else {
             const int library_index = read_sidecar_reference(
@@ -2102,7 +2233,8 @@ __global__ void sample_pixel_kernel(
                 library_layout.y_count,
                 library_layout.y_offset,
                 static_cast<int>(preset.y_bytes),
-                y_coefficients
+                y_coefficients,
+                zigzag_order
             );
         }
         const int cb_library_index = read_sidecar_reference(
@@ -2116,13 +2248,13 @@ __global__ void sample_pixel_kernel(
                 record + preset.y_bytes, static_cast<int>(preset.cb_bytes), quality,
                 coefficient_coding, library, static_cast<int>(library_layout.version),
                 cb_library_index, library_layout.cb_count, library_layout.cb_offset,
-                static_cast<int>(preset.cb_bytes), cb_coefficients
+                static_cast<int>(preset.cb_bytes), cb_coefficients, zigzag_order
             )
             : decode_component_record<8, 16, true>(
                 record + preset.y_bytes, static_cast<int>(preset.cb_bytes), quality,
                 coefficient_coding, library, static_cast<int>(library_layout.version),
                 cb_library_index, library_layout.cb_count, library_layout.cb_offset,
-                static_cast<int>(preset.cb_bytes), cb_coefficients
+                static_cast<int>(preset.cb_bytes), cb_coefficients, zigzag_order
             );
         const int cr_library_index = read_sidecar_reference(
             library,
@@ -2135,13 +2267,13 @@ __global__ void sample_pixel_kernel(
                 record + preset.y_bytes + preset.cb_bytes, static_cast<int>(preset.cr_bytes),
                 quality, coefficient_coding, library, static_cast<int>(library_layout.version),
                 cr_library_index, library_layout.cr_count, library_layout.cr_offset,
-                static_cast<int>(preset.cr_bytes), cr_coefficients
+                static_cast<int>(preset.cr_bytes), cr_coefficients, zigzag_order
             )
             : decode_component_record<8, 16, true>(
                 record + preset.y_bytes + preset.cb_bytes, static_cast<int>(preset.cr_bytes),
                 quality, coefficient_coding, library, static_cast<int>(library_layout.version),
                 cr_library_index, library_layout.cr_count, library_layout.cr_offset,
-                static_cast<int>(preset.cr_bytes), cr_coefficients
+                static_cast<int>(preset.cr_bytes), cr_coefficients, zigzag_order
             );
         if (!y_ok || !cb_ok || !cr_ok) {
             *error_flag = 1;
@@ -2174,6 +2306,7 @@ std::vector<uint8_t> make_header(
     uint32_t quality,
     bool auto_quality,
     bool split_luma_8x8,
+    bool zigzag_order,
     int coefficient_coding,
     uint32_t candidate_count
 ) {
@@ -2203,6 +2336,7 @@ std::vector<uint8_t> make_header(
         (auto_quality ? FLAG_AUTO_QUALITY : 0u) |
             (split_luma_8x8 ? FLAG_SPLIT_LUMA_8X8 : 0u) |
             FLAG_CHROMA_420 |
+            (zigzag_order ? FLAG_ZIGZAG_ORDER : 0u) |
             (static_cast<uint32_t>(coefficient_coding) << COEFFICIENT_CODING_SHIFT)
     );
     write_u32(header.data(), 56u, static_cast<uint32_t>(payload));
@@ -2234,6 +2368,7 @@ DctInfo inspect_header(const uint8_t *bytes, uint64_t file_size) {
     info.auto_quality = (flags & FLAG_AUTO_QUALITY) != 0u;
     info.split_luma_8x8 = (flags & FLAG_SPLIT_LUMA_8X8) != 0u;
     info.chroma_420 = (flags & FLAG_CHROMA_420) != 0u;
+    info.zigzag_order = (flags & FLAG_ZIGZAG_ORDER) != 0u;
     info.library_enabled = (flags & FLAG_DCT_LIBRARY) != 0u;
     info.payload_bytes = payload;
     info.library_bytes = info.library_enabled ? metadata : 0u;
@@ -2365,7 +2500,8 @@ GpuResult encode_gpu(
     uint32_t quality,
     bool auto_quality,
     uint32_t candidate_count,
-    int coefficient_coding
+    int coefficient_coding,
+    bool zigzag_order
 ) {
     const bool split_luma_8x8 = preset.nominal_bpp >= 3.0;
     std::vector<uint8_t> header = make_header(
@@ -2375,6 +2511,7 @@ GpuResult encode_gpu(
         quality,
         auto_quality,
         split_luma_8x8,
+        zigzag_order,
         coefficient_coding,
         candidate_count
     );
@@ -2401,7 +2538,7 @@ GpuResult encode_gpu(
                 device_rgb.get(), width, height, columns, count,
                 preset.bytes_per_mcu, static_cast<uint32_t>(block) * block_bytes,
                 block_bytes, 0, block, static_cast<int>(quality), coefficient_coding,
-                true, device_output.get()
+                true, zigzag_order, device_output.get()
             );
             cuda_check(cudaGetLastError(), "Launch split luma DCT kernel");
         }
@@ -2409,20 +2546,23 @@ GpuResult encode_gpu(
         encode_component_kernel<16, 16, false><<<count, CUDA_THREADS>>>(
             device_rgb.get(), width, height, columns, count,
             preset.bytes_per_mcu, 0u, preset.y_bytes, 0, 0,
-            static_cast<int>(quality), coefficient_coding, true, device_output.get()
+            static_cast<int>(quality), coefficient_coding, true, zigzag_order,
+            device_output.get()
         );
         cuda_check(cudaGetLastError(), "Launch luma DCT kernel");
     }
     encode_component_kernel<8, 8, true><<<count, 64>>>(
         device_rgb.get(), width, height, columns, count,
         preset.bytes_per_mcu, preset.y_bytes, preset.cb_bytes, 1, 0,
-        static_cast<int>(quality), coefficient_coding, split_luma_8x8, device_output.get()
+        static_cast<int>(quality), coefficient_coding, split_luma_8x8, zigzag_order,
+        device_output.get()
     );
     cuda_check(cudaGetLastError(), "Launch Cb DCT kernel");
     encode_component_kernel<8, 8, true><<<count, 64>>>(
         device_rgb.get(), width, height, columns, count,
         preset.bytes_per_mcu, preset.y_bytes + preset.cb_bytes, preset.cr_bytes, 2,
-        0, static_cast<int>(quality), coefficient_coding, split_luma_8x8, device_output.get()
+        0, static_cast<int>(quality), coefficient_coding, split_luma_8x8, zigzag_order,
+        device_output.get()
     );
     cuda_check(cudaGetLastError(), "Launch Cr DCT kernel");
     cuda_check(cudaEventRecord(finished.get()), "Stop encode timer");
@@ -2450,7 +2590,7 @@ GpuResult decode_gpu(const std::vector<uint8_t> &file, const DctInfo &info) {
         device_file.get(), device_library, make_library_layout(info),
         info.width, info.height, info.mcu_columns, info.mcu_count,
         info.preset, static_cast<int>(info.quality), info.split_luma_8x8,
-        info.chroma_420, info.coefficient_coding,
+        info.chroma_420, info.coefficient_coding, info.zigzag_order,
         device_rgb.get(), device_error.get()
     );
     cuda_check(cudaGetLastError(), "Launch DCTBS2 decode kernel");
@@ -2497,6 +2637,7 @@ std::array<uint8_t, 4> sample_pixel_gpu(
         device_record.get(), info.library_enabled ? device_library.get() : nullptr,
         make_library_layout(info), info.preset, static_cast<int>(info.quality),
         info.split_luma_8x8, info.chroma_420, info.coefficient_coding,
+        info.zigzag_order,
         mcu_index,
         static_cast<int>(x % 16u), static_cast<int>(y % 16u),
         device_rgba.get(), device_error.get()
@@ -2626,6 +2767,7 @@ struct RatedEncoding {
     GpuResult decoded;
     uint64_t error = UINT64_MAX;
     int coefficient_coding = COEFFICIENT_CODING_LEGACY;
+    bool zigzag_order = false;
 };
 
 RatedEncoding encode_best_coding(
@@ -2642,17 +2784,17 @@ RatedEncoding encode_best_coding(
         ? requested_coding : default_coefficient_coding(preset);
     const bool compare_masked = requested_coding < 0 && preset.nominal_bpp >= 6.0;
     const int coding_count = compare_masked
-        ? (preset.mode_code == 9000u ? 3 : 2) : 1;
+        ? (preset.mode_code == 9000u ? 5 : 3) : 1;
     RatedEncoding best;
 
     for (int coding_index = 0; coding_index < coding_count; ++coding_index) {
-        const int coding = coding_index == 0
-            ? first_coding
-            : coding_index == 1
-                ? COEFFICIENT_CODING_MASKED_TAIL_8X8
-                : COEFFICIENT_CODING_MASKED_TAIL_IMPLICIT2_48;
+        const int coding = coding_index == 0 ? first_coding
+            : coding_index <= 2 ? COEFFICIENT_CODING_MASKED_TAIL_8X8
+            : COEFFICIENT_CODING_MASKED_TAIL_IMPLICIT2_48;
+        const bool zigzag_order = coding_index == 0 || (coding_index & 1) != 0;
         GpuResult encoded = encode_gpu(
-            rgb, width, height, preset, quality, auto_quality, candidate_count, coding
+            rgb, width, height, preset, quality, auto_quality, candidate_count,
+            coding, zigzag_order
         );
         const DctInfo info = inspect_file(encoded.bytes);
         GpuResult decoded = decode_gpu(encoded.bytes, info);
@@ -2662,6 +2804,7 @@ RatedEncoding encode_best_coding(
             best.decoded = std::move(decoded);
             best.error = error;
             best.coefficient_coding = coding;
+            best.zigzag_order = zigzag_order;
         }
     }
     return best;
@@ -2874,6 +3017,7 @@ int command_encode(int argc, char **argv) {
     }
     const DctInfo selected_info = inspect_file(selected.bytes);
     std::cout << ", " << coefficient_coding_name(selected_info.coefficient_coding)
+              << ", " << (selected_info.zigzag_order ? "zigzag order" : "legacy order")
               << ", chroma 4:2:0"
               << ", " << selected.bytes.size() << " bytes, " << std::fixed
               << std::setprecision(3) << actual_bpp << " actual bpp, PSNR "
@@ -2905,6 +3049,7 @@ int command_decode(int argc, char **argv) {
     write_ppm(argv[3], decoded.bytes, info.width, info.height);
     std::cout << "Decoded DCTBS2 " << info.width << 'x' << info.height
               << ": preset " << info.preset.nominal_bpp << " bpp, quality " << info.quality
+              << ", " << (info.zigzag_order ? "zigzag order" : "legacy order")
               << ", chroma " << (info.chroma_420 ? "4:2:0" : "4:2:2 (legacy)")
               << ", CUDA kernel " << std::fixed << std::setprecision(3)
               << decoded.kernel_ms << " ms, device " << properties.name << '\n';
@@ -2973,7 +3118,8 @@ int command_info(int argc, char **argv) {
               << " bytes, " << std::fixed << std::setprecision(3) << actual_bpp
               << " actual bpp, chroma "
               << (info.chroma_420 ? "4:2:0" : "4:2:2 (legacy)") << ", "
-              << coefficient_coding_name(info.coefficient_coding);
+              << coefficient_coding_name(info.coefficient_coding) << ", "
+              << (info.zigzag_order ? "zigzag order" : "legacy order");
     if (info.auto_quality) {
         std::cout << ", auto quality (" << info.search_candidate_count << " candidates)";
     }

@@ -20,23 +20,30 @@ constant-time random access. Spectral sidecar layouts can put more low-ranked
 coefficients in the prototype and use part of the local AC budget for later
 positions in the codec's profile-specific significance scan.
 
-New files choose per record between grouped binary exponents and adaptive skip
+New non-library files set the zigzag-order flag. Profile 0 follows the standard
+alternating-diagonal 8x8 or 16x16 zigzag, while the older significance profiles
+remain additional per-record candidates. This guarantees that enabling zigzag
+does not remove a more accurate old grouped or skip traversal.
+
+Files choose per record between grouped binary exponents and adaptive skip
 coding. Grouped records store one three-bit exponent per group and five-bit
 signed mantissas; the DC term keeps its own exponent and ten-bit signed value.
 Skip-RLE stores signed-6 values with a two-bit forward skip. Dual-scale skip
 adds a signed-4 fine group with multiplier 1 or 2. The default is skip-RLE at
 0.75 bpp, dual-scale skip at 1, 1.5, and 2 bpp, and dual-scale skip for the
 16- and 24-byte high-rate records. The 16/24/32/40/48-byte 8x8 layouts also
-support an explicit AC mask whose bit zero selects AC1 (DC is separate) and
-whose unused value slots form an implicit contiguous high-frequency tail. At
+support an explicit AC mask whose bit zero selects zigzag AC1, bit one selects
+zigzag AC2, and DC is separate. Unused value slots form an implicit contiguous
+tail at the end of the zigzag. At
 6 and 7.5 bpp the default `auto` mode compares this `masked-tail-8x8` layout
 with the earlier `grouped-5-front` layout. At 9 bpp it also evaluates
 `masked-tail-implicit2-48`: the two most frequent low-frequency positions,
 `DCT[1]` and `DCT[8]`, are implicit, allowing 39 AC8 values in each 48-byte
-8x8 record. Auto mode measures exact RGB error and keeps only a strictly
-higher-quality result. A tie keeps grouped coding; a tie between the two
-masked variants keeps the earlier ID 6 layout.
-The decoder still accepts older grouped, masked-tail, and legacy records.
+8x8 record. Auto mode measures exact RGB error for both the new zigzag mask and
+the old natural-position mask and keeps only a strictly higher-quality result.
+A tie keeps grouped coding; a tie between masked variants keeps the zigzag
+candidate. The decoder still accepts older grouped, masked-tail, and legacy
+records with the zigzag flag unset.
 
 The encoder runs RGB-to-YCbCr conversion, 4:2:0 downsampling, separable DCT,
 profile selection, grouped/skip candidate evaluation, quantization, and packing

@@ -152,6 +152,29 @@ test("keeps DC outside the AC mask and maps mask bit zero to AC1", () => {
   });
   const ac1View = new DataView(ac1.buffer, ac1.byteOffset + HEADER_BYTES);
   assert.equal(ac1View.getUint32(0, true) & 1, 1, "mask bit zero must select DCT[1] / AC1");
+
+  const ac2 = encodeDctFile(makeVerticalAc1Pixels(16, 16), 16, 16, {
+    preset: "6",
+    quality: 97,
+    coefficientCoding: "masked-tail-8x8",
+  });
+  const ac2View = new DataView(ac2.buffer, ac2.byteOffset + HEADER_BYTES);
+  assert.equal(ac2View.getUint32(0, true) & 2, 2, "mask bit one must select DCT[8] / AC2");
+  assert.equal(inspectDctFile(ac2).zigzagOrder, true);
+
+  const legacyOrder = encodeDctFile(makeVerticalAc1Pixels(16, 16), 16, 16, {
+    preset: "6",
+    quality: 97,
+    coefficientCoding: "masked-tail-8x8",
+    zigzagOrder: false,
+  });
+  const legacyView = new DataView(
+    legacyOrder.buffer,
+    legacyOrder.byteOffset + HEADER_BYTES
+  );
+  assert.equal(legacyView.getUint32(0, true) & (1 << 7), 1 << 7);
+  assert.equal(inspectDctFile(legacyOrder).zigzagOrder, false);
+  assert.equal(decodeDctFile(legacyOrder).pixels.length, 16 * 16 * 4);
 });
 
 test("fills masked records with a non-overlapping implicit AC tail", () => {
@@ -413,21 +436,40 @@ test("selects the lower-error high-rate coding without regressing RGB quality", 
       quality: 97,
       coefficientCoding: "masked-tail-8x8",
     });
+    const legacyMasked = encodeDctFile(source, 16, 16, {
+      preset,
+      quality: 97,
+      coefficientCoding: "masked-tail-8x8",
+      zigzagOrder: false,
+    });
     const implicit = preset === "9" ? encodeDctFile(source, 16, 16, {
       preset,
       quality: 97,
       coefficientCoding: "masked-tail-implicit2-48",
     }) : null;
+    const legacyImplicit = preset === "9" ? encodeDctFile(source, 16, 16, {
+      preset,
+      quality: 97,
+      coefficientCoding: "masked-tail-implicit2-48",
+      zigzagOrder: false,
+    }) : null;
     const automatic = encodeDctFile(source, 16, 16, { preset, quality: 97 });
     const groupedError = calculateRgbError(source, decodeDctFile(grouped).pixels);
     const maskedError = calculateRgbError(source, decodeDctFile(masked).pixels);
+    const legacyMaskedError = calculateRgbError(
+      source, decodeDctFile(legacyMasked).pixels
+    );
     const implicitError = implicit
       ? calculateRgbError(source, decodeDctFile(implicit).pixels) : Infinity;
+    const legacyImplicitError = legacyImplicit
+      ? calculateRgbError(source, decodeDctFile(legacyImplicit).pixels) : Infinity;
     const automaticError = calculateRgbError(source, decodeDctFile(automatic).pixels);
     const expected = [
       ["grouped-5-front", groupedError],
       ["masked-tail-8x8", maskedError],
+      ["masked-tail-8x8", legacyMaskedError],
       ["masked-tail-implicit2-48", implicitError],
+      ["masked-tail-implicit2-48", legacyImplicitError],
     ].reduce((best, candidate) => candidate[1] < best[1] ? candidate : best);
 
     assert.equal(automaticError, expected[1]);
@@ -476,6 +518,7 @@ test("stores deterministic clustered DCT prototypes without losing coordinate ac
 
   assert.deepEqual(first, second);
   assert.equal(info.libraryEnabled, true);
+  assert.equal(info.zigzagOrder, false);
   assert.equal(info.library.referenceCoding, "header");
   assert.equal(info.library.y.count, 3);
   assert.equal(info.library.cb.count, 3);
@@ -654,7 +697,7 @@ test("rejects truncated files, invalid modes, and invalid coordinates", () => {
   invalidMode[13] = 0;
   invalidMode[14] = 0;
   invalidMode[15] = 0;
-  unsupportedFlags[52] |= 16;
+  unsupportedFlags[52] |= 32;
   invalidCoefficientCoding[53] = 15;
   splitLowRate[52] |= 2;
   maskedLibrary[52] |= 4;
@@ -719,6 +762,21 @@ function makeHorizontalAc1Pixels(width, height) {
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
       const value = Math.round(128 + 96 * Math.cos(Math.PI * (2 * (x & 7) + 1) / 16));
+      const offset = (y * width + x) * 4;
+      pixels[offset] = value;
+      pixels[offset + 1] = value;
+      pixels[offset + 2] = value;
+      pixels[offset + 3] = 255;
+    }
+  }
+  return pixels;
+}
+
+function makeVerticalAc1Pixels(width, height) {
+  const pixels = new Uint8ClampedArray(width * height * 4);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const value = Math.round(128 + 96 * Math.cos(Math.PI * (2 * (y & 7) + 1) / 16));
       const offset = (y * width + x) * 4;
       pixels[offset] = value;
       pixels[offset + 1] = value;

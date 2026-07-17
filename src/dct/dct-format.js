@@ -23,10 +23,11 @@
   const FLAG_SPLIT_LUMA_8X8 = 2;
   const FLAG_DCT_LIBRARY = 4;
   const FLAG_CHROMA_420 = 8;
+  const FLAG_ZIGZAG_ORDER = 16;
   const COEFFICIENT_CODING_SHIFT = 8;
   const COEFFICIENT_CODING_MASK = 15 << COEFFICIENT_CODING_SHIFT;
   const SUPPORTED_FLAGS = FLAG_AUTO_QUALITY | FLAG_SPLIT_LUMA_8X8 | FLAG_DCT_LIBRARY |
-    FLAG_CHROMA_420 | COEFFICIENT_CODING_MASK;
+    FLAG_CHROMA_420 | FLAG_ZIGZAG_ORDER | COEFFICIENT_CODING_MASK;
   const MCU_WIDTH = 16;
   const MCU_HEIGHT = 16;
   const CHROMA_WIDTH = 8;
@@ -34,6 +35,7 @@
   const CHROMA_HEIGHT_422 = 16;
   const SCALE_MULTIPLIERS = Object.freeze([1, 2, 4, 8, 16, 32, 64, 128]);
   const PROFILE_NAMES = Object.freeze(["low frequency", "horizontal", "vertical", "diagonal"]);
+  const ZIGZAG_PROFILE_NAME = "zigzag";
   const SKIP_PROFILE_NAMES = Object.freeze([
     "low frequency",
     "horizontal",
@@ -130,6 +132,7 @@
   const basisCache = new Map();
   const scanCache = new Map();
   const skipScanCache = new Map();
+  const zigzagScanCache = new Map();
 
   function freezePreset(modeCode, bpp, bytesPerMcu, yBytes, cbBytes, crBytes) {
     return Object.freeze({ modeCode, bpp, bytesPerMcu, yBytes, cbBytes, crBytes });
@@ -174,10 +177,15 @@
   }
 
   function resolveCoefficientCoding(key, presetKey, options = {}) {
-    const coding = getCoefficientCoding(key, presetKey);
-    return options.dctLibrary && coding.maskedTail
+    const requested = getCoefficientCoding(key, presetKey);
+    const coding = options.dctLibrary && requested.maskedTail
       ? getCoefficientCoding("grouped-5-front", presetKey)
-      : coding;
+      : requested;
+    return withCoefficientOrder(coding, !options.dctLibrary && options.zigzagOrder !== false);
+  }
+
+  function withCoefficientOrder(coding, zigzagOrder) {
+    return zigzagOrder ? Object.freeze({ ...coding, zigzagOrder: true }) : coding;
   }
 
   function getDctPreset(key) {
@@ -555,22 +563,22 @@
 
   function selectBetterHighRateEncoding(pixels, width, height, options, encodeCandidate) {
     const onProgress = typeof options.onProgress === "function" ? options.onProgress : null;
-    const codingKeys = highRateCandidateCodingKeys(options.preset);
-    const encodePhase = (coefficientCoding, phase) => encodeCandidate({
+    const candidates = highRateCandidateConfigurations(options.preset);
+    const encodePhase = (candidate, phase) => encodeCandidate({
       ...options,
-      coefficientCoding,
+      ...candidate,
       onProgress: onProgress ? (progress) => {
         onProgress({
           ...progress,
           completed: phase * progress.total + progress.completed,
-          total: progress.total * codingKeys.length,
+          total: progress.total * candidates.length,
         });
       } : undefined,
     });
     let best = null;
 
-    for (let phase = 0; phase < codingKeys.length; phase += 1) {
-      const encoded = encodePhase(codingKeys[phase], phase);
+    for (let phase = 0; phase < candidates.length; phase += 1) {
+      const encoded = encodePhase(candidates[phase], phase);
       const error = calculateSquaredError(pixels, decodeDctFile(encoded).pixels);
       if (!best || error < best.error) {
         best = { encoded, error };
@@ -580,12 +588,19 @@
     return best.encoded;
   }
 
-  function highRateCandidateCodingKeys(presetKey) {
-    const keys = ["grouped-5-front", "masked-tail-8x8"];
+  function highRateCandidateConfigurations(presetKey) {
+    const candidates = [
+      { coefficientCoding: "grouped-5-front", zigzagOrder: true },
+      { coefficientCoding: "masked-tail-8x8", zigzagOrder: true },
+      { coefficientCoding: "masked-tail-8x8", zigzagOrder: false },
+    ];
     if (String(presetKey) === "9") {
-      keys.push("masked-tail-implicit2-48");
+      candidates.push(
+        { coefficientCoding: "masked-tail-implicit2-48", zigzagOrder: true },
+        { coefficientCoding: "masked-tail-implicit2-48", zigzagOrder: false }
+      );
     }
-    return keys;
+    return candidates;
   }
 
   function createDctOutput(
@@ -618,7 +633,10 @@
         (splitLuma8x8 ? FLAG_SPLIT_LUMA_8X8 : 0) |
         (libraryBytes > 0 ? FLAG_DCT_LIBRARY : 0) |
         (resolveChroma420(options) ? FLAG_CHROMA_420 : 0) |
-        (COEFFICIENT_CODINGS.indexOf(coefficientCoding) << COEFFICIENT_CODING_SHIFT)
+        (coefficientCoding.zigzagOrder ? FLAG_ZIGZAG_ORDER : 0) |
+        (COEFFICIENT_CODINGS.findIndex(
+          (candidate) => candidate.key === coefficientCoding.key
+        ) << COEFFICIENT_CODING_SHIFT)
     );
     writeUint32(view, 56, layout.payloadBytes);
     writeUint32(view, 60, libraryBytes || options.searchCandidateCount || 0);
@@ -1183,7 +1201,10 @@
     const quality = readUint32(view, 48);
     const flags = readUint32(view, 52);
     const coefficientCodingIndex = (flags & COEFFICIENT_CODING_MASK) >> COEFFICIENT_CODING_SHIFT;
-    const coefficientCoding = COEFFICIENT_CODINGS[coefficientCodingIndex];
+    const baseCoefficientCoding = COEFFICIENT_CODINGS[coefficientCodingIndex];
+    const zigzagOrder = (flags & FLAG_ZIGZAG_ORDER) !== 0;
+    const coefficientCoding = baseCoefficientCoding
+      ? withCoefficientOrder(baseCoefficientCoding, zigzagOrder) : null;
     const payloadBytes = readUint32(view, 56);
     const metadata = readUint32(view, 60);
     const libraryEnabled = (flags & FLAG_DCT_LIBRARY) !== 0;
@@ -1219,6 +1240,7 @@
       autoQuality: (flags & FLAG_AUTO_QUALITY) !== 0,
       splitLuma8x8,
       chroma420,
+      zigzagOrder,
       chromaSubsampling: chroma420 ? "4:2:0" : "4:2:2",
       chromaWidth: CHROMA_WIDTH,
       chromaHeight: chroma420 ? CHROMA_HEIGHT_420 : CHROMA_HEIGHT_422,
@@ -1344,7 +1366,8 @@
     const coefficientCoding = resolveCoefficientCoding(options.coefficientCoding, preset.key, options);
     const autoSelectMaskedTail = shouldAutoSelectMaskedTail(preset.key, options);
     const sampleCodings = autoSelectMaskedTail
-      ? highRateCandidateCodingKeys(preset.key).map((key) => getCoefficientCoding(key))
+      ? highRateCandidateConfigurations(preset.key).map((candidate) =>
+        resolveCoefficientCoding(candidate.coefficientCoding, preset.key, candidate))
       : [coefficientCoding];
     const layout = getDctFileLayout(width, height, preset.key);
     const onProgress = typeof options.onProgress === "function" ? options.onProgress : () => {};
@@ -1424,7 +1447,10 @@
         libraryClusterSamples: options.libraryClusterSamples,
         libraryCandidateCount: options.libraryCandidateCount,
         chromaSubsampling: chroma420 ? "4:2:0" : "4:2:2",
-        ...(autoSelectMaskedTail ? {} : { coefficientCoding: coefficientCoding.key }),
+        ...(autoSelectMaskedTail ? {} : {
+          coefficientCoding: coefficientCoding.key,
+          zigzagOrder: Boolean(coefficientCoding.zigzagOrder),
+        }),
         searchCandidateCount: sampleResults.length + finalists.length,
         onProgress(progress) {
           const fraction = progress.total > 0 ? progress.completed / progress.total : 0;
@@ -1619,8 +1645,8 @@
     return output;
   }
 
-  function getLibraryCoefficientScan(profile, width, height, acCount, frequencySplit) {
-    const scan = getScan(profile, width, height);
+  function getLibraryCoefficientScan(coding, profile, width, height, acCount, frequencySplit) {
+    const scan = getProfileScan(coding, profile, width, height);
     if (frequencySplit <= 0) {
       return scan.slice(0, acCount);
     }
@@ -1735,7 +1761,8 @@
         height,
         quality,
         chroma,
-        maskedTailConfig
+        maskedTailConfig,
+        coding
       );
     } else if (coding.groupCount > 0) {
       baseline = chooseGroupedComponentEncoding(
@@ -1757,6 +1784,7 @@
         byteCount,
         quality,
         chroma,
+        coding,
         reservedAcCount,
         libraryFrequencySplit
       );
@@ -1795,11 +1823,13 @@
     height,
     quality,
     chroma,
-    config
+    config,
+    coefficientCoding
   ) {
     const implicitPositions = config.implicitPositions || [];
     const implicit = new Uint8Array(64);
     for (const position of implicitPositions) implicit[position] = 1;
+    const coefficientOrder = getCoefficientOrder(coefficientCoding, width, height);
     const flexibleAcCount = config.maxAc - implicitPositions.length;
     const dcMinimum = -(2 ** (config.dcBits - 1));
     const dcMaximum = 2 ** (config.dcBits - 1) - 1;
@@ -1815,9 +1845,7 @@
       const restoredDc = dc * dcStep;
       const errorAfterDc = baseError +
         (coefficients[0] - restoredDc) ** 2 - coefficients[0] ** 2;
-      const coding = new Array(64);
-
-      for (let position = 1; position < 64; position += 1) {
+      const coding = coefficientOrder.slice(1).map((position, index) => {
         const u = position % width;
         const v = Math.floor(position / width);
         const step = quantizationStep(u, v, width, height, quality, chroma) * scale;
@@ -1829,20 +1857,21 @@
         if (keepError >= dropError) {
           stored = 0;
         }
-        coding[position] = {
+        return {
           position,
+          rank: index + 1,
           stored,
           benefit: stored === 0 ? 0 : dropError - keepError,
         };
-      }
+      });
 
       const selected = new Uint8Array(64);
       const implicitBenefit = implicitPositions.reduce(
-        (total, position) => total + coding[position].benefit,
+        (total, position) => total + coding.find((entry) => entry.position === position).benefit,
         0
       );
       let explicitBenefit = 0;
-      let tailBenefit = coding.slice(64 - flexibleAcCount).reduce(
+      let tailBenefit = coding.slice(63 - flexibleAcCount).reduce(
         (total, entry) => total + entry.benefit,
         0
       );
@@ -1857,10 +1886,12 @@
             scaleIndex,
             dc,
             groupScaleIndices: [scaleIndex],
-            implicitEntries: implicitPositions.map((position) => coding[position]),
-            explicitEntries: coding.slice(1, tailStart)
+            implicitEntries: implicitPositions.map(
+              (position) => coding.find((entry) => entry.position === position)
+            ),
+            explicitEntries: coding.slice(0, tailStart - 1)
               .filter((entry) => selected[entry.position] !== 0),
-            tailEntries: coding.slice(tailStart, 64),
+            tailEntries: coding.slice(tailStart - 1),
             tailStart,
             maxAc: config.maxAc,
             error,
@@ -1870,17 +1901,18 @@
         }
 
         if (explicitCount === flexibleAcCount) break;
-        tailBenefit -= coding[tailStart].benefit;
-        let bestPosition = -1;
-        for (let position = 1; position <= Math.min(62, tailStart); position += 1) {
-          if (implicit[position] !== 0 || selected[position] !== 0) continue;
-          if (bestPosition < 0 || coding[position].benefit > coding[bestPosition].benefit ||
-              coding[position].benefit === coding[bestPosition].benefit && position < bestPosition) {
-            bestPosition = position;
+        tailBenefit -= coding[tailStart - 1].benefit;
+        let bestEntry = null;
+        for (const entry of coding) {
+          if (entry.rank > Math.min(62, tailStart)) break;
+          if (implicit[entry.position] !== 0 || selected[entry.position] !== 0) continue;
+          if (!bestEntry || entry.benefit > bestEntry.benefit ||
+              entry.benefit === bestEntry.benefit && entry.rank < bestEntry.rank) {
+            bestEntry = entry;
           }
         }
-        selected[bestPosition] = 1;
-        explicitBenefit += coding[bestPosition].benefit;
+        selected[bestEntry.position] = 1;
+        explicitBenefit += bestEntry.benefit;
       }
     }
 
@@ -1890,15 +1922,17 @@
   function writeMaskedTailComponentCandidate(output, offset, byteCount, candidate, coding) {
     const config = getMaskedTailConfig(coding, 8, 8, byteCount);
     const implicitPositions = config.implicitPositions || [];
+    const coefficientOrder = getCoefficientOrder(coding, 8, 8);
 
     if (implicitPositions.length > 0) {
       output.fill(0, offset, offset + byteCount);
       const selected = new Uint8Array(64);
-      for (const entry of candidate.explicitEntries) selected[entry.position] = 1;
+      for (const entry of candidate.explicitEntries) selected[entry.rank] = 1;
       let bitOffset = 0;
-      for (let position = 1; position <= 62; position += 1) {
+      for (let rank = 1; rank <= 62; rank += 1) {
+        const position = coefficientOrder[rank];
         if (implicitPositions.includes(position)) continue;
-        writeLittleEndianBits(output, offset, bitOffset, selected[position], 1);
+        writeLittleEndianBits(output, offset, bitOffset, selected[rank], 1);
         bitOffset += 1;
       }
       writeLittleEndianBits(output, offset, bitOffset, candidate.scaleIndex, 2);
@@ -1921,7 +1955,7 @@
 
     output.fill(0, offset, offset + byteCount);
     for (const entry of candidate.explicitEntries) {
-      const maskBit = entry.position - 1;
+      const maskBit = entry.rank - 1;
       if (maskBit < 32) {
         maskLow = (maskLow | (1 << maskBit)) >>> 0;
       } else {
@@ -1950,14 +1984,22 @@
     byteCount,
     quality,
     chroma,
+    coding,
     reservedAcCount = 0,
     libraryFrequencySplit = 0
   ) {
     const acCount = Math.max(0, Math.floor((byteCount * 8 - 18) / 6) - reservedAcCount);
     let best = null;
 
-    for (let profile = 0; profile < PROFILE_NAMES.length; profile += 1) {
-      const scan = getLibraryCoefficientScan(profile, width, height, acCount, libraryFrequencySplit);
+    for (let profile = 0; profile < getProfileCount(coding); profile += 1) {
+      const scan = getLibraryCoefficientScan(
+        coding,
+        profile,
+        width,
+        height,
+        acCount,
+        libraryFrequencySplit
+      );
 
       for (let scaleIndex = 0; scaleIndex < SCALE_MULTIPLIERS.length; scaleIndex += 1) {
         const scale = SCALE_MULTIPLIERS[scaleIndex];
@@ -2004,8 +2046,8 @@
     const baseError = squaredNorm(coefficients);
     let best = null;
 
-    for (let profile = 0; profile < 8; profile += 1) {
-      const scan = getSkipScan(profile, width, height);
+    for (let profile = 0; profile < getProfileCount(coding, true); profile += 1) {
+      const scan = getProfileScan(coding, profile, width, height, true);
 
       for (let scaleIndex = 0; scaleIndex < SCALE_MULTIPLIERS.length; scaleIndex += 1) {
         const dcChoice = quantizeSkipCoefficient(
@@ -2239,8 +2281,9 @@
     );
     let best = null;
 
-    for (let profile = 0; profile < PROFILE_NAMES.length; profile += 1) {
+    for (let profile = 0; profile < getProfileCount(coding); profile += 1) {
       const scan = getLibraryCoefficientScan(
+        coding,
         profile,
         width,
         height,
@@ -2384,8 +2427,8 @@
     return value >= signBit ? value - 2 ** bitCount : value;
   }
 
-  function maskedTailHasPosition(maskLow, maskHigh, position) {
-    const maskBit = position - 1;
+  function maskedTailHasRank(maskLow, maskHigh, rank) {
+    const maskBit = rank - 1;
     return maskBit < 32
       ? (maskLow >>> maskBit & 1) !== 0
       : (maskHigh >>> (maskBit - 32) & 1) !== 0;
@@ -2394,17 +2437,18 @@
   function decodeMaskedTailComponent(bytes, offset, byteCount, quality, chroma, coding) {
     const config = getMaskedTailConfig(coding, 8, 8, byteCount);
     const implicitPositions = config.implicitPositions || [];
+    const coefficientOrder = getCoefficientOrder(coding, 8, 8);
     const implicit = new Uint8Array(64);
     const selected = new Uint8Array(64);
-    for (const position of implicitPositions) implicit[position] = 1;
+    for (const position of implicitPositions) implicit[coefficientOrder.indexOf(position)] = 1;
     let scaleIndex;
     let bitOffset;
 
     if (implicitPositions.length > 0) {
       bitOffset = 0;
-      for (let position = 1; position <= 62; position += 1) {
-        if (implicit[position]) continue;
-        selected[position] = readLittleEndianBits(bytes, offset, bitOffset, 1);
+      for (let rank = 1; rank <= 62; rank += 1) {
+        if (implicit[rank]) continue;
+        selected[rank] = readLittleEndianBits(bytes, offset, bitOffset, 1);
         bitOffset += 1;
       }
       scaleIndex = readLittleEndianBits(bytes, offset, bitOffset, 2);
@@ -2416,8 +2460,8 @@
       const maskHigh = rawMaskHigh & 0x3fffffff;
       scaleIndex = rawMaskHigh >>> 30;
       bitOffset = 64;
-      for (let position = 1; position <= 62; position += 1) {
-        selected[position] = maskedTailHasPosition(maskLow, maskHigh, position) ? 1 : 0;
+      for (let rank = 1; rank <= 62; rank += 1) {
+        selected[rank] = maskedTailHasRank(maskLow, maskHigh, rank) ? 1 : 0;
       }
     }
 
@@ -2429,8 +2473,8 @@
 
     const tailAcCount = flexibleAcCount - explicitAcCount;
     const tailStart = 64 - tailAcCount;
-    for (let position = Math.max(1, tailStart); position <= 62; position += 1) {
-      if (selected[position]) {
+    for (let rank = Math.max(1, tailStart); rank <= 62; rank += 1) {
+      if (selected[rank]) {
         throw new RangeError("DCT masked AC overlaps the implicit tail");
       }
     }
@@ -2449,15 +2493,17 @@
         quantizationStep(position % 8, Math.floor(position / 8), 8, 8, quality, chroma) * scale;
       storedCoefficientCount += stored === 0 ? 0 : 1;
     }
-    for (let position = 1; position < tailStart && position <= 62; position += 1) {
-      if (!selected[position]) continue;
+    for (let rank = 1; rank < tailStart && rank <= 62; rank += 1) {
+      if (!selected[rank]) continue;
+      const position = coefficientOrder[rank];
       const stored = readLittleEndianSignedBits(bytes, offset, bitOffset, config.acBits);
       bitOffset += config.acBits;
       coefficients[position] = stored *
         quantizationStep(position % 8, Math.floor(position / 8), 8, 8, quality, chroma) * scale;
       storedCoefficientCount += stored === 0 ? 0 : 1;
     }
-    for (let position = tailStart; position <= 63; position += 1) {
+    for (let rank = tailStart; rank <= 63; rank += 1) {
+      const position = coefficientOrder[rank];
       const stored = readLittleEndianSignedBits(bytes, offset, bitOffset, config.acBits);
       bitOffset += config.acBits;
       coefficients[position] = stored *
@@ -2513,7 +2559,7 @@
         ? libraryContext.libraryIndex : 0;
     const scaleIndex = packedScale & 7;
 
-    if (profile >= (skipRecord ? 8 : PROFILE_NAMES.length) ||
+    if (profile >= getProfileCount(coding, skipRecord) ||
         !skipRecord && packedScale >= SCALE_MULTIPLIERS.length || skipRecord && libraryContext) {
       throw new RangeError("Invalid DCT component profile");
     }
@@ -2526,7 +2572,7 @@
 
     if (skipRecord) {
       const skipLayout = getSkipTokenLayout(byteCount, width, height, coding.skipMode);
-      const scan = getSkipScan(profile, width, height);
+      const scan = getProfileScan(coding, profile, width, height, true);
       let scanIndex = 0;
       let storedCoefficientCount = dc === 0 ? 0 : 1;
 
@@ -2549,6 +2595,7 @@
       return {
         coefficients,
         profile,
+        profileName: getProfileName(coding, profile, true),
         scaleIndex,
         groupScaleIndices: skipLayout.dualScale
           ? [scaleIndex, getSkipTokenParameters(skipLayout, skipLayout.coarseCount, scaleIndex).scaleIndex]
@@ -2568,7 +2615,14 @@
       : Math.max(0, Math.floor((byteCount * 8 - 18) / 6) - reservedAcCount);
     const frequencySplit = libraryIndex > 0 && libraryContext
       ? libraryContext.library.frequencySplit : 0;
-    const scan = getLibraryCoefficientScan(profile, width, height, acCount, frequencySplit);
+    const scan = getLibraryCoefficientScan(
+      coding,
+      profile,
+      width,
+      height,
+      acCount,
+      frequencySplit
+    );
 
     const groupScaleIndices = groupedLayout ? groupedLayout.groupEnds.map(() => reader.read(3)) : [scaleIndex];
     const groupEnds = groupedLayout ? groupedLayout.groupEnds : [acCount];
@@ -2609,6 +2663,7 @@
     return {
       coefficients,
       profile,
+      profileName: getProfileName(coding, profile),
       scaleIndex,
       groupScaleIndices,
       coefficientCount: acCount + 1,
@@ -2826,8 +2881,7 @@
           ? "implicit AC1/AC2 + masked AC + implicit high-frequency tail"
           : component.encodingMode === "masked-tail"
             ? "masked AC + implicit high-frequency tail"
-          : component.encodingMode === "skip-rle" || component.encodingMode === "dual-scale-skip"
-            ? SKIP_PROFILE_NAMES[component.profile] : PROFILE_NAMES[component.profile],
+          : component.profileName,
         scaleIndex: component.scaleIndex,
         scale: SCALE_MULTIPLIERS[component.scaleIndex],
         groupScaleIndices: component.groupScaleIndices,
@@ -3269,6 +3323,59 @@
     }
 
     return scanCache.get(key);
+  }
+
+  function getZigzagScan(width, height) {
+    const key = `${width}:${height}`;
+
+    if (!zigzagScanCache.has(key)) {
+      const positions = [];
+      for (let diagonal = 0; diagonal <= width + height - 2; diagonal += 1) {
+        const minimumU = Math.max(0, diagonal - height + 1);
+        const maximumU = Math.min(width - 1, diagonal);
+        if ((diagonal & 1) === 0) {
+          for (let u = minimumU; u <= maximumU; u += 1) {
+            const v = diagonal - u;
+            if (u !== 0 || v !== 0) positions.push(v * width + u);
+          }
+        } else {
+          for (let u = maximumU; u >= minimumU; u -= 1) {
+            const v = diagonal - u;
+            if (u !== 0 || v !== 0) positions.push(v * width + u);
+          }
+        }
+      }
+      zigzagScanCache.set(key, positions);
+    }
+
+    return zigzagScanCache.get(key);
+  }
+
+  function getCoefficientOrder(coding, width, height) {
+    return coding.zigzagOrder
+      ? [0, ...getZigzagScan(width, height)]
+      : Array.from({ length: width * height }, (_, position) => position);
+  }
+
+  function getProfileCount(coding, skip = false) {
+    return (skip ? SKIP_PROFILE_NAMES.length : PROFILE_NAMES.length) +
+      (coding.zigzagOrder ? 1 : 0);
+  }
+
+  function getProfileScan(coding, profile, width, height, skip = false) {
+    if (coding.zigzagOrder) {
+      if (profile === 0) return getZigzagScan(width, height);
+      profile -= 1;
+    }
+    return skip ? getSkipScan(profile, width, height) : getScan(profile, width, height);
+  }
+
+  function getProfileName(coding, profile, skip = false) {
+    if (coding.zigzagOrder) {
+      if (profile === 0) return ZIGZAG_PROFILE_NAME;
+      profile -= 1;
+    }
+    return (skip ? SKIP_PROFILE_NAMES : PROFILE_NAMES)[profile];
   }
 
   function getSkipScan(profile, width, height) {

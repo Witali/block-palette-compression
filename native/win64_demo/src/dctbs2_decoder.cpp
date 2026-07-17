@@ -12,9 +12,10 @@ constexpr std::size_t kHeaderBytes = 64;
 constexpr std::uint32_t kFlagSplitLuma = 2;
 constexpr std::uint32_t kFlagLibrary = 4;
 constexpr std::uint32_t kFlagChroma420 = 8;
+constexpr std::uint32_t kFlagZigzagOrder = 16;
 constexpr std::uint32_t kCodingMask = 15u << 8u;
 constexpr std::uint32_t kSupportedFlags =
-    1u | kFlagSplitLuma | kFlagLibrary | kFlagChroma420 | kCodingMask;
+    1u | kFlagSplitLuma | kFlagLibrary | kFlagChroma420 | kFlagZigzagOrder | kCodingMask;
 constexpr std::array<int, 8> kScales = {1, 2, 4, 8, 16, 32, 64, 128};
 constexpr std::array<int, 64> kLumaQuantization = {
     16, 11, 10, 16, 24, 40, 51, 61,
@@ -139,6 +140,41 @@ std::vector<int> CreateScan(int profile, int width, int height, bool skip) {
     return scan;
 }
 
+std::vector<int> CreateZigzagScan(int width, int height) {
+    std::vector<int> scan;
+    scan.reserve(static_cast<std::size_t>(width * height - 1));
+    for (int diagonal = 0; diagonal <= width + height - 2; ++diagonal) {
+        const int minimum_u = std::max(0, diagonal - height + 1);
+        const int maximum_u = std::min(width - 1, diagonal);
+        if ((diagonal & 1) == 0) {
+            for (int u = minimum_u; u <= maximum_u; ++u) {
+                const int v = diagonal - u;
+                if (u != 0 || v != 0) scan.push_back(v * width + u);
+            }
+        } else {
+            for (int u = maximum_u; u >= minimum_u; --u) {
+                const int v = diagonal - u;
+                if (u != 0 || v != 0) scan.push_back(v * width + u);
+            }
+        }
+    }
+    return scan;
+}
+
+std::vector<int> CreateProfileScan(
+    int profile,
+    int width,
+    int height,
+    bool skip,
+    bool zigzag_order
+) {
+    if (zigzag_order) {
+        if (profile == 0) return CreateZigzagScan(width, height);
+        --profile;
+    }
+    return CreateScan(profile, width, height, skip);
+}
+
 double QuantizationStep(int u, int v, int width, int height, int quality, bool chroma) {
     const auto& table = chroma ? kChromaQuantization : kLumaQuantization;
     const int table_x = std::min(7, static_cast<int>(std::floor(
@@ -227,6 +263,7 @@ bool DecodeComponent(
     int quality,
     bool chroma,
     const Coding& coding,
+    bool zigzag_order,
     std::vector<double>& coefficients,
     std::wstring& error
 ) {
@@ -242,7 +279,8 @@ bool DecodeComponent(
     const bool skip_record = coding.skip_mode != SkipMode::None && (packed_scale & 8) != 0;
     const int profile = packed_profile;
     const int scale_index = packed_scale & 7;
-    if (profile >= (skip_record ? 8 : 4) || (!skip_record && packed_scale >= 8)) {
+    if (profile >= (skip_record ? (zigzag_order ? 9 : 8) : (zigzag_order ? 5 : 4)) ||
+        (!skip_record && packed_scale >= 8)) {
         error = L"Invalid DCTBS2 component profile";
         return false;
     }
@@ -251,7 +289,7 @@ bool DecodeComponent(
 
     if (skip_record) {
         const SkipLayout layout = GetSkipLayout(byte_count, width, height, coding.skip_mode);
-        const auto scan = CreateScan(profile, width, height, true);
+        const auto scan = CreateProfileScan(profile, width, height, true, zigzag_order);
         int scan_index = 0;
         if (layout.token_count < 1) {
             error = L"DCTBS2 component is too small for skip coding";
@@ -296,7 +334,7 @@ bool DecodeComponent(
         ac_count = std::max(0, (byte_count * 8 - 18) / 6);
         group_ends = {ac_count};
     }
-    const auto scan = CreateScan(profile, width, height, false);
+    const auto scan = CreateProfileScan(profile, width, height, false, zigzag_order);
     if (ac_count > static_cast<int>(scan.size())) {
         error = L"DCTBS2 component coefficient count is invalid";
         return false;
@@ -341,12 +379,15 @@ bool DecodeLuma(
     int quality,
     bool split,
     const Coding& coding,
+    bool zigzag_order,
     std::vector<double>& plane,
     std::wstring& error
 ) {
     if (!split) {
         std::vector<double> coefficients;
-        if (!DecodeComponent(bytes, byte_count, 16, 16, quality, false, coding, coefficients, error)) {
+        if (!DecodeComponent(
+                bytes, byte_count, 16, 16, quality, false, coding, zigzag_order,
+                coefficients, error)) {
             return false;
         }
         plane = InverseDct(coefficients, 16, 16);
@@ -368,6 +409,7 @@ bool DecodeLuma(
                 quality,
                 false,
                 coding,
+                zigzag_order,
                 coefficients,
                 error)) {
             return false;
@@ -460,6 +502,7 @@ bool DecodeDctbs2(
     }
     const bool split = (flags & kFlagSplitLuma) != 0;
     const bool chroma420 = (flags & kFlagChroma420) != 0;
+    const bool zigzag_order = (flags & kFlagZigzagOrder) != 0;
     const int chroma_height = chroma420 ? 8 : 16;
     if (split && preset.bits_per_pixel < 3.0) {
         error = L"Invalid DCTBS2 split-luma mode";
@@ -477,7 +520,9 @@ bool DecodeDctbs2(
         std::vector<double> y_plane;
         std::vector<double> cb_coefficients;
         std::vector<double> cr_coefficients;
-        if (!DecodeLuma(record, preset.y_bytes, quality, split, coding, y_plane, error) ||
+        if (!DecodeLuma(
+                record, preset.y_bytes, quality, split, coding, zigzag_order,
+                y_plane, error) ||
             !DecodeComponent(
                 record + preset.y_bytes,
                 preset.cb_bytes,
@@ -486,6 +531,7 @@ bool DecodeDctbs2(
                 quality,
                 true,
                 coding,
+                zigzag_order,
                 cb_coefficients,
                 error) ||
             !DecodeComponent(
@@ -496,6 +542,7 @@ bool DecodeDctbs2(
                 quality,
                 true,
                 coding,
+                zigzag_order,
                 cr_coefficients,
                 error)) {
             return false;

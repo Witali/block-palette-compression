@@ -22,11 +22,16 @@ test("provides CUDA encode, decode, settings search, and pixel commands", () => 
   assert.match(source, /COEFFICIENT_CODING_MASKED_TAIL_8X8 = 6/);
   assert.match(source, /COEFFICIENT_CODING_MASKED_TAIL_IMPLICIT2_48 = 7/);
   assert.match(source, /masked-tail-implicit2-48/);
-  assert.match(source, /mask_bit = best_position - 1/);
+  assert.match(source, /mask_bit = best_rank - 1/);
+  assert.match(source, /FLAG_ZIGZAG_ORDER = 16u/);
+  assert.match(source, /make_zigzag_scan<8, 8>/);
+  assert.match(source, /__noinline__ bool encode_masked_tail_component_record/);
+  assert.match(source, /__noinline__ bool decode_component_record/);
   assert.match(source, /const int tail_start = 64 - tail_count/);
   assert.match(source, /encode_best_coding/);
   assert.match(source, /if \(error < best\.error\)/);
-  assert.match(readme, /bit zero selects AC1 \(DC is separate\)/);
+  assert.match(readme, /bit zero selects\s+zigzag AC1/);
+  assert.match(readme, /DC is separate/);
   assert.match(readme, /tie keeps grouped coding/);
 });
 

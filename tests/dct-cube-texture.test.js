@@ -5,7 +5,10 @@ const fs = require("node:fs");
 const path = require("node:path");
 const DctImageFormat = require("../src/dct/dct-format.js");
 const Dctbs2TextureDecoder = require("../src/decoders/dctbs2-texture.js");
-const { buildScan } = require("../tools/generate-dctbs2-shaders.js");
+const {
+  buildScan,
+  buildZigzagScan,
+} = require("../tools/generate-dctbs2-shaders.js");
 
 const root = path.resolve(__dirname, "..");
 const texturePath = path.join(
@@ -183,6 +186,7 @@ test("uses an unrolled 1.5 bpp decoder with rolling 32-bit words", () => {
   assert.doesNotMatch(decoder[1], /profile < 0|dcScaleIndex < 0|libraryVersion|splitLuma/);
   assert.match(decoder[1], /uint currentWord = headerWord/);
   assert.match(decoder[1], /currentWord = nextWord/);
+  assert.match(decoder[1], /dctByteAt\(52\) & 16u/);
   assert.equal((decoder[1].match(/int position = DCT_SCAN_Y/g) || []).length, 33);
   assert.equal((decoder[1].match(/int position = DCT_SCAN_C/g) || []).length, 26);
 });
@@ -191,18 +195,18 @@ test("keeps the cube shader significance scans synchronized with DCTBS2", () => 
   const yScan = parseShaderArray("DCT_SCAN_Y");
   const chroma422Scan = parseShaderArray("DCT_SCAN_C422");
   const chroma420Scan = parseShaderArray("DCT_SCAN_C420");
-  const expectedY = Array.from(
+  const expectedY = [buildZigzagScan(16, 16), ...Array.from(
     { length: 4 },
     (_, profile) => buildScan(profile, 16, 16).slice(0, 33)
-  ).flat();
-  const expectedChroma422 = Array.from(
+  )].map((scan) => scan.slice(0, 33)).flat();
+  const expectedChroma422 = [buildZigzagScan(8, 16), ...Array.from(
     { length: 4 },
     (_, profile) => buildScan(profile, 8, 16).slice(0, 13)
-  ).flat();
-  const expectedChroma420 = Array.from(
+  )].map((scan) => scan.slice(0, 13)).flat();
+  const expectedChroma420 = [buildZigzagScan(8, 8), ...Array.from(
     { length: 4 },
     (_, profile) => buildScan(profile, 8, 8).slice(0, 13)
-  ).flat();
+  )].map((scan) => scan.slice(0, 13)).flat();
 
   assert.deepEqual(yScan, expectedY);
   assert.deepEqual(chroma422Scan, expectedChroma422);

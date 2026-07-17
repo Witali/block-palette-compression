@@ -586,14 +586,18 @@ function addDctLayoutBitRanges(fields) {
 function renderDctLayoutCoefficientMatrix(presetKey, shape) {
   const masked = shape.width === 8 && shape.height === 8 && Number(presetKey) >= 6;
   const implicit2 = masked && presetKey === "9";
-  const showZigzag = shape.component !== "y";
+  const showZigzag = true;
   const capacity = presetKey === "6" ? 23 : presetKey === "7.5" ? 31 : implicit2 ? 37 : 38;
   const tailStart = 64 - capacity;
+  const zigzag = getDctLayoutZigzagPositions(shape.width, shape.height);
+  const zigzagRank = new Map(
+    zigzag.map(({ u, v }, rank) => [v * shape.width + u, rank])
+  );
   const component = dctLayoutComponentName(shape.component);
-  const packing = t(showZigzag
-    ? "dct.layoutMatrixProfiledZigzag" : implicit2
-      ? "dct.layoutMatrixImplicit2" : masked
-        ? "dct.layoutMatrixMasked" : "dct.layoutMatrixProfiled");
+  const packing = t(implicit2
+    ? "dct.layoutMatrixImplicit2" : masked
+      ? "dct.layoutMatrixMasked" : showZigzag
+        ? "dct.layoutMatrixProfiledZigzag" : "dct.layoutMatrixProfiled");
   const cells = [];
 
   layoutMatrixSummary.textContent = t("dct.layoutMatrixSummary", {
@@ -612,12 +616,15 @@ function renderDctLayoutCoefficientMatrix(presetKey, shape) {
   });
   layoutCoefficients.setAttribute(
     "aria-label",
-    showZigzag ? `${matrixAria}. ${t("dct.layoutZigzagAria")}` : matrixAria
+    showZigzag
+      ? `${matrixAria}. ${t("dct.layoutZigzagAria", { end: shape.width * shape.height - 1 })}`
+      : matrixAria
   );
 
   for (let v = 0; v < shape.height; v += 1) {
     for (let u = 0; u < shape.width; u += 1) {
       const position = v * shape.width + u;
+      const rank = zigzagRank.get(position);
       const cell = document.createElement("span");
       const normalized = Math.sqrt(
         (u / Math.max(1, shape.width - 1)) ** 2 +
@@ -637,11 +644,11 @@ function renderDctLayoutCoefficientMatrix(presetKey, shape) {
         cell.classList.add("is-implicit");
         cell.textContent = "I";
         cell.title = t("dct.layoutCellImplicit", { position });
-      } else if (masked && position === 63) {
+      } else if (masked && rank === 63) {
         cell.classList.add("is-tail");
         cell.textContent = "T";
         cell.title = t("dct.layoutCellTail", { position });
-      } else if (masked && position >= tailStart) {
+      } else if (masked && rank >= tailStart) {
         cell.classList.add("is-mask-tail");
         cell.textContent = "M/T";
         cell.title = t("dct.layoutCellMaskTail", { position });
@@ -719,24 +726,20 @@ function renderDctLayoutZigzag(shape, visible) {
 }
 
 function getDctLayoutZigzagPositions(width, height) {
-  const positions = [{ u: 0, v: 0 }];
-  const ac = [];
-
-  for (let v = 0; v < height; v += 1) {
-    for (let u = 0; u < width; u += 1) {
-      if (u === 0 && v === 0) continue;
-      const diagonal = u + v;
-      ac.push({
-        u,
-        v,
-        score: diagonal + (diagonal % 2 === 0 ? v : u) * 0.001,
-      });
+  const positions = [];
+  for (let diagonal = 0; diagonal <= width + height - 2; diagonal += 1) {
+    const minimumU = Math.max(0, diagonal - height + 1);
+    const maximumU = Math.min(width - 1, diagonal);
+    if ((diagonal & 1) === 0) {
+      for (let u = minimumU; u <= maximumU; u += 1) {
+        positions.push({ u, v: diagonal - u });
+      }
+    } else {
+      for (let u = maximumU; u >= minimumU; u -= 1) {
+        positions.push({ u, v: diagonal - u });
+      }
     }
   }
-
-  ac.sort((left, right) => left.score - right.score ||
-    left.u + left.v - right.u - right.v || left.v - right.v || left.u - right.u);
-  positions.push(...ac);
   return positions;
 }
 

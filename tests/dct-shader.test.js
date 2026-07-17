@@ -9,6 +9,7 @@ const { PRESETS } = require(path.join(root, "src", "dct", "dct-format.js"));
 const {
   buildScan,
   buildSkipScan,
+  buildZigzagScan,
   cubePresets,
   cubeShaderFile,
   generatedFiles,
@@ -47,6 +48,7 @@ test("matches DCTBS2 v2 MCU layouts instead of the attached legacy dctb layout",
 
 test("keeps shader coefficient scans, grouped exponents, and libraries bounded", () => {
   assert.deepEqual(buildScan(0, 8, 8).slice(0, 8), [8, 1, 2, 9, 16, 24, 17, 10]);
+  assert.deepEqual(buildZigzagScan(8, 8).slice(0, 8), [1, 8, 16, 9, 2, 3, 10, 17]);
   assert.equal(new Set(buildScan(3, 16, 16)).size, 255);
   assert.equal(new Set(buildSkipScan(7, 16, 16)).size, 255);
 
@@ -64,7 +66,8 @@ test("keeps shader coefficient scans, grouped exponents, and libraries bounded",
   assert.match(source, /float sampleImplicit2MaskedTailRecord/);
   assert.match(source, /if \(coding == 7 && \(kind == 1 \|\| kind == 3\) && recordBytes == 48\)/);
   assert.match(source, /int explicitCount = bitCount\(maskLow\) \+ bitCount\(maskHigh\)/);
-  assert.match(source, /position >= tailStart/);
+  assert.match(source, /rank >= tailStart/);
+  assert.match(source, /bool zigzagOrder = \(flags & 16u\) != 0u/);
   assert.match(source, /int tokenCount = skipTokenCount/);
   assert.match(source, /bool sidecarReferenceVersion/);
   assert.match(source, /int resolveLibraryIndex/);
