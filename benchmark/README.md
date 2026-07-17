@@ -154,6 +154,28 @@ of being clipped by a generic image-mode conversion. The report uses pooled
 RGB PSNR, exact payload sizes, Bjontegaard delta rate, and angular error for
 normal maps.
 
+### Hybrid BPDH versus ASTC at 4 bpp
+
+Run the serialized BPAL/DCT hybrid comparison on the same deterministic
+200-texture sample with:
+
+```powershell
+python tools/hybrid_bpdh_astc_4bpp_benchmark.py
+```
+
+For every image, the benchmark searches five BPAL parameter families and 12
+DCT quality values, then retains the lowest-error decoded BPDH file whose
+payload is no greater than 4 bpp. It reports the BPAL/DCT coding-unit split and
+the complete payload-section breakdown.
+
+ASTC has no standard 2D block footprint at exactly 4 bpp. The benchmark
+therefore encodes and decodes the surrounding 6x6 and 6x5 footprints and
+interpolates pooled quality against log2 of the measured padded payload rate.
+It also reports ASTC at BPDH's actual aggregate rate when BPDH does not consume
+its complete budget. Progress is resumable under
+`benchmark/work/hybrid-bpdh-astc-4bpp/`; the tracked report is
+`benchmark/results/hybrid-bpdh-astc-4bpp.md`.
+
 ### Scalar PBR palette benchmark
 
 After the CUDA/ASTC run, compare scalar8 palette storage with the exact
