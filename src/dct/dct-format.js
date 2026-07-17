@@ -2149,7 +2149,8 @@
       byteCount,
       quality,
       chroma,
-      coding
+      coding,
+      baseline.error
     );
     return skip && skip.error < baseline.error ? skip : baseline;
   }
@@ -2426,7 +2427,8 @@
     byteCount,
     quality,
     chroma,
-    coding
+    coding,
+    maximumError = Infinity
   ) {
     const layout = getSkipTokenLayout(byteCount, width, height, coding.skipMode);
     const coefficientCount = width * height;
@@ -2458,6 +2460,14 @@
       scaleIndex,
       10
     ));
+    const maximumBenefits = coarseChoices.map((mainChoices, scaleIndex) => {
+      const reducedChoices = fineChoices[scaleIndex >= 3 ? 1 : 0];
+      return sumLargestBenefits(mainChoices.benefits, layout.coarseCount) +
+        sumLargestBenefits(
+          reducedChoices.benefits,
+          layout.tokenCount - layout.coarseCount + layout.tailTokenCount
+        );
+    });
     let best = null;
 
     for (let profile = 0; profile < getProfileCount(coding, true); profile += 1) {
@@ -2474,6 +2484,10 @@
         const dcChoice = dcChoices[scaleIndex];
         const mainChoices = coarseChoices[scaleIndex];
         const reducedChoices = fineChoices[scaleIndex >= 3 ? 1 : 0];
+        const errorLimit = best ? Math.min(maximumError, best.error) : maximumError;
+        if (baseError + dcChoice.errorDelta - maximumBenefits[scaleIndex] > errorLimit) {
+          continue;
+        }
         previous.fill(Number.NEGATIVE_INFINITY);
         current.fill(Number.NEGATIVE_INFINITY);
         previous[0] = mainChoices.benefits[scan[0]];
@@ -2552,6 +2566,27 @@
     }
 
     return best;
+  }
+
+  function sumLargestBenefits(benefits, count) {
+    if (count < 1) return 0;
+    const largest = new Float64Array(count);
+    let used = 0;
+
+    for (const benefit of benefits) {
+      if (benefit <= 0 || used === count && benefit <= largest[used - 1]) continue;
+      let index = Math.min(used, count - 1);
+      while (index > 0 && benefit > largest[index - 1]) {
+        if (index < count) largest[index] = largest[index - 1];
+        index -= 1;
+      }
+      largest[index] = benefit;
+      if (used < count) used += 1;
+    }
+
+    let total = 0;
+    for (let index = 0; index < used; index += 1) total += largest[index];
+    return total;
   }
 
   function fillSkipDpRow(
