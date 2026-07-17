@@ -1,6 +1,6 @@
 "use strict";
 
-const CACHE_VERSION = "v44";
+const CACHE_VERSION = "v45";
 const SHELL_CACHE = `bpal-shell-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `bpal-runtime-${CACHE_VERSION}`;
 const SHARED_FILE_CACHE = "bpal-shared-files-v1";
@@ -48,6 +48,11 @@ const APP_SHELL = [
   "./src/hybrid/bpdh-format.js",
   "./src/hybrid/bpdh-codec.js",
   "./src/hybrid/bpdh-worker.js",
+  "./src/texture/standard-texture-codecs.js",
+  "./src/texture/standard-texture-codec-worker.js",
+  "./src/texture/astc-texture-codec-worker.mjs",
+  "./vendor/astc-encoder-wasm/astcenc.mjs",
+  "./vendor/astc-encoder-wasm/astcenc.wasm",
   "./src/pages/codec-comparison-view.js",
   "./src/pages/codec-lab-page.js",
   "./src/pages/bpal-example-catalog.js",

@@ -11,6 +11,7 @@ async function runTests() {
   require("./block-palette-codec.test.js");
   require("./block-palette-format.test.js");
   require("./dct-format.test.js");
+  require("./standard-texture-codecs.test.js");
   require("./js-codec-runtime.test.js");
   require("./codec-comparison-view.test.js");
   require("./codec-lab-page.test.js");

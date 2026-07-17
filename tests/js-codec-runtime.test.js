@@ -11,14 +11,21 @@ const runtimeSource = read("src/encoders/codec-encoder-runtime.js");
 const bpalWorker = read("src/palette/block-palette-worker.js");
 
 test("defines one canonical JS worker entry point for every encoder", () => {
-  assert.deepEqual(runtime.formats, ["bpal", "dct", "bpdh"]);
+  assert.deepEqual(runtime.formats, ["bpal", "dct", "bpdh", "astc", "bc1", "bc7"]);
   assert.match(runtime.getWorkerUrl("bpal"), /src\/palette\/block-palette-worker\.js/);
   assert.match(runtime.getWorkerUrl("dct"), /src\/dct\/dct-worker\.js/);
   assert.match(runtime.getWorkerUrl("bpdh"), /src\/hybrid\/bpdh-worker\.js/);
+  assert.match(runtime.getWorkerUrl("astc"), /src\/texture\/astc-texture-codec-worker\.mjs/);
+  assert.match(runtime.getWorkerUrl("bc1"), /src\/texture\/standard-texture-codec-worker\.js/);
+  assert.equal(runtime.getWorkerUrl("bc1"), runtime.getWorkerUrl("bc7"));
+  assert.equal(runtime.getWorkerType("astc"), "module");
+  assert.equal(runtime.getWorkerType("bc7"), "classic");
   assert.throws(() => runtime.getWorkerUrl("unknown"), /Unsupported JS codec encoder/);
   assert.equal((runtimeSource.match(/block-palette-worker\.js/g) || []).length, 1);
   assert.equal((runtimeSource.match(/dct-worker\.js/g) || []).length, 1);
   assert.equal((runtimeSource.match(/bpdh-worker\.js/g) || []).length, 1);
+  assert.equal((runtimeSource.match(/astc-texture-codec-worker\.mjs/g) || []).length, 1);
+  assert.equal((runtimeSource.match(/standard-texture-codec-worker\.js/g) || []).length, 2);
 });
 
 test("routes every laboratory encoder through the shared runtime", () => {
@@ -32,8 +39,13 @@ test("routes every laboratory encoder through the shared runtime", () => {
     /new Worker\("\.\/src\/(?:palette\/(?:block-palette|block-palette-webgl)-worker|dct\/dct-worker|hybrid\/bpdh-worker)/
   );
   for (const format of runtime.formats) {
-    assert.match(lab, new RegExp(`runWorker\\("${format}"`));
+    if (["astc", "bc1", "bc7"].includes(format)) {
+      assert.match(lab, new RegExp(`${format}: createStandardTextureAdapter\\("${format}"\\)`));
+    } else {
+      assert.match(lab, new RegExp(`runWorker\\("${format}"`));
+    }
   }
+  assert.match(lab, /return runWorker\(format,/);
   assert.match(lab, /root\.CodecEncoderRuntime\.createWorker\(format\)/);
 });
 
@@ -65,6 +77,8 @@ test("keeps each public encoder algorithm in one canonical source file", () => {
   assert.deepEqual(definingFiles("function compressImage("), ["src/palette/block-palette-codec.js"]);
   assert.deepEqual(definingFiles("function encodeDctFile("), ["src/dct/dct-format.js"]);
   assert.deepEqual(definingFiles("function compressHybridImage("), ["src/hybrid/bpdh-codec.js"]);
+  assert.deepEqual(definingFiles("function encodeBc1Image("), ["src/texture/standard-texture-codecs.js"]);
+  assert.deepEqual(definingFiles("function encodeBc7Image("), ["src/texture/standard-texture-codecs.js"]);
   assert.match(read("src/hybrid/bpdh-codec.js"), /blockPaletteCodec\.compressImage/);
 });
 

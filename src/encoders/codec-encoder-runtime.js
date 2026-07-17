@@ -11,20 +11,29 @@
 })(typeof self !== "undefined" ? self : globalThis, function (root) {
   "use strict";
 
-  const WORKER_URLS = Object.freeze({
-    bpal: "./src/palette/block-palette-worker.js?v=palette-256-1",
-    dct: "./src/dct/dct-worker.js?v=dct-page-20",
-    bpdh: "./src/hybrid/bpdh-worker.js?v=hybrid-2",
+  const WORKERS = Object.freeze({
+    bpal: Object.freeze({ url: "./src/palette/block-palette-worker.js?v=palette-256-1", type: "classic" }),
+    dct: Object.freeze({ url: "./src/dct/dct-worker.js?v=dct-page-20", type: "classic" }),
+    bpdh: Object.freeze({ url: "./src/hybrid/bpdh-worker.js?v=hybrid-2", type: "classic" }),
+    astc: Object.freeze({ url: "./src/texture/astc-texture-codec-worker.mjs?v=1", type: "module" }),
+    bc1: Object.freeze({ url: "./src/texture/standard-texture-codec-worker.js?v=1", type: "classic" }),
+    bc7: Object.freeze({ url: "./src/texture/standard-texture-codec-worker.js?v=1", type: "classic" }),
   });
 
   function getWorkerUrl(format) {
-    const url = WORKER_URLS[format];
+    const definition = WORKERS[format];
 
-    if (!url) {
+    if (!definition) {
       throw new RangeError(`Unsupported JS codec encoder: ${format}`);
     }
 
-    return url;
+    return definition.url;
+  }
+
+  function getWorkerType(format) {
+    const definition = WORKERS[format];
+    if (!definition) throw new RangeError(`Unsupported JS codec encoder: ${format}`);
+    return definition.type;
   }
 
   function createWorker(format) {
@@ -32,12 +41,17 @@
       throw new Error("Web Workers are unavailable in this JavaScript runtime");
     }
 
-    return new root.Worker(getWorkerUrl(format));
+    const definition = WORKERS[format];
+    if (!definition) throw new RangeError(`Unsupported JS codec encoder: ${format}`);
+    return definition.type === "module"
+      ? new root.Worker(definition.url, { type: "module" })
+      : new root.Worker(definition.url);
   }
 
   return Object.freeze({
-    formats: Object.freeze(Object.keys(WORKER_URLS)),
+    formats: Object.freeze(Object.keys(WORKERS)),
     getWorkerUrl,
+    getWorkerType,
     createWorker,
   });
 });

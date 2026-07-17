@@ -11,13 +11,24 @@ const script = read("src/pages/codec-lab-page.js");
 const encoderRuntime = read("src/encoders/codec-encoder-runtime.js");
 const home = read("index.html");
 const serviceWorker = read("service-worker.js");
+const server = read("tools/serve.js");
 
-test("combines BPAL, DCTBS2, and BPDH behind one format selector", () => {
+test("combines custom and standard texture codecs behind one format selector", () => {
   assert.match(page, /id="codec-format"/);
-  for (const format of ["bpal", "dct", "bpdh"]) {
+  for (const format of ["bpal", "dct", "bpdh", "astc", "bc1", "bc7"]) {
     assert.match(page, new RegExp(`value="${format}"`));
     assert.match(page, new RegExp(`data-format-panel="${format}"`));
-    assert.match(script, new RegExp(`${format}: create[A-Z][A-Za-z]+Adapter\\(\\)`));
+  }
+  assert.ok(page.indexOf('value="astc"') < page.indexOf('value="bc1"'));
+  assert.ok(page.indexOf('value="bc1"') < page.indexOf('value="bc7"'));
+  assert.ok(page.indexOf('value="bc7"') < page.indexOf('value="bpal"'));
+  assert.ok(page.indexOf('value="bpal"') < page.indexOf('value="bpdh"'));
+  assert.ok(page.indexOf('value="bpdh"') < page.indexOf('value="dct"'));
+  assert.match(script, /bpal: createBpalAdapter\(\)/);
+  assert.match(script, /dct: createDctAdapter\(\)/);
+  assert.match(script, /bpdh: createBpdhAdapter\(\)/);
+  for (const format of ["astc", "bc1", "bc7"]) {
+    assert.match(script, new RegExp(`${format}: createStandardTextureAdapter\\("${format}"\\)`));
   }
   assert.match(script, /panel\.hidden = panel\.dataset\.formatPanel !== state\.format/);
   assert.match(page, /<option value="4\.5" selected>4\.5 bpp/);
@@ -63,6 +74,8 @@ test("keeps encoding in format-specific workers", () => {
   assert.match(encoderRuntime, /src\/palette\/block-palette-worker\.js/);
   assert.match(encoderRuntime, /src\/dct\/dct-worker\.js/);
   assert.match(encoderRuntime, /src\/hybrid\/bpdh-worker\.js/);
+  assert.match(encoderRuntime, /src\/texture\/standard-texture-codec-worker\.js/);
+  assert.match(encoderRuntime, /src\/texture\/astc-texture-codec-worker\.mjs/);
   assert.match(script, /root\.CodecEncoderRuntime\.createWorker\(format\)/);
   assert.match(script, /function runWorker\(/);
   assert.match(page, /id="progress-dialog"/);
@@ -77,6 +90,7 @@ test("shows a format-specific expandable binary layout reference", () => {
   assert.match(script, /formatGuide: createBpalFormatGuide/);
   assert.match(script, /formatGuide: createDctFormatGuide/);
   assert.match(script, /formatGuide: createBpdhFormatGuide/);
+  assert.match(script, /createStandardTextureFormatGuide\(result, format\)/);
   assert.match(script, /function renderFormatGuide\(\)[\s\S]*?renderFileMap\(guide\.sections\)[\s\S]*?renderHeaderTable\(guide\.header\)[\s\S]*?renderPackingList\(guide\.packing\)/);
   assert.match(script, /formatGuideSection\(t\("lab\.formatGuideBlockLayout"\), renderCodecBlockDiagram\(guide\.diagram\)\)/);
   assert.match(script, /function renderCodecBlockDiagram\(diagram\)/);
@@ -113,6 +127,8 @@ test("shows a format-specific expandable binary layout reference", () => {
   assert.match(script, /appendDctByteBoundaries\(segment, field, description\.totalBits\)/);
   assert.match(styles, /\.lab-dct-byte-boundary/);
   assert.match(styles, /\.lab-dct-record-table/);
+  assert.match(styles, /\.lab-texture-footprint-grid/);
+  assert.match(styles, /\.lab-texture-bit-strip/);
   assert.match(styles, /@media \(max-width: 1000px\) \{[\s\S]*?\.lab-codec-layout-diagrams \{[\s\S]*?grid-template-columns: minmax\(0, 1fr\);/);
 });
 
@@ -219,6 +235,10 @@ test("links and caches the unified laboratory", () => {
   assert.match(serviceWorker, /"\.\/codec-lab\.css"/);
   assert.match(serviceWorker, /"\.\/src\/pages\/codec-comparison-view\.js"/);
   assert.match(serviceWorker, /"\.\/src\/pages\/codec-lab-page\.js"/);
+  assert.match(serviceWorker, /"\.\/src\/texture\/standard-texture-codecs\.js"/);
+  assert.match(serviceWorker, /"\.\/vendor\/astc-encoder-wasm\/astcenc\.wasm"/);
+  assert.match(server, /\["\.mjs", "text\/javascript; charset=utf-8"\]/);
+  assert.match(server, /\["\.wasm", "application\/wasm"\]/);
   assert.doesNotMatch(serviceWorker, /(?:block-palette|dct-compression|bpdh)\.html/);
 });
 

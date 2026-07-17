@@ -1188,6 +1188,177 @@
   text-align: center;
 }
 
+.lab-texture-footprint-grid {
+  display: grid;
+  gap: 2px;
+  width: min(100%, 540px);
+  margin: 0 auto;
+  padding: 2px;
+  border: 1px solid #3a4b5c;
+  background: #0c1219;
+}
+
+.lab-texture-footprint-grid span {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  aspect-ratio: 1;
+  background: rgba(61, 141, 220, 0.22);
+  color: #b9cee1;
+  font: 700 var(--font-size-sm)/1 ui-monospace, Consolas, monospace;
+}
+
+.lab-texture-footprint-grid span.is-origin {
+  background: #b96762;
+  color: #fff;
+}
+
+.lab-texture-bit-strip {
+  display: flex;
+  min-height: 116px;
+  overflow: hidden;
+  border: 1px solid #405061;
+  border-radius: 8px;
+  background: repeating-linear-gradient(
+    to right,
+    transparent 0,
+    transparent calc(6.25% - 1px),
+    rgba(170, 180, 190, 0.38) calc(6.25% - 1px),
+    rgba(170, 180, 190, 0.38) 6.25%
+  );
+}
+
+.lab-texture-bit-strip > span {
+  display: grid;
+  align-content: center;
+  min-width: 42px;
+  padding: 8px;
+  border-right: 1px solid rgba(255, 255, 255, 0.18);
+  text-align: center;
+}
+
+.lab-texture-bit-strip strong,
+.lab-texture-bit-strip small {
+  overflow-wrap: anywhere;
+}
+
+.lab-texture-bit-strip small {
+  margin-top: 5px;
+  color: #d3deea;
+  font: 700 var(--font-size-sm)/1.2 ui-monospace, Consolas, monospace;
+}
+
+.lab-texture-bit-strip .is-flag { background-color: rgba(130, 143, 158, 0.74); }
+.lab-texture-bit-strip .is-map { background-color: rgba(143, 116, 40, 0.82); }
+.lab-texture-bit-strip .is-palette { background-color: rgba(179, 91, 87, 0.84); }
+.lab-texture-bit-strip .is-index { background-color: rgba(45, 127, 89, 0.84); }
+
+.lab-astc-profile-overview {
+  grid-column: 1 / -1;
+  padding: 16px;
+  border: 1px solid #344453;
+  border-radius: 10px;
+  background: #111820;
+}
+
+.lab-astc-profile-overview h4 {
+  margin: 0 0 12px;
+}
+
+.lab-astc-profile-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.lab-astc-profile-grid > span {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid #344453;
+  border-radius: 7px;
+  background: #0e151d;
+}
+
+.lab-astc-profile-grid > span.is-selected {
+  border-color: #67adf5;
+  background: rgba(54, 136, 222, 0.18);
+}
+
+.lab-astc-profile-grid small {
+  color: #93a8bc;
+}
+
+.lab-texture-byte-grid {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.lab-texture-byte-grid > span {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid #344453;
+  border-radius: 6px;
+  background: #0e151d;
+}
+
+.lab-texture-byte-grid small { color: #86a5c3; }
+.lab-texture-byte-grid strong { font: 800 var(--font-size-md)/1 ui-monospace, Consolas, monospace; }
+.lab-texture-byte-grid code { color: #aebdca; font-size: var(--font-size-sm); }
+
+.lab-texture-endpoints,
+.lab-texture-palette {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+.lab-texture-endpoints { margin-bottom: 8px; }
+
+.lab-texture-color {
+  display: grid;
+  grid-template-columns: 34px auto;
+  grid-template-areas: "swatch label" "swatch value";
+  gap: 2px 9px;
+  align-items: center;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid #344453;
+  border-radius: 7px;
+  background: #101720;
+}
+
+.lab-texture-color i {
+  grid-area: swatch;
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 5px;
+}
+
+.lab-texture-color strong { grid-area: label; }
+.lab-texture-color code { grid-area: value; overflow-wrap: anywhere; color: #a9c9e7; }
+
+.lab-texture-selector-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(42px, 72px));
+  gap: 3px;
+  width: max-content;
+  max-width: 100%;
+}
+
+.lab-texture-selector-grid span {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  border: 1px solid #3b4d5f;
+  background: rgba(48, 125, 198, 0.18);
+  font: 800 var(--font-size-md)/1 ui-monospace, Consolas, monospace;
+}
+
 @media (max-width: 1500px) {
   .lab-matrix-list {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1218,6 +1389,10 @@
 
   .lab-dct-record-stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .lab-astc-profile-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
 
@@ -1300,5 +1475,10 @@
 
   .lab-dct-record-stats {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .lab-astc-profile-grid,
+  .lab-texture-byte-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

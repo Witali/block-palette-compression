@@ -54,6 +54,9 @@
     bpal: createBpalAdapter(),
     dct: createDctAdapter(),
     bpdh: createBpdhAdapter(),
+    astc: createStandardTextureAdapter("astc"),
+    bc1: createStandardTextureAdapter("bc1"),
+    bc7: createStandardTextureAdapter("bc7"),
   };
 
   const comparison = new root.CodecComparisonView({
@@ -189,6 +192,10 @@
       bpdhColorSpace: byId("bpdh-color-space"),
       bpdhClustering: byId("bpdh-clustering"),
       bpdhRefinement: byId("bpdh-refinement"),
+      astcProfile: byId("astc-profile"),
+      astcQuality: byId("astc-quality"),
+      bc1Quality: byId("bc1-quality"),
+      bc7Quality: byId("bc7-quality"),
     };
   }
 
@@ -820,6 +827,97 @@
     };
   }
 
+  function createStandardTextureAdapter(format) {
+    const upper = format.toUpperCase();
+    const astc = format === "astc";
+    return {
+      label: upper,
+      descriptionKey: `lab.${format}Description`,
+      resultLabelKey: `lab.${format}Result`,
+      structureTitleKey: "lab.textureStorageTitle",
+      structureDescriptionKey: "lab.textureStorageDescription",
+      formatGuide: (result) => createStandardTextureFormatGuide(result, format),
+      extension: astc ? "astc" : "dds",
+      mime: "application/octet-stream",
+      encode() {
+        const source = state.sourceImageData;
+        const pixels = new Uint8ClampedArray(source.data);
+        const requestId = state.requestId;
+        const options = astc
+          ? { profile: elements.astcProfile.value, quality: elements.astcQuality.value }
+          : { quality: elements[`${format}Quality`].value };
+        return runWorker(format, {
+          requestId,
+          format,
+          pixels: pixels.buffer,
+          width: source.width,
+          height: source.height,
+          options,
+        }, [pixels.buffer], (message) => {
+          if (!message || message.requestId !== requestId) return null;
+          if (message.type === "progress") {
+            renderProgress(message, "texture");
+            return null;
+          }
+          if (message.type === "error") throw new Error(message.error);
+          if (message.type !== "complete") return null;
+          return done({
+            encoded: new Uint8Array(message.encoded),
+            imageData: new ImageData(new Uint8ClampedArray(message.decoded), source.width, source.height),
+            mse: message.squaredError / (source.width * source.height * 3),
+            durationMs: message.durationMs,
+            info: message.info,
+          });
+        });
+      },
+      sample(result, x, y) {
+        return rgbaAt(result.imageData.data, result.imageData.width, x, y);
+      },
+      drawOverlay(context, view) {
+        if (!state.result) return;
+        drawRectangularBlockOverlay(
+          context,
+          view,
+          state.result.info.blockWidth,
+          state.result.info.blockHeight
+        );
+      },
+      renderStructure(result) {
+        const info = result.info;
+        const blockCount = info.blocksX * info.blocksY;
+        return [
+          structureCard(`${upper} container`, formatBytes(info.headerBytes), astc ? ".astc" : ".dds"),
+          structureCard("Block grid", `${info.blocksX} × ${info.blocksY}`, `${info.blockWidth}×${info.blockHeight} texels/block`),
+          structureCard("Block records", formatBytes(info.payloadBytes), `${blockCount} × ${info.blockBytes} B`),
+          structureCard("Profile", astc ? info.profile : `${upper} ${info.mode ? `mode ${info.mode}` : "RGB"}`, astc ? info.quality : `${info.quality} encoder`),
+          structureCard(`${upper} file`, formatBytes(result.encoded.byteLength), `${(result.encoded.byteLength * 8 / (info.width * info.height)).toFixed(3)} bpp`),
+        ];
+      },
+      inspect(result, x, y) {
+        const info = result.info;
+        const blockX = Math.floor(x / info.blockWidth);
+        const blockY = Math.floor(y / info.blockHeight);
+        const blockIndex = blockY * info.blocksX + blockX;
+        const bytes = root.StandardTextureCodecs.extractBlock(
+          result.encoded,
+          info.headerBytes,
+          info.blockBytes,
+          blockIndex
+        );
+        const description = format === "bc1"
+          ? root.StandardTextureCodecs.inspectBc1Block(bytes)
+          : format === "bc7"
+            ? root.StandardTextureCodecs.inspectBc7Mode6Block(bytes)
+            : null;
+        return {
+          label: `${upper} block #${blockIndex} · (${blockX}, ${blockY})`,
+          summary: `${info.blockWidth}×${info.blockHeight} px · ${info.blockBytes} B`,
+          body: renderStandardTextureBlock(info, blockIndex, blockX, blockY, bytes, description),
+        };
+      },
+    };
+  }
+
   function readBpalSettings() {
     return {
       blockSize: Number(elements.bpalBlockSize.value),
@@ -1147,6 +1245,92 @@
     );
   }
 
+  function createStandardTextureFormatGuide(result, format) {
+    const astc = format === "astc";
+    const bc1 = format === "bc1";
+    const upper = format.toUpperCase();
+    const profile = astc ? (result?.info.profile || elements.astcProfile.value) : "4x4";
+    const [blockWidth, blockHeight] = profile.split("x").map(Number);
+    const headerBytes = astc ? 16 : bc1 ? 128 : 148;
+    const blockBytes = bc1 ? 8 : 16;
+    const blocksX = result?.info.blocksX ?? (state.sourceImageData ? Math.ceil(state.sourceImageData.width / blockWidth) : null);
+    const blocksY = result?.info.blocksY ?? (state.sourceImageData ? Math.ceil(state.sourceImageData.height / blockHeight) : null);
+    const blockCount = Number.isFinite(blocksX) && Number.isFinite(blocksY) ? blocksX * blocksY : null;
+    const payloadBytes = result?.info.payloadBytes ?? (blockCount === null ? null : blockCount * blockBytes);
+    const blockFields = astc
+      ? [
+        guideBit("block mode", 11, "flag"),
+        guideBit("partitions", 2, "map"),
+        guideBit("partition / CEM", null, "map", "variable"),
+        guideBit("color endpoints", null, "palette", "variable"),
+        guideBit("weights", null, "index", "variable"),
+      ]
+      : bc1
+        ? [
+          guideBit("RGB565 endpoint 0", 16, "palette"),
+          guideBit("RGB565 endpoint 1", 16, "palette"),
+          guideBit("16 × color index", 32, "index"),
+        ]
+        : [
+          guideBit("mode 6 prefix", 7, "flag"),
+          guideBit("RGBA endpoints", 56, "palette"),
+          guideBit("endpoint P-bits", 2, "flag"),
+          guideBit("anchor index", 3, "index"),
+          guideBit("15 × index", 60, "index"),
+        ];
+    return {
+      summary: astc
+        ? `ASTC · ${profile} · 16 B/block`
+        : `${upper} · DDS · ${blockBytes} B/block`,
+      intro: t(`lab.${format}GuideIntro`),
+      diagram: {
+        kind: "texture",
+        format,
+        blockWidth,
+        blockHeight,
+        blockBytes,
+        blockFields,
+        profile,
+      },
+      sections: [
+        guideMapEntry(t("lab.guideHeader"), `${headerBytes} B`, astc ? t("lab.astcHeaderDetail") : t("lab.ddsHeaderDetail"), headerBytes * 8, "header"),
+        guideMapEntry(t("lab.textureBlockPayload"), payloadBytes === null ? `N × ${blockBytes} B` : formatBytes(payloadBytes), `${blocksX ?? "W"} × ${blocksY ?? "H"} blocks`, payloadBytes === null ? null : payloadBytes * 8, astc ? "dct" : "index"),
+      ],
+      header: astc
+        ? [
+          guideHeaderField("0–3 B", 32, "magic", "0x5CA1AB13"),
+          guideHeaderField("4 B", 8, "blockDimX", String(blockWidth)),
+          guideHeaderField("5 B", 8, "blockDimY", String(blockHeight)),
+          guideHeaderField("6 B", 8, "blockDimZ", "1"),
+          guideHeaderField("7–9 B", 24, "xSize", "image width · little-endian"),
+          guideHeaderField("10–12 B", 24, "ySize", "image height · little-endian"),
+          guideHeaderField("13–15 B", 24, "zSize", "1 · little-endian"),
+        ]
+        : [
+          guideHeaderField("0–3 B", 32, "magic", 'ASCII "DDS "'),
+          guideHeaderField("4–7 B", 32, "dwSize", "124"),
+          guideHeaderField("8–11 B", 32, "dwFlags", "CAPS | HEIGHT | WIDTH | PIXELFORMAT | LINEARSIZE"),
+          guideHeaderField("12–15 B", 32, "dwHeight", "image height"),
+          guideHeaderField("16–19 B", 32, "dwWidth", "image width"),
+          guideHeaderField("20–23 B", 32, "dwPitchOrLinearSize", "compressed payload bytes"),
+          guideHeaderField("76–107 B", 256, "DDS_PIXELFORMAT", bc1 ? 'FOURCC "DXT1"' : 'FOURCC "DX10"'),
+          guideHeaderField("108–127 B", 160, "caps", "DDSCAPS_TEXTURE; remaining fields zero"),
+          ...(bc1 ? [] : [
+            guideHeaderField("128–131 B", 32, "dxgiFormat", "98 · DXGI_FORMAT_BC7_UNORM"),
+            guideHeaderField("132–135 B", 32, "resourceDimension", "3 · TEXTURE2D"),
+            guideHeaderField("136–147 B", 96, "array / flags", "arraySize = 1; flags = 0"),
+          ]),
+        ],
+      packing: [
+        guidePacking(t("lab.textureContainerTitle"), astc ? t("lab.astcContainerNote") : t("lab.ddsContainerNote"), [
+          guideBit(astc ? "ASTC header" : "DDS header", headerBytes * 8, "header"),
+          guideBit(`${blockCount ?? "N"} × ${blockBytes} B`, payloadBytes === null ? null : payloadBytes * 8, astc ? "dct" : "index", payloadBytes === null ? "variable" : undefined),
+        ]),
+        guidePacking(t("lab.textureBlockTitle"), t(`lab.${format}BlockNote`), blockFields),
+      ],
+    };
+  }
+
   function createBpalFormatGuide(result) {
     const raw = result?.raw;
     const layout = result?.layout;
@@ -1456,6 +1640,15 @@
     const layout = document.createElement("div");
     layout.className = "lab-codec-layout-diagrams";
 
+    if (diagram.kind === "texture") {
+      layout.append(
+        renderTextureFootprintDiagram(diagram),
+        renderTextureBitDiagram(diagram)
+      );
+      if (diagram.format === "astc") layout.append(renderAstcProfileOverview(diagram));
+      return layout;
+    }
+
     if (diagram.kind === "bpal") {
       layout.append(renderBpalBlockDiagram(diagram), renderNoDctDiagram());
       return layout;
@@ -1477,6 +1670,80 @@
       renderDctProfileOverview()
     );
     return layout;
+  }
+
+  function renderTextureFootprintDiagram(diagram) {
+    const figure = createCodecDiagramPanel(
+      t("lab.textureFootprintTitle"),
+      `${diagram.blockWidth}×${diagram.blockHeight} texels · ${diagram.blockBytes} B`
+    );
+    const grid = document.createElement("div");
+    grid.className = "lab-texture-footprint-grid";
+    grid.style.gridTemplateColumns = `repeat(${diagram.blockWidth}, minmax(0, 1fr))`;
+    for (let y = 0; y < diagram.blockHeight; y += 1) {
+      for (let x = 0; x < diagram.blockWidth; x += 1) {
+        const texel = document.createElement("span");
+        texel.textContent = `${x},${y}`;
+        texel.classList.toggle("is-origin", x === 0 && y === 0);
+        grid.append(texel);
+      }
+    }
+    const note = document.createElement("p");
+    note.className = "lab-codec-diagram-note";
+    note.textContent = t("lab.textureFootprintNote", {
+      width: diagram.blockWidth,
+      height: diagram.blockHeight,
+      bits: diagram.blockBytes * 8,
+    });
+    figure.append(grid, note);
+    return figure;
+  }
+
+  function renderTextureBitDiagram(diagram) {
+    const figure = createCodecDiagramPanel(
+      t("lab.textureBlockTitle"),
+      `${diagram.format.toUpperCase()} · ${diagram.blockBytes * 8} bit`
+    );
+    const strip = document.createElement("div");
+    strip.className = "lab-texture-bit-strip";
+    for (const field of diagram.blockFields) {
+      const segment = document.createElement("span");
+      const label = document.createElement("strong");
+      const bits = document.createElement("small");
+      segment.className = `is-${field.tone}`;
+      segment.style.flexGrow = String(Number.isFinite(field.bits) ? field.bits : 24);
+      label.textContent = field.label;
+      bits.textContent = field.bitsLabel || `${field.bits} bit`;
+      segment.append(label, bits);
+      strip.append(segment);
+    }
+    const note = document.createElement("p");
+    note.className = "lab-codec-diagram-note";
+    note.textContent = t(`lab.${diagram.format}BlockNote`);
+    figure.append(strip, note);
+    return figure;
+  }
+
+  function renderAstcProfileOverview(diagram) {
+    const section = document.createElement("section");
+    const title = document.createElement("h4");
+    const rows = document.createElement("div");
+    section.className = "lab-astc-profile-overview";
+    title.textContent = t("lab.astcProfilesTitle");
+    rows.className = "lab-astc-profile-grid";
+    for (const profile of root.StandardTextureCodecs.ASTC_PROFILES) {
+      const [width, height] = profile.split("x").map(Number);
+      const item = document.createElement("span");
+      const label = document.createElement("strong");
+      const rate = document.createElement("small");
+      item.classList.toggle("is-selected", profile === diagram.profile);
+      label.textContent = profile.replace("x", " × ");
+      rate.textContent = `${(128 / (width * height)).toFixed(2)} bpp`;
+      item.append(label, rate);
+      rows.append(item);
+    }
+    section.append(title, rows);
+    return section;
   }
 
   function renderDctProfileOverview() {
@@ -2503,6 +2770,78 @@
     return fragment;
   }
 
+  function renderStandardTextureBlock(info, blockIndex, blockX, blockY, bytes, description) {
+    const fragment = document.createElement("div");
+    fragment.className = "lab-detail-section lab-texture-block-details";
+    const byteOffset = info.headerBytes + blockIndex * info.blockBytes;
+    fragment.append(metadataGrid([
+      ["Block", `#${blockIndex} · (${blockX}, ${blockY})`],
+      ["Extent", `${info.blockWidth} × ${info.blockHeight} texels`],
+      ["Byte range", `${byteOffset}…${byteOffset + info.blockBytes - 1}`],
+      ["Record size", `${info.blockBytes} B · ${info.blockBytes * 8} bit`],
+      ["Encoding", description ? `${description.format} ${description.mode === 6 ? "mode 6" : description.mode}` : `${info.profile} · ${info.quality}`],
+    ]));
+
+    const byteSection = detailSection(t("lab.storedBlockBytes"));
+    const byteGrid = document.createElement("div");
+    byteGrid.className = "lab-texture-byte-grid";
+    bytes.forEach((value, index) => {
+      const cell = document.createElement("span");
+      const offset = document.createElement("small");
+      const hex = document.createElement("strong");
+      const bits = document.createElement("code");
+      offset.textContent = `B${index}`;
+      hex.textContent = value.toString(16).padStart(2, "0").toUpperCase();
+      bits.textContent = value.toString(2).padStart(8, "0");
+      cell.append(offset, hex, bits);
+      byteGrid.append(cell);
+    });
+    byteSection.append(byteGrid);
+    fragment.append(byteSection);
+
+    if (!description) return fragment;
+
+    const endpoints = detailSection(t("lab.textureEndpoints"));
+    const palette = document.createElement("div");
+    palette.className = "lab-texture-palette";
+    description.palette?.forEach((color, index) => palette.append(textureColorCard(`P${index}`, color)));
+    if (!description.palette) {
+      description.endpoints.forEach((color, index) => palette.append(textureColorCard(`E${index}`, color)));
+    } else {
+      const endpointRow = document.createElement("div");
+      endpointRow.className = "lab-texture-endpoints";
+      description.endpoints.forEach((color, index) => endpointRow.append(textureColorCard(`E${index}`, color)));
+      endpoints.append(endpointRow);
+    }
+    endpoints.append(palette);
+
+    const selectorSection = detailSection(t("lab.textureSelectors"));
+    const selectorGrid = document.createElement("div");
+    selectorGrid.className = "lab-texture-selector-grid";
+    description.selectors.forEach((selector, index) => {
+      const cell = document.createElement("span");
+      cell.textContent = String(selector);
+      cell.title = `x=${index % 4}, y=${Math.floor(index / 4)}`;
+      selectorGrid.append(cell);
+    });
+    selectorSection.append(selectorGrid);
+    fragment.append(endpoints, selectorSection);
+    return fragment;
+  }
+
+  function textureColorCard(label, color) {
+    const card = document.createElement("span");
+    const swatch = document.createElement("i");
+    const name = document.createElement("strong");
+    const value = document.createElement("code");
+    card.className = "lab-texture-color";
+    swatch.style.backgroundColor = `rgba(${color.r}, ${color.g}, ${color.b}, ${(color.a ?? 255) / 255})`;
+    name.textContent = label;
+    value.textContent = `rgba(${color.r}, ${color.g}, ${color.b}, ${color.a ?? 255})`;
+    card.append(swatch, name, value);
+    return card;
+  }
+
   function matrixSection(matrices) {
     const section = detailSection("Quantized DCT coefficients");
     const list = document.createElement("div");
@@ -2533,18 +2872,22 @@
   }
 
   function drawBlockOverlay(context, view, blockSize, modeColor) {
-    const blocksX = Math.ceil(view.width / blockSize);
-    const blocksY = Math.ceil(view.height / blockSize);
+    drawRectangularBlockOverlay(context, view, blockSize, blockSize, modeColor);
+  }
+
+  function drawRectangularBlockOverlay(context, view, blockWidth, blockHeight, modeColor = null) {
+    const blocksX = Math.ceil(view.width / blockWidth);
+    const blocksY = Math.ceil(view.height / blockHeight);
     const lineWidth = Math.max(0.4, Math.min(view.width, view.height) / 720);
 
     if (elements.showOverlay.checked) {
       for (let blockY = 0; blockY < blocksY; blockY += 1) {
         for (let blockX = 0; blockX < blocksX; blockX += 1) {
           const blockIndex = blockY * blocksX + blockX;
-          const x = blockX * blockSize;
-          const y = blockY * blockSize;
-          const width = Math.min(blockSize, view.width - x);
-          const height = Math.min(blockSize, view.height - y);
+          const x = blockX * blockWidth;
+          const y = blockY * blockHeight;
+          const width = Math.min(blockWidth, view.width - x);
+          const height = Math.min(blockHeight, view.height - y);
           if (modeColor) {
             context.fillStyle = modeColor(blockIndex);
             context.fillRect(x, y, width, height);
@@ -2556,12 +2899,12 @@
       }
     }
 
-    const selectedBlockX = Math.floor(view.selectedX / blockSize);
-    const selectedBlockY = Math.floor(view.selectedY / blockSize);
-    const x = selectedBlockX * blockSize;
-    const y = selectedBlockY * blockSize;
-    const width = Math.min(blockSize, view.width - x);
-    const height = Math.min(blockSize, view.height - y);
+    const selectedBlockX = Math.floor(view.selectedX / blockWidth);
+    const selectedBlockY = Math.floor(view.selectedY / blockHeight);
+    const x = selectedBlockX * blockWidth;
+    const y = selectedBlockY * blockHeight;
+    const width = Math.min(blockWidth, view.width - x);
+    const height = Math.min(blockHeight, view.height - y);
     context.fillStyle = "rgba(255, 240, 106, 0.12)";
     context.fillRect(x, y, width, height);
     context.strokeStyle = "#fff06a";

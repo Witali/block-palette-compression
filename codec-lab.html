@@ -27,9 +27,12 @@
           <label class="format-picker">
             <span data-i18n="lab.format">Format</span>
             <select id="codec-format" name="codecFormat">
+              <option value="astc">ASTC · adaptive scalable texture</option>
+              <option value="bc1">BC1 · 4 bpp block texture</option>
+              <option value="bc7">BC7 · 8 bpp block texture</option>
               <option value="bpal">BPAL · block palette</option>
-              <option value="dct">DCTBS2 · 4:2:0 DCT</option>
               <option value="bpdh">BPDH · hybrid BPAL/DCT</option>
+              <option value="dct">DCTBS2 · 4:2:0 DCT</option>
             </select>
           </label>
         </div>
@@ -96,6 +99,53 @@
             <label><span data-i18n="common.colorSpace">Color space</span><select id="bpdh-color-space"><option value="rgb" selected>RGB</option><option value="oklab">OKLab</option></select></label>
             <label><span data-i18n="block.clusteringMethod">Clustering method</span><select id="bpdh-clustering"><option value="k-means" selected>K-means</option><option value="k-means-uniform">K-means uniform</option><option value="k-medoids">K-medoids</option><option value="k-medians">K-medians</option></select></label>
             <label><span data-i18n="block.refinementPasses">Refinement passes</span><select id="bpdh-refinement"><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4" selected>4</option></select></label>
+          </fieldset>
+
+          <fieldset class="format-settings" data-format-panel="astc" hidden>
+            <legend data-i18n="lab.astcSettings">ASTC settings</legend>
+            <label><span data-i18n="lab.astcProfile">Block footprint profile</span><select id="astc-profile">
+              <option value="4x4">4 × 4 · 8.00 bpp</option>
+              <option value="5x4">5 × 4 · 6.40 bpp</option>
+              <option value="5x5">5 × 5 · 5.12 bpp</option>
+              <option value="6x5">6 × 5 · 4.27 bpp</option>
+              <option value="6x6" selected>6 × 6 · 3.56 bpp</option>
+              <option value="8x5">8 × 5 · 3.20 bpp</option>
+              <option value="8x6">8 × 6 · 2.67 bpp</option>
+              <option value="8x8">8 × 8 · 2.00 bpp</option>
+              <option value="10x5">10 × 5 · 2.56 bpp</option>
+              <option value="10x6">10 × 6 · 2.13 bpp</option>
+              <option value="10x8">10 × 8 · 1.60 bpp</option>
+              <option value="10x10">10 × 10 · 1.28 bpp</option>
+              <option value="12x10">12 × 10 · 1.07 bpp</option>
+              <option value="12x12">12 × 12 · 0.89 bpp</option>
+            </select></label>
+            <label><span data-i18n="lab.encoderQuality">Encoder quality</span><select id="astc-quality">
+              <option value="fastest">Fastest</option>
+              <option value="fast">Fast</option>
+              <option value="medium" selected>Medium</option>
+              <option value="thorough">Thorough</option>
+              <option value="verythorough">Very thorough</option>
+              <option value="exhaustive">Exhaustive</option>
+            </select></label>
+          </fieldset>
+
+          <fieldset class="format-settings" data-format-panel="bc1" hidden>
+            <legend data-i18n="lab.bc1Settings">BC1 settings</legend>
+            <label><span data-i18n="lab.encoderQuality">Encoder quality</span><select id="bc1-quality">
+              <option value="fast">Fast</option>
+              <option value="balanced" selected>Balanced</option>
+              <option value="thorough">Thorough</option>
+            </select></label>
+          </fieldset>
+
+          <fieldset class="format-settings" data-format-panel="bc7" hidden>
+            <legend data-i18n="lab.bc7Settings">BC7 settings</legend>
+            <label><span data-i18n="lab.encoderQuality">Encoder quality</span><select id="bc7-quality">
+              <option value="fast">Fast</option>
+              <option value="balanced" selected>Balanced</option>
+              <option value="thorough">Thorough</option>
+            </select></label>
+            <label><span data-i18n="lab.bc7Mode">Encoding mode</span><select disabled><option>Mode 6 · RGBA · 1 subset</option></select></label>
           </fieldset>
 
           <div class="lab-actions">
@@ -249,12 +299,13 @@
     <script src="./src/dct/dct-format.js?v=dct-default-45-1"></script>
     <script src="./src/hybrid/dct420.js?v=hybrid-1"></script>
     <script src="./src/hybrid/bpdh-format.js?v=hybrid-1"></script>
+    <script src="./src/texture/standard-texture-codecs.js?v=1"></script>
     <script src="./src/i18n/en.js?v=palette-label-1"></script>
     <script src="./src/i18n/ru.js?v=palette-label-1"></script>
     <script src="./src/i18n/i18n.js"></script>
     <script src="./src/pages/codec-comparison-view.js?v=codec-lab-3"></script>
-    <script src="./src/encoders/codec-encoder-runtime.js?v=shared-encoder-runtime-1"></script>
-    <script src="./src/pages/codec-lab-page.js?v=palette-256-1"></script>
+    <script src="./src/encoders/codec-encoder-runtime.js?v=standard-textures-1"></script>
+    <script src="./src/pages/codec-lab-page.js?v=standard-textures-1"></script>
     <script src="./src/pwa/register-service-worker.js?v=1"></script>
   </body>
 </html>
