@@ -120,6 +120,9 @@ test("shows selected and shared BPAL palettes only in BPAL mode", () => {
   assert.match(page, /id="lab-bpal-global-palette" class="global-palette"/);
   assert.match(page, /data-i18n="block\.selectedPalette"/);
   assert.match(page, /data-i18n="block\.sharedPalette"/);
+  assert.match(page, /<details class="palette-section lab-disclosure lab-shared-palettes"[^>]*>/);
+  assert.doesNotMatch(page, /<details class="palette-section lab-disclosure lab-shared-palettes"[^>]*\sopen(?:\s|>)/);
+  assert.match(page, /<summary>[\s\S]*?id="lab-bpal-shared-title"[\s\S]*?id="lab-bpal-palette-summary"[\s\S]*?<\/summary>/);
   assert.match(script, /elements\.bpalPaletteSections\.hidden = state\.format !== "bpal"/);
   assert.match(script, /if \(state\.format === "bpal"\) renderBpalPalettes\(result\.raw, px, py\)/);
   assert.match(script, /function renderBpalPalettes\(image, selectedX, selectedY\)/);
@@ -128,6 +131,7 @@ test("shows selected and shared BPAL palettes only in BPAL mode", () => {
   assert.match(script, /className = "shared-palette-group"/);
   assert.match(script, /className = `global-swatch\$\{pixelCount === 0 \? " is-unused" : ""\}`/);
   assert.match(styles, /\.lab-bpal-palettes\[hidden\] \{[\s\S]*?display: none;/);
+  assert.match(styles, /\.lab-shared-palettes-body \{[\s\S]*?border-top: 1px solid #303a46;/);
 });
 
 test("keeps the BPAL quality preset synchronized with its component fields", () => {

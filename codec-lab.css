@@ -210,6 +210,10 @@
   margin-top: 0;
 }
 
+.lab-bpal-palettes .lab-shared-palettes {
+  margin-top: 0;
+}
+
 .lab-bpal-palettes output {
   color: #8794a3;
   font-size: var(--font-size-md);
@@ -282,6 +286,11 @@
 .lab-format-guide-body {
   display: grid;
   gap: 20px;
+  padding: 18px;
+  border-top: 1px solid #303a46;
+}
+
+.lab-shared-palettes-body {
   padding: 18px;
   border-top: 1px solid #303a46;
 }

@@ -12,7 +12,7 @@
     <link rel="stylesheet" href="./block-palette.css?v=type-scale-1">
     <link rel="stylesheet" href="./bpdh.css?v=type-scale-1">
     <link rel="stylesheet" href="./dct-compression.css?v=type-scale-1">
-    <link rel="stylesheet" href="./codec-lab.css?v=dct-byte-grid-1">
+    <link rel="stylesheet" href="./codec-lab.css?v=shared-palettes-1">
     <link rel="stylesheet" href="./i18n.css?v=type-scale-1">
   </head>
   <body>
@@ -185,16 +185,18 @@
           <div id="lab-bpal-block-palette" class="block-palette" aria-live="polite"></div>
         </section>
 
-        <section class="palette-section" aria-labelledby="lab-bpal-shared-title">
-          <div class="section-heading">
-            <div>
-              <h2 id="lab-bpal-shared-title" data-i18n="block.sharedPalette">Shared palettes</h2>
-              <p data-i18n="block.sharedDescription">These exact palettes are restored from BPAL; each block stores a palette selector and the color indices shown on its swatches.</p>
-            </div>
+        <details class="palette-section lab-disclosure lab-shared-palettes" aria-labelledby="lab-bpal-shared-title">
+          <summary>
+            <span class="lab-disclosure-heading">
+              <strong id="lab-bpal-shared-title" data-i18n="block.sharedPalette">Shared palettes</strong>
+              <small data-i18n="block.sharedDescription">These exact palettes are restored from BPAL; each block stores a palette selector and the color indices shown on its swatches.</small>
+            </span>
             <output id="lab-bpal-palette-summary">—</output>
+          </summary>
+          <div class="lab-shared-palettes-body">
+            <div id="lab-bpal-global-palette" class="global-palette" aria-live="polite"></div>
           </div>
-          <div id="lab-bpal-global-palette" class="global-palette" aria-live="polite"></div>
-        </section>
+        </details>
       </div>
 
       <details id="inspector" class="storage-section lab-disclosure lab-inspector">
