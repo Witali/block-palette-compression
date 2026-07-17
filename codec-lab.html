@@ -100,6 +100,7 @@
 
           <div class="lab-actions">
             <button id="process-button" type="submit" data-i18n="lab.encode">Encode selected format</button>
+            <button id="optimize-bpal" type="button" data-format-action="bpal" data-i18n="block.optimize">Find settings</button>
             <button id="download-file" type="button" disabled data-i18n="lab.downloadEncoded">Download encoded file</button>
             <button id="download-png" type="button" disabled data-i18n="common.downloadPng">Download PNG</button>
           </div>
@@ -116,6 +117,7 @@
         <div><span data-i18n="common.rmse">RMSE per channel</span><strong id="metric-rmse">—</strong></div>
         <div><span data-i18n="common.psnr">PSNR RGB</span><strong id="metric-psnr">—</strong></div>
         <div><span data-i18n="common.processingTime">Processing time</span><strong id="metric-time">—</strong></div>
+        <div id="metric-mode-split" hidden><span data-i18n="hybrid.modeSplit">BPAL / DCT units</span><strong id="metric-mode-split-value">—</strong></div>
       </section>
 
       <section class="comparison lab-comparison" aria-label="Image comparison" data-i18n-aria-label="common.imageComparison">
@@ -139,6 +141,10 @@
               <label><input id="smooth-scaling" type="checkbox" checked><span data-i18n="block.smoothing">Smoothing</span></label>
               <label><input id="show-difference" type="checkbox" disabled><span data-i18n="lab.showDifference">Difference ×4</span></label>
               <label><input id="show-overlay" type="checkbox" checked><span data-i18n="lab.showOverlay">Block overlay</span></label>
+              <span id="bpdh-mode-legend" class="lab-mode-legend" hidden>
+                <span><i class="is-bpal"></i>BPAL <output id="bpdh-bpal-count">—</output></span>
+                <span><i class="is-dct"></i>DCT <output id="bpdh-dct-count">—</output></span>
+              </span>
             </span>
           </figcaption>
           <div id="result-viewport" class="canvas-viewport lab-viewport">
@@ -208,6 +214,11 @@
           <output id="selected-unit">—</output>
         </summary>
         <div class="lab-inspector-body">
+          <form id="coordinate-form" class="lab-coordinate-form">
+            <label><span>X</span><input id="coordinate-x" type="number" min="0" step="1" value="0"></label>
+            <label><span>Y</span><input id="coordinate-y" type="number" min="0" step="1" value="0"></label>
+            <button type="submit" data-i18n="dct.readPixel">Inspect coordinate</button>
+          </form>
           <div class="pixel-inspector pixel-inspector-grid">
             <div><span data-i18n="hybrid.coordinate">Coordinate</span><strong id="pixel-coordinate">—</strong></div>
             <div><span data-i18n="lab.sourceColor">Source color</span><strong id="pixel-source-color">—</strong></div>
@@ -226,6 +237,11 @@
       <p id="progress-stage" class="progress-stage" data-i18n="block.progressStagePreparing">Preparing source data</p>
       <progress id="progress-bar" max="100" value="0">0%</progress>
       <p id="progress-detail" class="progress-detail" data-i18n="block.progressWaiting">Waiting for the encoder…</p>
+      <dl class="progress-statistics lab-progress-statistics">
+        <div><dt data-i18n="block.progressStage">Stage</dt><dd id="progress-stage-count">—</dd></div>
+        <div><dt id="progress-primary-label" data-i18n="hybrid.progressItemsLabel">Items</dt><dd id="progress-primary-value">—</dd></div>
+        <div><dt id="progress-secondary-label" data-i18n="lab.progressDetail">Detail</dt><dd id="progress-secondary-value">—</dd></div>
+      </dl>
       <button id="progress-cancel" type="button" data-i18n="common.cancel">Cancel</button>
     </dialog>
 
@@ -238,7 +254,7 @@
     <script src="./src/i18n/i18n.js"></script>
     <script src="./src/pages/codec-comparison-view.js?v=codec-lab-3"></script>
     <script src="./src/encoders/codec-encoder-runtime.js?v=shared-encoder-runtime-1"></script>
-    <script src="./src/pages/codec-lab-page.js?v=dct-byte-grid-1"></script>
+    <script src="./src/pages/codec-lab-page.js?v=legacy-features-1"></script>
     <script src="./src/pwa/register-service-worker.js?v=1"></script>
   </body>
 </html>

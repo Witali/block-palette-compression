@@ -153,6 +153,21 @@
   grid-template-columns: repeat(7, minmax(112px, 1fr));
 }
 
+.lab-mode-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: #aab8c7;
+  font: 700 var(--font-size-sm)/1 ui-monospace, Consolas, monospace;
+}
+
+.lab-mode-legend[hidden] { display: none; }
+.lab-mode-legend > span { display: inline-flex; align-items: center; gap: 5px; }
+.lab-mode-legend i { width: 10px; height: 10px; border-radius: 2px; }
+.lab-mode-legend i.is-bpal { background: #2f8cff; }
+.lab-mode-legend i.is-dct { background: #ff9b42; }
+.lab-mode-legend output { color: #eef5fc; }
+
 .lab-comparison {
   align-items: stretch;
 }
@@ -322,6 +337,39 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
 }
+
+.lab-dct-profile-overview {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid #2f3d4b;
+  border-radius: 10px;
+  background: #111820;
+}
+
+.lab-dct-profile-overview > h4,
+.lab-dct-profile-overview > p { margin: 0; }
+.lab-dct-profile-overview > p { color: #91a2b3; }
+.lab-dct-profile-rows { display: grid; gap: 7px; }
+.lab-dct-profile-row {
+  display: grid;
+  grid-template-columns: 92px minmax(180px, 1fr) 88px;
+  gap: 10px;
+  align-items: center;
+  padding: 7px 9px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+}
+.lab-dct-profile-row.is-selected { border-color: #5a9bd6; background: rgba(48, 112, 171, 0.13); }
+.lab-dct-profile-row > strong,
+.lab-dct-profile-row > output { font: 750 var(--font-size-sm)/1.2 ui-monospace, Consolas, monospace; }
+.lab-dct-profile-row > output { color: #9eb0c1; text-align: right; }
+.lab-dct-profile-bar { display: flex; min-height: 28px; overflow: hidden; border-radius: 5px; }
+.lab-dct-profile-bar > span { display: grid; place-items: center; min-width: 34px; color: #fff; font: 750 var(--font-size-sm)/1 ui-monospace, Consolas, monospace; }
+.lab-dct-profile-bar .is-y { background: var(--diagram-y); }
+.lab-dct-profile-bar .is-cb { background: var(--diagram-cb); }
+.lab-dct-profile-bar .is-cr { background: var(--diagram-cr); }
 
 .lab-codec-diagram {
   display: grid;
@@ -960,6 +1008,25 @@
   border-top: 1px solid #303a46;
 }
 
+.lab-coordinate-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 10px;
+}
+
+.lab-coordinate-form label { display: grid; gap: 5px; width: 112px; }
+.lab-coordinate-form label > span {
+  color: #aab5c2;
+  font-size: var(--font-size-sm);
+  font-weight: 650;
+  letter-spacing: 0.035em;
+  text-transform: uppercase;
+}
+.lab-coordinate-form input { width: 100%; box-sizing: border-box; }
+
+.lab-progress-statistics { margin: 14px 0; }
+
 .lab-block-details-body {
   display: grid;
   gap: 16px;
@@ -1219,6 +1286,9 @@
   .lab-bpdh-branches {
     grid-template-columns: minmax(0, 1fr);
   }
+
+  .lab-dct-profile-row { grid-template-columns: 1fr; }
+  .lab-dct-profile-row > output { text-align: left; }
 
   .lab-dct-frequency-frame.is-wide .lab-dct-frequency-grid > span:not(.is-major) strong {
     display: none;

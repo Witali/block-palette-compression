@@ -31,6 +31,24 @@
     "6": { blockSize: 8, localColorCount: 16, globalColorCount: 128, paletteCount: 32 },
     "8": { blockSize: 4, localColorCount: 8, globalColorCount: 256, paletteCount: 64 },
   });
+  const QUALITY_PRESET_BITS_PER_PIXEL = Object.freeze(Object.keys(QUALITY_PRESETS).map(Number));
+  const BPAL_PROGRESS_STAGES = Object.freeze([
+    "preparing", "analyzing-blocks", "clustering-blocks", "building-palettes",
+    "assigning-pixels", "building-block-palettes", "encoding-pixels", "refining", "finalizing",
+  ]);
+  const BPAL_PROGRESS_STAGE_KEYS = Object.freeze({
+    "preparing": "block.progressStagePreparing",
+    "analyzing-blocks": "block.progressStageAnalyzing",
+    "clustering-blocks": "block.progressStageBlockClustering",
+    "building-palettes": "block.progressStagePalettes",
+    "assigning-pixels": "block.progressStageAssignments",
+    "building-block-palettes": "block.progressStageBlockPalettes",
+    "encoding-pixels": "block.progressStageEncoding",
+    "refining": "block.progressStageRefining",
+    "finalizing": "block.progressStageFinalizing",
+    "complete": "block.progressStageComplete",
+    "searching-settings": "block.progressStageSearching",
+  });
 
   const formatAdapters = {
     bpal: createBpalAdapter(),
@@ -73,6 +91,7 @@
       imageFile: byId("image-file"),
       uploadButton: byId("upload-button"),
       processButton: byId("process-button"),
+      optimizeBpal: byId("optimize-bpal"),
       downloadFile: byId("download-file"),
       downloadPng: byId("download-png"),
       status: byId("status"),
@@ -83,6 +102,8 @@
       metricRmse: byId("metric-rmse"),
       metricPsnr: byId("metric-psnr"),
       metricTime: byId("metric-time"),
+      metricModeSplit: byId("metric-mode-split"),
+      metricModeSplitValue: byId("metric-mode-split-value"),
       sourceViewport: byId("source-viewport"),
       resultViewport: byId("result-viewport"),
       sourceStage: byId("source-stage"),
@@ -99,6 +120,9 @@
       smoothScaling: byId("smooth-scaling"),
       showDifference: byId("show-difference"),
       showOverlay: byId("show-overlay"),
+      bpdhModeLegend: byId("bpdh-mode-legend"),
+      bpdhBpalCount: byId("bpdh-bpal-count"),
+      bpdhDctCount: byId("bpdh-dct-count"),
       resultCaption: byId("result-caption"),
       formatGuideSummary: byId("format-guide-summary"),
       formatGuideBody: byId("format-guide-body"),
@@ -120,12 +144,20 @@
       pixelMatchCard: byId("pixel-match").parentElement,
       pixelSwatch: byId("pixel-swatch"),
       blockDetailsBody: byId("block-details-body"),
+      coordinateForm: byId("coordinate-form"),
+      coordinateX: byId("coordinate-x"),
+      coordinateY: byId("coordinate-y"),
       progressDialog: byId("progress-dialog"),
       progressEyebrow: byId("progress-eyebrow"),
       progressBar: byId("progress-bar"),
       progressPercent: byId("progress-percent"),
       progressStage: byId("progress-stage"),
       progressDetail: byId("progress-detail"),
+      progressStageCount: byId("progress-stage-count"),
+      progressPrimaryLabel: byId("progress-primary-label"),
+      progressPrimaryValue: byId("progress-primary-value"),
+      progressSecondaryLabel: byId("progress-secondary-label"),
+      progressSecondaryValue: byId("progress-secondary-value"),
       progressCancel: byId("progress-cancel"),
       bpalQualityPreset: byId("bpal-quality-preset"),
       bpalBlockSize: byId("bpal-block-size"),
@@ -175,6 +207,7 @@
       previewSelectedSource(t("lab.sourceChanged")).catch(showError);
     });
     elements.uploadButton.addEventListener("click", () => elements.imageFile.click());
+    elements.optimizeBpal.addEventListener("click", () => optimizeBpalSettings().catch(showError));
     elements.imageFile.addEventListener("change", () => handleUpload().catch(showError));
     elements.downloadFile.addEventListener("click", downloadEncoded);
     elements.downloadPng.addEventListener("click", downloadPng);
@@ -184,6 +217,10 @@
       cancelProcessing();
     });
     elements.showOverlay.addEventListener("change", () => comparison.drawOverlay());
+    elements.coordinateForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      renderInspector(Number(elements.coordinateX.value), Number(elements.coordinateY.value));
+    });
     elements.formatGuideBody.addEventListener("click", (event) => {
       const button = event.target.closest("[data-guide-component]");
       if (!button || !elements.formatGuideBody.contains(button)) return;
@@ -238,7 +275,12 @@
     for (const panel of document.querySelectorAll("[data-format-panel]")) {
       panel.hidden = panel.dataset.formatPanel !== state.format;
     }
+    for (const action of document.querySelectorAll("[data-format-action]")) {
+      action.hidden = action.dataset.formatAction !== state.format;
+    }
     elements.bpalPaletteSections.hidden = state.format !== "bpal";
+    elements.metricModeSplit.hidden = state.format !== "bpdh";
+    elements.bpdhModeLegend.hidden = true;
 
     const adapter = currentAdapter();
     elements.formatDescription.textContent = t(adapter.descriptionKey);
@@ -272,6 +314,147 @@
     }
 
     await processCurrentFormat();
+  }
+
+  async function optimizeBpalSettings() {
+    if (state.busy || state.format !== "bpal") return;
+
+    const source = selectedSource();
+    if (!state.sourceImageData || state.sourceKey !== source.key) {
+      await loadSelectedSource(source);
+    }
+
+    const requestId = ++state.requestId;
+    const targetBitsPerPixel = getBpalOptimizationTarget();
+    const preview = createOptimizationPreview();
+    const worker = new Worker("./src/palette/block-palette-optimizer-worker.js?v=direct-block-colors-1");
+    state.worker = worker;
+    showProgress("BPAL SEARCH");
+    setBusy(true, t("block.optimizePreparing", { target: targetBitsPerPixel.toFixed(2) }));
+
+    try {
+      const result = await new Promise((resolve, reject) => {
+        state.workerReject = reject;
+        worker.addEventListener("message", (event) => {
+          if (worker !== state.worker) return;
+          const message = event.data || {};
+          if (message.type === "progress") {
+            const completed = Number(message.completed || 0);
+            const total = Number(message.total || 1);
+            renderProgress({
+              stage: "searching-settings",
+              progress: completed / Math.max(1, total),
+              completed,
+              total,
+              targetBitsPerPixel,
+              search: message.candidate,
+            }, "bpal-search");
+            setBusy(true, t("block.optimizeSearching", {
+              completed,
+              total,
+              target: targetBitsPerPixel.toFixed(2),
+              size: formatBytes(message.candidate.fileBytes),
+              bpp: message.candidate.bitsPerPixel.toFixed(2),
+              rmse: message.candidate.rmse.toFixed(2),
+            }));
+            return;
+          }
+          if (message.type === "error") reject(new Error(message.error || t("block.optimizeError")));
+          if (message.type === "result") resolve(message.result);
+        });
+        worker.addEventListener("error", (event) => reject(event.error || new Error(event.message || t("block.optimizeError"))));
+        worker.postMessage({
+          pixels: preview.data.buffer,
+          width: preview.width,
+          height: preview.height,
+          options: {
+            colorSpace: elements.bpalColorSpace.value,
+            clusteringMethod: elements.bpalClustering.value,
+            dithering: elements.bpalDithering.value,
+            diversity: Number(elements.bpalDiversity.value),
+            refinementPasses: Number(elements.bpalRefinement.value),
+            paletteCount: Number(elements.bpalPaletteCount.value),
+            paletteColorBits: Number(elements.bpalPaletteBits.value),
+            paletteMode: "explicit",
+            targetBitsPerPixel,
+            bitsPerPixelTargets: QUALITY_PRESET_BITS_PER_PIXEL,
+            storageWidth: state.sourceImageData.width,
+            storageHeight: state.sourceImageData.height,
+            baselineProfile: {
+              blockSize: Number(elements.bpalBlockSize.value),
+              localColorCount: Number(elements.bpalLocalColors.value),
+              globalColorCount: Number(elements.bpalGlobalColors.value),
+              paletteColorBits: Number(elements.bpalPaletteBits.value),
+            },
+          },
+        }, [preview.data.buffer]);
+      });
+
+      if (requestId !== state.requestId) return;
+      finishWorker();
+      closeProgress();
+      elements.bpalBlockSize.value = String(result.settings.blockSize);
+      updateBpalLocalColorOptions();
+      elements.bpalLocalColors.value = String(result.settings.localColorCount);
+      elements.bpalGlobalColors.value = String(result.settings.globalColorCount);
+      elements.bpalPaletteBits.value = String(result.settings.paletteColorBits);
+      elements.bpalQualityPreset.value = "";
+      setBusy(false, t("block.optimizeFound", {
+        count: formatInteger(result.matchingCandidates.length),
+        target: targetBitsPerPixel.toFixed(2),
+        minimum: result.bitsPerPixelRange.minimum.toFixed(2),
+        maximum: result.bitsPerPixelRange.maximum.toFixed(2),
+        bpp: result.selected.bitsPerPixel.toFixed(2),
+        size: formatBytes(result.selected.fileBytes),
+        rmse: result.selected.rmse.toFixed(2),
+        psnr: result.selected.psnr === Infinity ? "∞" : result.selected.psnr.toFixed(2),
+      }));
+      renderFormatGuide();
+      await processCurrentFormat();
+    } catch (error) {
+      if (!isCancelled(error) && requestId === state.requestId) showError(error);
+    } finally {
+      if (requestId === state.requestId && state.worker === worker) finishWorker();
+      if (requestId === state.requestId) closeProgress();
+    }
+  }
+
+  function getBpalOptimizationTarget() {
+    const preset = Number(elements.bpalQualityPreset.value);
+    if (Number.isFinite(preset) && preset > 0) return preset;
+    if (state.result && state.format === "bpal") {
+      return state.result.encoded.byteLength * 8 / (state.result.imageData.width * state.result.imageData.height);
+    }
+
+    const width = state.sourceImageData.width;
+    const height = state.sourceImageData.height;
+    const blockSize = Number(elements.bpalBlockSize.value);
+    const localColors = Number(elements.bpalLocalColors.value);
+    const globalColors = Number(elements.bpalGlobalColors.value);
+    const paletteCount = Number(elements.bpalPaletteCount.value);
+    const blocks = Math.ceil(width / blockSize) * Math.ceil(height / blockSize);
+    const payloadBits = paletteCount * globalColors * Number(elements.bpalPaletteBits.value) +
+      blocks * Math.log2(paletteCount) + blocks * localColors * Math.log2(globalColors) +
+      (localColors === blockSize * blockSize ? 0 : width * height * Math.log2(localColors));
+    return payloadBits / (width * height);
+  }
+
+  function createOptimizationPreview() {
+    const source = state.sourceImageData;
+    const scale = Math.min(1, 96 / Math.max(source.width, source.height));
+    const width = Math.max(1, Math.round(source.width * scale));
+    const height = Math.max(1, Math.round(source.height * scale));
+    if (width === source.width && height === source.height) {
+      return new ImageData(new Uint8ClampedArray(source.data), width, height);
+    }
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = "high";
+    context.drawImage(elements.sourceCanvas, 0, 0, width, height);
+    return context.getImageData(0, 0, width, height);
   }
 
   async function previewSelectedSource(message) {
@@ -330,6 +513,8 @@
     state.sourceKey = sourceKey;
     state.result = null;
     comparison.setSource(imageData);
+    elements.coordinateX.max = String(Math.max(0, imageData.width - 1));
+    elements.coordinateY.max = String(Math.max(0, imageData.height - 1));
     elements.metricDimensions.textContent = `${formatInteger(imageData.width)} × ${formatInteger(imageData.height)}`;
     resetMetrics(false);
     syncDctControls();
@@ -833,12 +1018,63 @@
     elements.progressBar.value = percent;
     elements.progressBar.textContent = `${percent}%`;
     elements.progressPercent.value = `${percent}%`;
-    elements.progressStage.textContent = String(progress.stage || t("block.progressStagePreparing"));
+    const stage = progressStagePresentation(progress.stage, format);
+    elements.progressStage.textContent = stage.label;
+    elements.progressStageCount.textContent = stage.count;
     const completed = progress.phaseCompleted ?? progress.completed;
     const total = progress.phaseTotal ?? progress.total;
     elements.progressDetail.textContent = Number.isFinite(completed) && Number.isFinite(total)
       ? `${formatInteger(completed)} / ${formatInteger(total)}`
       : Number.isFinite(progress.quality) ? `Quality ${progress.quality}` : t("block.progressWaiting");
+
+    if (format === "bpal") {
+      elements.progressPrimaryLabel.textContent = t("block.progressClusters");
+      elements.progressPrimaryValue.textContent = formatProgressCount(progress.clusters, progress.targetClusters);
+      elements.progressSecondaryLabel.textContent = t("block.progressPalette");
+      elements.progressSecondaryValue.textContent = formatProgressCount(progress.palette, progress.paletteTotal);
+    } else if (format === "bpal-search") {
+      elements.progressPrimaryLabel.textContent = t("hybrid.progressItemsLabel");
+      elements.progressPrimaryValue.textContent = formatProgressCount(progress.completed, progress.total);
+      elements.progressSecondaryLabel.textContent = "BPP / RMSE";
+      elements.progressSecondaryValue.textContent = progress.search
+        ? `${formatNumber(progress.search.bitsPerPixel, 2)} / ${formatNumber(progress.search.rmse, 2)}` : "—";
+    } else {
+      elements.progressPrimaryLabel.textContent = t("hybrid.progressItemsLabel");
+      elements.progressPrimaryValue.textContent = formatProgressCount(completed, total);
+      elements.progressSecondaryLabel.textContent = t("hybrid.progressQualityLabel");
+      elements.progressSecondaryValue.textContent = Number.isFinite(progress.quality) ? formatInteger(progress.quality) : "—";
+    }
+  }
+
+  function progressStagePresentation(stage, format) {
+    if (format === "bpal-search") return { label: t("block.progressStageSearching"), count: "1 / 1" };
+    if (format === "bpal") {
+      const normalized = stage === "complete" ? "complete" : String(stage || "preparing");
+      const index = normalized === "complete"
+        ? BPAL_PROGRESS_STAGES.length : Math.max(1, BPAL_PROGRESS_STAGES.indexOf(normalized) + 1);
+      return {
+        label: t(BPAL_PROGRESS_STAGE_KEYS[normalized] || "block.progressStagePreparing"),
+        count: `${index} / ${BPAL_PROGRESS_STAGES.length}`,
+      };
+    }
+    if (format === "bpdh") {
+      const normalized = String(stage || "");
+      const key = normalized.startsWith("bpal-")
+        ? (BPAL_PROGRESS_STAGE_KEYS[normalized.slice(5)] || "hybrid.progressStageBpal")
+        : normalized === "transforming-dct" ? "hybrid.progressStageDctTransform"
+          : normalized === "evaluating-dct" ? "hybrid.progressStageDctEvaluate"
+            : normalized === "complete" ? "block.progressStageComplete" : "block.progressStagePreparing";
+      const index = normalized.startsWith("bpal-") ? 2
+        : normalized === "transforming-dct" ? 3 : normalized === "evaluating-dct" ? 4
+          : normalized === "complete" ? 5 : 1;
+      return { label: t(key), count: `${index} / 5` };
+    }
+    return { label: String(stage || t("block.progressStagePreparing")), count: "—" };
+  }
+
+  function formatProgressCount(value, total) {
+    if (!Number.isFinite(value)) return "—";
+    return Number.isFinite(total) ? `${formatInteger(value)} / ${formatInteger(total)}` : formatInteger(value);
   }
 
   function showProgress(label) {
@@ -847,6 +1083,9 @@
     elements.progressPercent.value = "0%";
     elements.progressStage.textContent = t("block.progressStagePreparing");
     elements.progressDetail.textContent = t("block.progressWaiting");
+    elements.progressStageCount.textContent = "—";
+    elements.progressPrimaryValue.textContent = "—";
+    elements.progressSecondaryValue.textContent = "—";
     if (!elements.progressDialog.open) {
       if (typeof elements.progressDialog.showModal === "function") elements.progressDialog.showModal();
       else elements.progressDialog.setAttribute("open", "");
@@ -872,6 +1111,14 @@
     elements.metricRmse.textContent = formatNumber(rmse, 3);
     elements.metricPsnr.textContent = Number.isFinite(psnr) ? `${formatNumber(psnr, 2)} dB` : "∞ dB";
     elements.metricTime.textContent = `${formatNumber(result.durationMs || 0, 1)} ms`;
+    if (state.format === "bpdh") {
+      const bpalCount = result.decoded.bpalBlockCount;
+      const dctCount = result.decoded.dctBlockCount;
+      elements.metricModeSplitValue.textContent = `${formatInteger(bpalCount)} / ${formatInteger(dctCount)}`;
+      elements.bpdhBpalCount.textContent = formatInteger(bpalCount);
+      elements.bpdhDctCount.textContent = formatInteger(dctCount);
+      elements.bpdhModeLegend.hidden = false;
+    }
   }
 
   function resetMetrics(preserveDimensions) {
@@ -881,6 +1128,8 @@
     for (const element of [elements.metricSize, elements.metricBpp, elements.metricRatio, elements.metricRmse, elements.metricPsnr, elements.metricTime]) {
       element.textContent = "—";
     }
+    elements.metricModeSplitValue.textContent = "—";
+    elements.bpdhModeLegend.hidden = true;
   }
 
   function renderFormatGuide() {
@@ -1224,9 +1473,50 @@
     layout.append(
       renderDctMcuDiagram(diagram),
       renderDctBlockDiagram(diagram),
-      renderDctRecordBitMap(diagram)
+      renderDctRecordBitMap(diagram),
+      renderDctProfileOverview()
     );
     return layout;
+  }
+
+  function renderDctProfileOverview() {
+    const section = document.createElement("section");
+    section.className = "lab-dct-profile-overview";
+    const title = document.createElement("h4");
+    const description = document.createElement("p");
+    const rows = document.createElement("div");
+    title.textContent = t("lab.dctProfileOverview");
+    description.textContent = t("lab.dctProfileOverviewDescription");
+    rows.className = "lab-dct-profile-rows";
+
+    for (const [key, preset] of Object.entries(root.DctImageFormat.PRESETS)) {
+      const row = document.createElement("div");
+      const label = document.createElement("strong");
+      const bar = document.createElement("div");
+      const total = preset.bytesPerMcu;
+      const size = document.createElement("output");
+      row.className = `lab-dct-profile-row${key === elements.dctPreset.value ? " is-selected" : ""}`;
+      label.textContent = `${key} bpp`;
+      bar.className = "lab-dct-profile-bar";
+      bar.append(
+        dctProfileSegment("y", preset.yBytes, total, `Y ${preset.yBytes} B`),
+        dctProfileSegment("cb", preset.cbBytes, total, `Cb ${preset.cbBytes} B`),
+        dctProfileSegment("cr", preset.crBytes, total, `Cr ${preset.crBytes} B`)
+      );
+      size.textContent = `${total} B/MCU`;
+      row.append(label, bar, size);
+      rows.append(row);
+    }
+    section.append(title, description, rows);
+    return section;
+  }
+
+  function dctProfileSegment(kind, bytes, total, label) {
+    const segment = document.createElement("span");
+    segment.className = `is-${kind}`;
+    segment.style.flex = `${bytes / total} 1 0`;
+    segment.textContent = label;
+    return segment;
   }
 
   function renderBpalBlockDiagram(diagram) {
@@ -1965,6 +2255,8 @@
     const px = clamp(Math.trunc(x), 0, result.imageData.width - 1);
     const py = clamp(Math.trunc(y), 0, result.imageData.height - 1);
     comparison.setSelectedPixel(px, py);
+    elements.coordinateX.value = String(px);
+    elements.coordinateY.value = String(py);
     const sampled = normalizeColor(adapter.sample(result, px, py));
     const full = rgbaAt(result.imageData.data, result.imageData.width, px, py);
     const source = rgbaAt(state.sourceImageData.data, state.sourceImageData.width, px, py);
@@ -1994,6 +2286,8 @@
     elements.pixelMatch.textContent = "—";
     elements.pixelMatchCard.classList.remove("is-match", "is-mismatch");
     elements.pixelSwatch.style.backgroundColor = "#111820";
+    elements.coordinateX.value = "0";
+    elements.coordinateY.value = "0";
     elements.blockDetailsBody.replaceChildren(emptyState(t("lab.selectPixel")));
   }
 
@@ -2351,6 +2645,7 @@
   function setBusy(busy, message) {
     state.busy = busy;
     elements.processButton.disabled = busy;
+    elements.optimizeBpal.disabled = busy;
     elements.codecFormat.disabled = busy;
     elements.imageUrl.disabled = busy;
     elements.uploadButton.disabled = busy;
@@ -2370,6 +2665,7 @@
     closeProgress();
     state.busy = false;
     elements.processButton.disabled = false;
+    elements.optimizeBpal.disabled = false;
     elements.codecFormat.disabled = false;
     elements.imageUrl.disabled = false;
     elements.uploadButton.disabled = false;
