@@ -1,17 +1,18 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import createASTCModule from "../../vendor/astc-encoder-wasm/astcenc.mjs";
 
 const ASSET_ROOT = "./assets/scenes/barcelona/";
 const MANIFEST_URL = `${ASSET_ROOT}manifest.json`;
 const SCENE_URL = `${ASSET_ROOT}scene.gltf`;
+const PACKED_SHADER_URL = `${ASSET_ROOT}scene-texture-samplers.glsl`;
 const CODEC_LABELS = Object.freeze({
   original: "Original · BC1 / BC7",
   bpal: "BPAL",
   dct: "DCTBS2",
   astc: "ASTC",
 });
+const PACKED_CODEC_IDS = Object.freeze({ bpal: 1, dct: 2, astc: 3 });
 const FRAME_EXCLUDED_OBJECTS = new Set(["tree_scatter_plane"]);
 const elements = {
   canvas: document.getElementById("scene-canvas"),
@@ -62,7 +63,8 @@ let manifest;
 let sceneRoot;
 let textureEntries;
 let activeResources = new Map();
-let astcModulePromise;
+let packedSamplerSource = "";
+let emptyPackedResource;
 let loadGeneration = 0;
 let lastStatus = null;
 
@@ -77,11 +79,13 @@ renderer.setAnimationLoop(render);
 
 async function initialize() {
   setLoading("scene.loadingScene", 0.05);
-  const [loadedManifest, gltf] = await Promise.all([
+  const [loadedManifest, gltf, loadedPackedSamplerSource] = await Promise.all([
     fetchJson(MANIFEST_URL),
     loadGltf(SCENE_URL),
+    fetchText(PACKED_SHADER_URL),
   ]);
   manifest = loadedManifest;
+  packedSamplerSource = loadedPackedSamplerSource;
   textureEntries = new Map(manifest.textures.map((entry) => [entry.id, entry]));
   elements.textureCount.textContent = String(manifest.textureCount);
 
@@ -106,7 +110,7 @@ async function applyCodec(codec) {
 
   try {
     const identifiers = usedTextureIdentifiers(manifest.materials);
-    const jobs = createDecodeJobs(codec, identifiers);
+    const jobs = createTextureJobs(codec, identifiers);
     const encoded = await Promise.all(jobs.map(async (job) => ({
       ...job,
       bytes: await fetchBytes(`${ASSET_ROOT}${job.path}`),
@@ -121,8 +125,7 @@ async function applyCodec(codec) {
         total: encoded.length,
         codec: CODEC_LABELS[codec],
       });
-      const decoded = await decode(job.codec, job.bytes);
-      const texture = createThreeTexture(decoded, job.role === "color");
+      const texture = createTextureResource(job.codec, job.bytes, job.role === "color");
       const resource = resources.get(job.identifier) || {};
       resource[job.role] = texture;
       resources.set(job.identifier, resource);
@@ -135,6 +138,15 @@ async function applyCodec(codec) {
     }
 
     assignTextures(sceneRoot, manifest.materials, resources, codec);
+    if (typeof renderer.compileAsync === "function") {
+      await renderer.compileAsync(scene, camera);
+    } else {
+      renderer.compile(scene, camera);
+    }
+    if (generation !== loadGeneration) {
+      disposeResources(resources);
+      return;
+    }
     disposeResources(activeResources);
     activeResources = resources;
     const duration = performance.now() - startedAt;
@@ -154,35 +166,34 @@ async function applyCodec(codec) {
   }
 }
 
-function createDecodeJobs(codec, identifiers) {
+function createTextureJobs(codec, identifiers) {
   const jobs = [];
   for (const identifier of identifiers) {
     const entry = textureEntries.get(identifier);
     if (!entry) throw new Error(`Texture is missing from the manifest: ${identifier}`);
     const variant = entry.variants[codec];
     if (!variant) throw new Error(`${entry.source} has no ${codec} variant`);
-    jobs.push({ codec, identifier, role: "color", path: variant.color });
+    const colorPath = codec === "original"
+      ? variant.color
+      : `streams/${codec}/${identifier}.dxtx`;
+    jobs.push({ codec, identifier, role: "color", path: colorPath });
     if (variant.alpha) {
-      jobs.push({ codec, identifier, role: "alpha", path: variant.alpha });
+      jobs.push({
+        codec,
+        identifier,
+        role: "alpha",
+        path: `streams/${codec}/${identifier}-alpha.dxtx`,
+      });
     }
   }
   return jobs;
 }
 
-async function decode(codec, bytes) {
+function createTextureResource(codec, bytes, colorTexture) {
   if (codec === "original") {
-    return inspectDds(bytes);
+    return createOriginalTexture(inspectDds(bytes), colorTexture);
   }
-  if (codec === "bpal") {
-    return window.BpalTextureDecoder.decode(bytes);
-  }
-  if (codec === "dct") {
-    return window.DctImageFormat.decodeDctFile(bytes);
-  }
-  if (codec === "astc") {
-    return decodeAstc(bytes);
-  }
-  throw new RangeError(`Unsupported scene texture codec: ${codec}`);
+  return createPackedTexture(inspectPackedTextureStream(bytes, codec));
 }
 
 function inspectDds(bytes) {
@@ -230,71 +241,74 @@ function readAscii(bytes, offset, length) {
   return String.fromCharCode(...bytes.subarray(offset, offset + length));
 }
 
-async function decodeAstc(bytes) {
-  const info = inspectAstc(bytes);
-  astcModulePromise ||= createASTCModule({
-    locateFile(fileName) {
-      return new URL(`../../vendor/astc-encoder-wasm/${fileName}`, import.meta.url).href;
-    },
-  });
-  const module = await astcModulePromise;
-  const restored = module.decompressImage(
-    bytes.subarray(16),
-    info.width,
-    info.height,
-    `${info.blockWidth}x${info.blockHeight}`,
-  );
-  if (!restored.success) throw new Error(restored.error || "ASTC decompression failed");
-  return {
-    width: info.width,
-    height: info.height,
-    pixels: new Uint8ClampedArray(restored.data),
-  };
-}
-
-function inspectAstc(bytes) {
-  if (!(bytes instanceof Uint8Array) || bytes.length < 16 ||
-      bytes[0] !== 0x13 || bytes[1] !== 0xAB || bytes[2] !== 0xA1 || bytes[3] !== 0x5C) {
-    throw new RangeError("Invalid ASTC texture header");
+function inspectPackedTextureStream(bytes, codec) {
+  if (!(bytes instanceof Uint8Array) || bytes.length < 80 || readAscii(bytes, 0, 4) !== "DXTX") {
+    throw new RangeError("Invalid packed GPU texture stream header");
   }
-  return {
-    blockWidth: bytes[4],
-    blockHeight: bytes[5],
-    width: readUint24(bytes, 7),
-    height: readUint24(bytes, 10),
-  };
-}
-
-function readUint24(bytes, offset) {
-  return bytes[offset] | bytes[offset + 1] << 8 | bytes[offset + 2] << 16;
-}
-
-function createThreeTexture(decoded, colorTexture) {
-  if (decoded.compressed) {
-    const format = decoded.format === "bc7"
-      ? THREE.RGBA_BPTC_Format
-      : THREE.RGB_S3TC_DXT1_Format;
-    const texture = new THREE.CompressedTexture(
-      [{ data: decoded.pixels, width: decoded.width, height: decoded.height }],
-      decoded.width,
-      decoded.height,
-      format,
-      THREE.UnsignedByteType,
-    );
-    configureThreeTexture(texture, colorTexture, false);
-    return texture;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const version = view.getUint32(4, true);
+  const codecId = view.getUint32(8, true);
+  const width = view.getUint32(12, true);
+  const height = view.getUint32(16, true);
+  const dataBytes = view.getUint32(20, true);
+  if (version !== 1 || codecId !== PACKED_CODEC_IDS[codec]) {
+    throw new RangeError(`Packed GPU stream does not contain ${codec}`);
   }
-  const pixels = decoded.pixels instanceof Uint8Array
-    ? decoded.pixels
-    : new Uint8ClampedArray(decoded.pixels);
+  if (!width || !height || !dataBytes || dataBytes % 4 !== 0 || bytes.length !== 80 + dataBytes) {
+    throw new RangeError("Packed GPU stream dimensions or payload length are invalid");
+  }
+  const info = new Uint32Array(20);
+  info[0] = codecId;
+  info[1] = width;
+  info[2] = height;
+  info[3] = dataBytes;
+  for (let index = 0; index < 14; index += 1) {
+    info[4 + index] = view.getUint32(24 + index * 4, true);
+  }
+  return { codec, width, height, dataBytes, info, payload: bytes.subarray(80) };
+}
+
+function createPackedTexture(stream) {
+  const texelCount = stream.payload.byteLength / 4;
+  const maximumSize = renderer.capabilities.maxTextureSize;
+  const width = Math.min(maximumSize, texelCount);
+  const height = Math.ceil(texelCount / width);
+  if (height > maximumSize) {
+    throw new RangeError(`${stream.codec} GPU stream exceeds the WebGL2 texture-size limit`);
+  }
+  const data = new Uint8Array(width * height * 4);
+  data.set(stream.payload);
   const texture = new THREE.DataTexture(
-    pixels,
-    decoded.width,
-    decoded.height,
-    THREE.RGBAFormat,
+    data,
+    width,
+    height,
+    THREE.RGBAIntegerFormat,
     THREE.UnsignedByteType,
   );
-  configureThreeTexture(texture, colorTexture, true);
+  texture.internalFormat = "RGBA8UI";
+  texture.colorSpace = THREE.NoColorSpace;
+  texture.flipY = false;
+  texture.wrapS = THREE.ClampToEdgeWrapping;
+  texture.wrapT = THREE.ClampToEdgeWrapping;
+  texture.magFilter = THREE.NearestFilter;
+  texture.minFilter = THREE.NearestFilter;
+  texture.generateMipmaps = false;
+  texture.needsUpdate = true;
+  return { texture, info: stream.info, codec: stream.codec, dataBytes: stream.dataBytes };
+}
+
+function createOriginalTexture(decoded, colorTexture) {
+  const format = decoded.format === "bc7"
+    ? THREE.RGBA_BPTC_Format
+    : THREE.RGB_S3TC_DXT1_Format;
+  const texture = new THREE.CompressedTexture(
+    [{ data: decoded.pixels, width: decoded.width, height: decoded.height }],
+    decoded.width,
+    decoded.height,
+    format,
+    THREE.UnsignedByteType,
+  );
+  configureThreeTexture(texture, colorTexture, false);
   return texture;
 }
 
@@ -318,31 +332,137 @@ function assignTextures(root, assignments, resources, codec) {
     material.bumpMap = null;
     material.emissiveMap = null;
     const assignment = assignments[material.name];
-    if (assignment?.baseColor) {
-      const base = resources.get(assignment.baseColor);
+    const base = assignment?.baseColor ? resources.get(assignment.baseColor) : null;
+    const bump = assignment?.bump ? resources.get(assignment.bump)?.color : null;
+    const baseEntry = textureEntries.get(assignment?.baseColor);
+
+    if (baseEntry?.hasAlpha) {
+      material.transparent = true;
+      material.alphaTest = material.name === "candle_flame" ? 0.08 : 0.32;
+      material.depthWrite = material.name !== "candle_flame";
+    }
+    material.bumpScale = material.name === "water" ? 0.09 : 0.055;
+
+    if (codec === "original") {
+      clearPackedMaterial(material);
       material.map = base?.color || null;
-      material.alphaMap = base?.alpha || null;
-      const entry = textureEntries.get(assignment.baseColor);
-      if (entry?.hasAlpha) {
-        material.transparent = true;
-        material.alphaTest = material.name === "candle_flame" ? 0.08 : 0.32;
-        material.depthWrite = material.name !== "candle_flame";
-      }
-      if (material.name === "candle_flame") {
-        material.emissiveMap = base?.color || null;
-      }
-    }
-    if (assignment?.bump) {
-      material.bumpMap = resources.get(assignment.bump)?.color || null;
+      material.bumpMap = bump || null;
       if (material.bumpMap) material.bumpMap.colorSpace = THREE.NoColorSpace;
-      material.bumpScale = material.name === "water" ? 0.09 : 0.055;
-    }
-    if ((codec === "astc" || codec === "original") &&
-        material.map && textureEntries.get(assignment?.baseColor)?.hasAlpha) {
-      material.alphaMap = null;
+      if (material.name === "candle_flame") material.emissiveMap = base?.color || null;
+    } else {
+      configurePackedMaterial(material, codec, {
+        base: base?.color || null,
+        alpha: base?.alpha || null,
+        bump,
+        emissive: material.name === "candle_flame",
+      });
     }
     material.needsUpdate = true;
   }
+}
+
+function clearPackedMaterial(material) {
+  material.onBeforeCompile = () => {};
+  material.customProgramCacheKey = () => "scene-standard-textures-v1";
+  delete material.userData.scenePackedTextures;
+}
+
+function configurePackedMaterial(material, codec, resources) {
+  const fallback = getEmptyPackedResource();
+  const state = {
+    codec,
+    codecId: PACKED_CODEC_IDS[codec],
+    base: resources.base || fallback,
+    alpha: resources.alpha || fallback,
+    bump: resources.bump || fallback,
+    hasBase: Boolean(resources.base),
+    hasAlpha: Boolean(resources.alpha),
+    hasBump: Boolean(resources.bump),
+    emissive: Boolean(resources.emissive),
+    bumpScale: material.bumpScale,
+  };
+  material.userData.scenePackedTextures = state;
+  material.onBeforeCompile = (shader) => injectPackedTextureShader(shader, state);
+  material.customProgramCacheKey = () => `scene-packed-${codec}-v1`;
+}
+
+function injectPackedTextureShader(shader, state) {
+  bindPackedStreamUniforms(shader, "Base", state.base);
+  bindPackedStreamUniforms(shader, "Alpha", state.alpha);
+  bindPackedStreamUniforms(shader, "Bump", state.bump);
+  shader.uniforms.uSceneHasBase = { value: state.hasBase ? 1 : 0 };
+  shader.uniforms.uSceneHasAlpha = { value: state.hasAlpha ? 1 : 0 };
+  shader.uniforms.uSceneHasBump = { value: state.hasBump ? 1 : 0 };
+  shader.uniforms.uSceneHasEmissive = { value: state.emissive ? 1 : 0 };
+  shader.uniforms.uSceneBumpScale = { value: state.bumpScale };
+
+  shader.vertexShader = replaceShaderChunk(
+    shader.vertexShader,
+    "void main() {",
+    "varying vec2 vSceneUv;\nvoid main() {\n  vSceneUv = uv;",
+  );
+  shader.fragmentShader = replaceShaderChunk(
+    shader.fragmentShader,
+    "void main() {",
+    `#define SCENE_CODEC ${state.codecId}\n${packedSamplerSource}\nvoid main() {`,
+  );
+  shader.fragmentShader = replaceShaderChunk(
+    shader.fragmentShader,
+    "#include <map_fragment>",
+    `vec4 sceneDiffuseTexel = uSceneHasBase != 0u
+      ? sceneSampleBase(vSceneUv, true)
+      : vec4(1.0);
+    if (uSceneHasAlpha != 0u) sceneDiffuseTexel.a *= sceneSampleAlpha(vSceneUv).r;
+    diffuseColor *= sceneDiffuseTexel;`,
+  );
+  shader.fragmentShader = replaceShaderChunk(
+    shader.fragmentShader,
+    "#include <alphamap_fragment>",
+    "",
+  );
+  shader.fragmentShader = replaceShaderChunk(
+    shader.fragmentShader,
+    "#include <emissivemap_fragment>",
+    `if (uSceneHasEmissive != 0u && uSceneHasBase != 0u) {
+      totalEmissiveRadiance *= sceneSampleBase(vSceneUv, true).rgb;
+    }`,
+  );
+  shader.fragmentShader = replaceShaderChunk(
+    shader.fragmentShader,
+    "#include <normal_fragment_maps>",
+    `#include <normal_fragment_maps>
+    if (uSceneHasBump != 0u) {
+      float sceneHeight = sceneSampleBump(vSceneUv).r;
+      vec2 sceneHeightGradient = vec2(dFdx(sceneHeight), dFdy(sceneHeight)) * uSceneBumpScale;
+      normal = scenePerturbNormalArb(
+        -vViewPosition,
+        normal,
+        sceneHeightGradient,
+        faceDirection
+      );
+    }`,
+  );
+}
+
+function bindPackedStreamUniforms(shader, role, resource) {
+  shader.uniforms[`uScene${role}Stream`] = { value: resource.texture };
+  shader.uniforms[`uScene${role}Info`] = { value: resource.info };
+}
+
+function replaceShaderChunk(source, search, replacement) {
+  if (!source.includes(search)) throw new Error(`Three.js shader chunk is missing: ${search}`);
+  return source.replace(search, replacement);
+}
+
+function getEmptyPackedResource() {
+  if (emptyPackedResource) return emptyPackedResource;
+  emptyPackedResource = createPackedTexture({
+    codec: "fallback",
+    payload: new Uint8Array(4),
+    info: new Uint32Array(20),
+    dataBytes: 4,
+  });
+  return emptyPackedResource;
 }
 
 function configureSceneMaterials(root) {
@@ -487,8 +607,16 @@ function formatNumber(value, maximumFractionDigits) {
 
 function disposeResources(resources) {
   for (const resource of resources.values()) {
-    resource.color?.dispose();
-    resource.alpha?.dispose();
+    disposeTextureResource(resource.color);
+    disposeTextureResource(resource.alpha);
+  }
+}
+
+function disposeTextureResource(resource) {
+  if (resource?.isTexture) {
+    resource.dispose();
+  } else {
+    resource?.texture?.dispose();
   }
 }
 
@@ -502,6 +630,12 @@ async function fetchBytes(url) {
   const response = await fetch(url);
   if (!response.ok) throw new Error(`${response.status} ${response.statusText}: ${url}`);
   return new Uint8Array(await response.arrayBuffer());
+}
+
+async function fetchText(url) {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`${response.status} ${response.statusText}: ${url}`);
+  return response.text();
 }
 
 function loadGltf(url) {

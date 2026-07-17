@@ -1,0 +1,341 @@
+/*
+ * WebGL2 random-access scene texture samplers.
+ *
+ * BPAL, DCTBS2, and the restricted ASTC stream remain compressed in RGBA8UI
+ * textures. The active codec is selected at shader compile time and each
+ * fragment reconstructs only the texel addressed by its UV coordinate.
+ */
+
+varying vec2 vSceneUv;
+
+uniform highp usampler2D uSceneBaseStream;
+uniform highp usampler2D uSceneAlphaStream;
+uniform highp usampler2D uSceneBumpStream;
+uniform highp uvec4 uSceneBaseInfo[5];
+uniform highp uvec4 uSceneAlphaInfo[5];
+uniform highp uvec4 uSceneBumpInfo[5];
+uniform highp uint uSceneHasBase;
+uniform highp uint uSceneHasAlpha;
+uniform highp uint uSceneHasBump;
+uniform highp uint uSceneHasEmissive;
+uniform highp float uSceneBumpScale;
+
+const float SCENE_DCT_PI = 3.1415926535897932384626433832795;
+const int SCENE_DCT_QUANT_Y[64] = int[64](
+  16, 11, 10, 16, 24, 40, 51, 61,
+  12, 12, 14, 19, 26, 58, 60, 55,
+  14, 13, 16, 24, 40, 57, 69, 56,
+  14, 17, 22, 29, 51, 87, 80, 62,
+  18, 22, 37, 56, 68, 109, 103, 77,
+  24, 35, 55, 64, 81, 104, 113, 92,
+  49, 64, 78, 87, 103, 121, 120, 101,
+  72, 92, 95, 98, 112, 100, 103, 99
+);
+const int SCENE_DCT_QUANT_C[64] = int[64](
+  17, 18, 24, 47, 99, 99, 99, 99,
+  18, 21, 26, 66, 99, 99, 99, 99,
+  24, 26, 56, 99, 99, 99, 99, 99,
+  47, 66, 99, 99, 99, 99, 99, 99,
+  99, 99, 99, 99, 99, 99, 99, 99,
+  99, 99, 99, 99, 99, 99, 99, 99,
+  99, 99, 99, 99, 99, 99, 99, 99,
+  99, 99, 99, 99, 99, 99, 99, 99
+);
+
+__DCT_SCAN_TABLES__
+
+uint sceneStreamByte(highp usampler2D data, uint byteOffset) {
+  uint texelIndex = byteOffset >> 2u;
+  uint atlasWidth = uint(textureSize(data, 0).x);
+  uvec4 bytes = texelFetch(
+    data,
+    ivec2(int(texelIndex % atlasWidth), int(texelIndex / atlasWidth)),
+    0
+  );
+  uint lane = byteOffset & 3u;
+  return lane == 0u ? bytes.r : lane == 1u ? bytes.g : lane == 2u ? bytes.b : bytes.a;
+}
+
+uint sceneStreamByte(highp usampler2D data, int byteOffset) {
+  return sceneStreamByte(data, uint(byteOffset));
+}
+
+uint sceneReadBitsMsb(
+  highp usampler2D data,
+  uint bitOffset,
+  uint bitCount
+) {
+  if (bitCount == 0u) return 0u;
+  uint byteOffset = bitOffset >> 3u;
+  uint bitInByte = bitOffset & 7u;
+  uint value = (sceneStreamByte(data, byteOffset) << 16u) |
+    (sceneStreamByte(data, byteOffset + 1u) << 8u) |
+    sceneStreamByte(data, byteOffset + 2u);
+  uint shift = 24u - bitInByte - bitCount;
+  return (value >> shift) & ((1u << bitCount) - 1u);
+}
+
+uint sceneReadU32Le(highp usampler2D data, uint byteOffset) {
+  return sceneStreamByte(data, byteOffset) |
+    (sceneStreamByte(data, byteOffset + 1u) << 8u) |
+    (sceneStreamByte(data, byteOffset + 2u) << 16u) |
+    (sceneStreamByte(data, byteOffset + 3u) << 24u);
+}
+
+uint sceneReadU32Be(highp usampler2D data, uint byteOffset) {
+  return (sceneStreamByte(data, byteOffset) << 24u) |
+    (sceneStreamByte(data, byteOffset + 1u) << 16u) |
+    (sceneStreamByte(data, byteOffset + 2u) << 8u) |
+    sceneStreamByte(data, byteOffset + 3u);
+}
+
+uint sceneReadU32Be(highp usampler2D data, int byteOffset) {
+  return sceneReadU32Be(data, uint(byteOffset));
+}
+
+uvec2 scenePixelCoordinate(uvec4 header, vec2 uv) {
+  uvec2 dimensions = max(header.yz, uvec2(1u));
+  vec2 wrapped = fract(uv);
+  vec2 oriented = vec2(wrapped.x, 1.0 - wrapped.y);
+  return min(uvec2(oriented * vec2(dimensions)), dimensions - 1u);
+}
+
+vec4 sceneSampleBpal(
+  highp usampler2D data,
+  uvec4 header,
+  uvec4 p0,
+  uvec4 p1,
+  uvec4 p2,
+  vec2 uv
+) {
+  uvec2 dimensions = max(header.yz, uvec2(1u));
+  uvec2 pixel = scenePixelCoordinate(header, uv);
+  uint blockIndex = (pixel.y / p0.x) * p0.y + pixel.x / p0.x;
+  uint localIndex = sceneReadBitsMsb(
+    data,
+    p2.z + (pixel.y * dimensions.x + pixel.x) * p1.x,
+    p1.x
+  );
+  uint globalIndex = sceneReadBitsMsb(
+    data,
+    p2.y + (blockIndex * p0.z + localIndex) * p1.y,
+    p1.y
+  );
+  uint paletteIndex = p1.z == 0u
+    ? 0u
+    : sceneReadBitsMsb(data, p2.x + blockIndex * p1.z, p1.z);
+  uint packed = sceneReadU32Le(data, p2.w + (paletteIndex * p0.w + globalIndex) * 4u);
+  return vec4(
+    vec3(packed & 255u, (packed >> 8u) & 255u, (packed >> 16u) & 255u) / 255.0,
+    1.0
+  );
+}
+
+float sceneDctBasis(int frequency, int coordinate, int size) {
+  float alpha = frequency == 0 ? sqrt(1.0 / float(size)) : sqrt(2.0 / float(size));
+  return alpha * cos(
+    SCENE_DCT_PI * float((2 * coordinate + 1) * frequency) / float(2 * size)
+  );
+}
+
+float sceneDctQuantizationStep(
+  int position,
+  bool chroma,
+  int width,
+  int height,
+  int quality
+) {
+  int u = position % width;
+  int v = position / width;
+  int tableX = min(7, int(floor(float(u * 7) / float(max(1, width - 1)) + 0.5)));
+  int tableY = min(7, int(floor(float(v * 7) / float(max(1, height - 1)) + 0.5)));
+  float qualityScale = quality < 50 ? 50.0 / float(quality) : 2.0 - float(quality) * 0.02;
+  float dimensionScale = sqrt(float(width * height) / 64.0);
+  int tableValue = chroma
+    ? SCENE_DCT_QUANT_C[tableY * 8 + tableX]
+    : SCENE_DCT_QUANT_Y[tableY * 8 + tableX];
+  return max(1.0, float(tableValue) * qualityScale * dimensionScale);
+}
+
+uint sceneReadDctBits(
+  highp usampler2D data,
+  int recordOffset,
+  int bitOffset,
+  int bitCount
+) {
+  int absoluteBit = (recordOffset << 3) + bitOffset;
+  int wordByteOffset = (absoluteBit >> 5) << 2;
+  uint wordBit = uint(absoluteBit & 31);
+  uint value = sceneReadU32Be(data, wordByteOffset) << wordBit;
+  if (int(wordBit) + bitCount > 32) {
+    value |= sceneReadU32Be(data, wordByteOffset + 4) >> (32u - wordBit);
+  }
+  uint mask = (1u << uint(bitCount)) - 1u;
+  return (value >> uint(32 - bitCount)) & mask;
+}
+
+int sceneDctSigned(uint value, int bitCount) {
+  uint sign = 1u << uint(bitCount - 1);
+  return (value & sign) == 0u ? int(value) : int(value) - int(1u << uint(bitCount));
+}
+
+void sceneAddDctCompensated(float value, inout float sum, inout float correction) {
+  float adjusted = value - correction;
+  float next = sum + adjusted;
+  correction = (next - sum) - adjusted;
+  sum = next;
+}
+
+float sceneSampleDctComponent(
+  highp usampler2D data,
+  int recordOffset,
+  int localX,
+  int localY,
+  int width,
+  int height,
+  bool chroma,
+  int acCount,
+  int quality
+) {
+  uint headerWord = sceneReadU32Be(data, recordOffset);
+  int profile = int(headerWord >> 28u);
+  int storedProfile = (sceneStreamByte(data, 52) & 16u) != 0u ? profile : profile + 1;
+  int dcScaleIndex = int((headerWord >> 24u) & 15u);
+  int dc = sceneDctSigned((headerWord >> 14u) & 1023u, 10);
+  float scales[3] = float[3](
+    exp2(float((headerWord >> 11u) & 7u)),
+    exp2(float((headerWord >> 8u) & 7u)),
+    exp2(float((headerWord >> 5u) & 7u))
+  );
+  float sum = 0.0;
+  float correction = 0.0;
+  sceneAddDctCompensated(
+    float(dc) * exp2(float(dcScaleIndex)) *
+      sceneDctQuantizationStep(0, chroma, width, height, quality) *
+      sceneDctBasis(0, localX, width) * sceneDctBasis(0, localY, height),
+    sum,
+    correction
+  );
+  int firstEnd = (acCount + 5) / 6;
+  int secondEnd = (acCount + 1) / 2;
+
+  for (int index = 0; index < 97; ++index) {
+    if (index >= acCount) break;
+    int position = width == 16
+      ? DCT_SCAN_Y[storedProfile * 97 + index]
+      : DCT_SCAN_C420[storedProfile * 20 + index];
+    int stored = sceneDctSigned(
+      sceneReadDctBits(data, recordOffset, 27 + index * 5, 5),
+      5
+    );
+    int group = index < firstEnd ? 0 : index < secondEnd ? 1 : 2;
+    sceneAddDctCompensated(
+      float(stored) * scales[group] *
+        sceneDctQuantizationStep(position, chroma, width, height, quality) *
+        sceneDctBasis(position % width, localX, width) *
+        sceneDctBasis(position / width, localY, height),
+      sum,
+      correction
+    );
+  }
+  return sum + 128.0;
+}
+
+vec4 sceneSampleDct(
+  highp usampler2D data,
+  uvec4 header,
+  uvec4 p0,
+  uvec4 p1,
+  vec2 uv
+) {
+  uvec2 pixel = scenePixelCoordinate(header, uv);
+  uint mcuIndex = (pixel.y >> 4u) * p0.x + (pixel.x >> 4u);
+  uint mcuOffset = 64u + mcuIndex * p0.z;
+  ivec2 local = ivec2(pixel & 15u);
+  float y = sceneSampleDctComponent(
+    data, int(mcuOffset), local.x, local.y, 16, 16, false, 97, 88
+  );
+  int chromaX = local.x >> 1;
+  int chromaY = local.y >> 1;
+  float cb = sceneSampleDctComponent(
+    data, int(mcuOffset + p0.w), chromaX, chromaY, 8, 8, true, 20, 88
+  ) - 128.0;
+  float cr = sceneSampleDctComponent(
+    data, int(mcuOffset + p0.w + p1.x), chromaX, chromaY, 8, 8, true, 20, 88
+  ) - 128.0;
+  return vec4(clamp(vec3(
+    y + 1.402 * cr,
+    y - 0.344136 * cb - 0.714136 * cr,
+    y + 1.772 * cb
+  ) / 255.0, 0.0, 1.0), 1.0);
+}
+
+vec4 sceneSampleAstc(
+  highp usampler2D data,
+  uvec4 header,
+  uvec4 p0,
+  vec2 uv
+) {
+  uvec2 pixel = scenePixelCoordinate(header, uv);
+  uint blockIndex = (pixel.y / p0.y) * p0.z + pixel.x / p0.x;
+  uint low = sceneReadU32Le(data, blockIndex * 16u + 8u);
+  uint high = sceneReadU32Le(data, blockIndex * 16u + 12u);
+  return vec4(
+    float(low & 65535u),
+    float(low >> 16u),
+    float(high & 65535u),
+    float(high >> 16u)
+  ) / 65535.0;
+}
+
+vec4 sceneSampleCodec(
+  highp usampler2D data,
+  uvec4 info[5],
+  vec2 uv,
+  bool convertSrgb
+) {
+  vec4 value = vec4(1.0);
+#if SCENE_CODEC == 1
+  value = sceneSampleBpal(data, info[0], info[1], info[2], info[3], uv);
+#elif SCENE_CODEC == 2
+  value = sceneSampleDct(data, info[0], info[1], info[2], uv);
+#elif SCENE_CODEC == 3
+  value = sceneSampleAstc(data, info[0], info[1], uv);
+#else
+#error Unsupported SCENE_CODEC
+#endif
+  if (convertSrgb) {
+    vec3 low = value.rgb / 12.92;
+    vec3 high = pow((value.rgb + 0.055) / 1.055, vec3(2.4));
+    value.rgb = mix(low, high, step(vec3(0.04045), value.rgb));
+  }
+  return value;
+}
+
+vec4 sceneSampleBase(vec2 uv, bool convertSrgb) {
+  return sceneSampleCodec(uSceneBaseStream, uSceneBaseInfo, uv, convertSrgb);
+}
+
+vec4 sceneSampleAlpha(vec2 uv) {
+  return sceneSampleCodec(uSceneAlphaStream, uSceneAlphaInfo, uv, false);
+}
+
+vec4 sceneSampleBump(vec2 uv) {
+  return sceneSampleCodec(uSceneBumpStream, uSceneBumpInfo, uv, false);
+}
+
+vec3 scenePerturbNormalArb(
+  vec3 surfacePosition,
+  vec3 surfaceNormal,
+  vec2 heightGradient,
+  float faceDirection
+) {
+  vec3 sigmaX = dFdx(surfacePosition);
+  vec3 sigmaY = dFdy(surfacePosition);
+  vec3 r1 = cross(sigmaY, surfaceNormal);
+  vec3 r2 = cross(surfaceNormal, sigmaX);
+  float determinant = dot(sigmaX, r1) * faceDirection;
+  vec3 gradient = sign(determinant) *
+    (heightGradient.x * r1 + heightGradient.y * r2);
+  return normalize(abs(determinant) * surfaceNormal - gradient);
+}

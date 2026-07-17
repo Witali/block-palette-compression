@@ -20,6 +20,17 @@ not store alpha in their base payloads. BC7 and ASTC keep RGBA in one stream.
 Source images larger than 1024 pixels on either axis are resized for predictable web
 memory use while preserving their aspect ratio.
 
+The browser never expands a selected texture into an RGBA image before use.
+BC1 and BC7 DDS blocks are uploaded as WebGL compressed textures and sampled by
+the GPU's hardware texture units. BPAL, DCTBS2, and ASTC are uploaded as packed
+`RGBA8UI` data textures. A codec-specific WebGL2 fragment shader uses
+`texelFetch` to read the compressed records needed for the current UV
+coordinate and reconstructs only that fragment's texel. Alpha and bump streams
+follow the same shader-only path; there is no full-image RGBA texture cache.
+The shared ASTC runtime stream uses valid 6 x 6 void-extent blocks whose RGBA
+endpoint is the setup-time average of that block. This portable shader subset
+trades quality for direct sampling on WebGL2 systems without an ASTC extension.
+
 The original Blender file contains large particle systems: 20,000 pebbles,
 300 lotus plants, and 322 copies of a 113,000-polygon tree. The exporter keeps
 the scene composition but uses browser-oriented particle limits and a tree LOD
@@ -45,8 +56,11 @@ python tools/build-blender-scene-assets.py `
   --blender path\to\blender.exe `
   --node path\to\node.exe `
   --max-dimension 1024
+node tools/build-win32-scene-assets.mjs
 ```
 
 The command exports `scene.gltf` and `scene.bin`, converts every file in the
 source scene's adjacent `textures` directory, and writes `manifest.json` with
 material assignments, dimensions, codec settings, and compressed byte totals.
+The second command creates the shared `.dxtx` GPU streams and generated WebGL2
+sampler used by both the browser and Direct3D viewers.

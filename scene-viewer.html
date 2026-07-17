@@ -57,7 +57,7 @@
           <span><strong id="scene-codec-name">Original</strong><small data-i18n="scene.activeCodec">texture format</small></span>
           <span><strong id="scene-texture-count">17</strong><small data-i18n="scene.textures">textures</small></span>
           <span><strong id="scene-compressed-size">—</strong><small data-i18n="scene.compressedSize">source data</small></span>
-          <span><strong id="scene-decode-time">—</strong><small data-i18n="scene.decodeTime">load / decode</small></span>
+          <span><strong id="scene-decode-time">—</strong><small data-i18n="scene.decodeTime">load / GPU upload</small></span>
         </div>
         <p id="scene-status" aria-live="polite" data-i18n="scene.preparing">Preparing viewer…</p>
       </footer>
@@ -66,10 +66,7 @@
     <script src="./src/i18n/en.js?v=scene-1"></script>
     <script src="./src/i18n/ru.js?v=scene-1"></script>
     <script src="./src/i18n/i18n.js"></script>
-    <script src="./src/palette/block-palette-format.js"></script>
-    <script src="./src/decoders/bpal-texture.js"></script>
-    <script src="./src/dct/dct-format.js"></script>
-    <script type="module" src="./src/pages/scene-viewer-page.js?v=4"></script>
+    <script type="module" src="./src/pages/scene-viewer-page.js?v=5"></script>
     <script src="./src/pwa/register-service-worker.js?v=1"></script>
   </body>
 </html>

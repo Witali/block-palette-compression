@@ -15,6 +15,8 @@ const DctImageFormat = require("../src/dct/dct-format.js");
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SOURCE_DIRECTORY = path.join(ROOT, "assets", "scenes", "barcelona");
+const WEB_STREAM_DIRECTORY = path.join(SOURCE_DIRECTORY, "streams");
+const WEB_SHADER_PATH = path.join(SOURCE_DIRECTORY, "scene-texture-samplers.glsl");
 const OUTPUT_DIRECTORY = path.join(ROOT, "native", "win32-directx-viewer", "assets");
 const SCENE_HEADER_BYTES = 96;
 const MATERIAL_RECORD_BYTES = 192;
@@ -32,11 +34,11 @@ fs.mkdirSync(OUTPUT_DIRECTORY, { recursive: true });
 const nativeScene = buildNativeScene();
 fs.writeFileSync(path.join(OUTPUT_DIRECTORY, "barcelona.dxscene"), nativeScene);
 await buildTextureStreams();
-buildShaderSource();
+buildShaderSources();
 
 process.stdout.write(
-  `Built Win32 scene assets: ${nativeScene.byteLength} scene bytes and ` +
-  `${manifest.textureCount} source textures in four GPU texture sets.\n`,
+  `Built shared WebGL/Direct3D scene assets: ${nativeScene.byteLength} scene bytes and ` +
+  `${manifest.textureCount} source textures in four directly sampled GPU sets.\n`,
 );
 
 function buildNativeScene() {
@@ -205,6 +207,7 @@ async function buildTextureStreams() {
 
   fs.rmSync(path.join(OUTPUT_DIRECTORY, "original"), { recursive: true, force: true });
   fs.rmSync(path.join(OUTPUT_DIRECTORY, "streams"), { recursive: true, force: true });
+  fs.rmSync(WEB_STREAM_DIRECTORY, { recursive: true, force: true });
 
   const originalDirectory = path.join(OUTPUT_DIRECTORY, "original");
   fs.mkdirSync(originalDirectory, { recursive: true });
@@ -220,21 +223,27 @@ async function buildTextureStreams() {
   }
 
   for (const codec of ["bpal", "dct", "astc"]) {
-    const codecDirectory = path.join(OUTPUT_DIRECTORY, "streams", codec);
-    fs.mkdirSync(codecDirectory, { recursive: true });
+    const nativeCodecDirectory = path.join(OUTPUT_DIRECTORY, "streams", codec);
+    const webCodecDirectory = path.join(WEB_STREAM_DIRECTORY, codec);
+    fs.mkdirSync(nativeCodecDirectory, { recursive: true });
+    fs.mkdirSync(webCodecDirectory, { recursive: true });
     let completed = 0;
 
     for (const identifier of [...identifiers].sort()) {
       const texture = textureEntries.get(identifier);
       if (!texture) throw new Error(`Unknown texture identifier: ${identifier}`);
       const variant = texture.variants[codec];
-      fs.writeFileSync(
-        path.join(codecDirectory, `${identifier}.dxtx`),
+      writeSharedTextureStream(
+        nativeCodecDirectory,
+        webCodecDirectory,
+        `${identifier}.dxtx`,
         await createTextureStream(codec, variant.color, astcModule),
       );
       if (variant.alpha) {
-        fs.writeFileSync(
-          path.join(codecDirectory, `${identifier}-alpha.dxtx`),
+        writeSharedTextureStream(
+          nativeCodecDirectory,
+          webCodecDirectory,
+          `${identifier}-alpha.dxtx`,
           await createTextureStream(codec, variant.alpha, astcModule),
         );
       }
@@ -243,6 +252,11 @@ async function buildTextureStreams() {
     }
     process.stdout.write("\n");
   }
+}
+
+function writeSharedTextureStream(nativeDirectory, webDirectory, fileName, bytes) {
+  fs.writeFileSync(path.join(nativeDirectory, fileName), bytes);
+  fs.writeFileSync(path.join(webDirectory, fileName), bytes);
 }
 
 async function createTextureStream(codec, relativePath, astcModule) {
@@ -289,12 +303,13 @@ async function createTextureStream(codec, relativePath, astcModule) {
   if (codec === "dct") {
     const info = DctImageFormat.inspectDctFile(new Uint8Array(source));
     if (
-      info.bytesPerMcu !== 96 || info.yBytes !== 64 || info.cbBytes !== 16 ||
+      info.quality !== 88 || info.bytesPerMcu !== 96 ||
+      info.yBytes !== 64 || info.cbBytes !== 16 ||
       info.crBytes !== 16 || info.splitLuma8x8 || !info.chroma420 ||
       info.coefficientCodingKey !== "grouped-5-front" || info.libraryEnabled
     ) {
       throw new Error(
-        `${relativePath} is not the fixed 3 bpp grouped-5-front stream required by the Direct3D shader`,
+        `${relativePath} is not the fixed 3 bpp grouped-5-front stream required by the scene shaders`,
       );
     }
     const payload = Buffer.alloc(align(source.length, 4));
@@ -367,9 +382,13 @@ function createTextureContainer(codec, width, height, payload, parameters) {
   return output;
 }
 
-function buildShaderSource() {
-  const template = fs.readFileSync(
+function buildShaderSources() {
+  const hlslTemplate = fs.readFileSync(
     path.join(ROOT, "native", "win32-directx-viewer", "scene.hlsl.in"),
+    "utf8",
+  );
+  const glslTemplate = fs.readFileSync(
+    path.join(ROOT, "src", "shaders", "scene-texture-samplers.glsl.in"),
     "utf8",
   );
   const source = fs.readFileSync(
@@ -390,11 +409,20 @@ function buildShaderSource() {
     for (let index = 0; index < values.length; index += 17) {
       lines.push(`    ${values.slice(index, index + 17).join(", ")}`);
     }
-    return `static const int ${name}[${values.length}] = {\n${lines.join(",\n")}\n};`;
+    return { name, values, lines };
   });
-  const generated = template.replace("__DCT_SCAN_TABLES__", tables.join("\n\n"));
-  if (generated.includes("__DCT_SCAN_TABLES__")) throw new Error("HLSL template expansion failed");
-  fs.writeFileSync(path.join(OUTPUT_DIRECTORY, "scene.hlsl"), generated);
+  const hlslTables = tables.map(({ name, values, lines }) =>
+    `static const int ${name}[${values.length}] = {\n${lines.join(",\n")}\n};`
+  ).join("\n\n");
+  const glslTables = tables.map(({ name, values, lines }) =>
+    `const int ${name}[${values.length}] = int[${values.length}](\n${lines.join(",\n")}\n);`
+  ).join("\n\n");
+  const generatedHlsl = hlslTemplate.replace("__DCT_SCAN_TABLES__", hlslTables);
+  const generatedGlsl = glslTemplate.replace("__DCT_SCAN_TABLES__", glslTables);
+  if (generatedHlsl.includes("__DCT_SCAN_TABLES__")) throw new Error("HLSL template expansion failed");
+  if (generatedGlsl.includes("__DCT_SCAN_TABLES__")) throw new Error("GLSL template expansion failed");
+  fs.writeFileSync(path.join(OUTPUT_DIRECTORY, "scene.hlsl"), generatedHlsl);
+  fs.writeFileSync(WEB_SHADER_PATH, generatedGlsl);
 }
 
 async function decodeTexture(codec, relativePath, astcModule) {

@@ -17,10 +17,14 @@ test("provides a Blender scene viewer with the requested codec switch", () => {
   assert.match(html, /<option value="bpal">BPAL/);
   assert.match(html, /<option value="dct">DCTBS2/);
   assert.match(html, /<option value="astc">ASTC/);
-  assert.match(html, /src="\.\/src\/decoders\/bpal-texture\.js"/);
-  assert.match(html, /src="\.\/src\/dct\/dct-format\.js"/);
-  assert.match(source, /createASTCModule/);
+  assert.doesNotMatch(html, /bpal-texture\.js|dct-format\.js|astcenc\.mjs/);
+  assert.doesNotMatch(source, /BpalTextureDecoder|decodeDctFile|decompressImage|createASTCModule/);
   assert.match(source, /new THREE\.CompressedTexture/);
+  assert.match(source, /new THREE\.DataTexture/);
+  assert.match(source, /THREE\.RGBAIntegerFormat/);
+  assert.match(source, /texture\.internalFormat = "RGBA8UI"/);
+  assert.match(source, /material\.onBeforeCompile/);
+  assert.match(source, /sceneSampleBase\(vSceneUv, true\)/);
   assert.match(source, /WEBGL_compressed_texture_s3tc/);
   assert.match(source, /EXT_texture_compression_bptc/);
   assert.match(source, /elements\.codec\.addEventListener\("change"/);
@@ -29,6 +33,38 @@ test("provides a Blender scene viewer with the requested codec switch", () => {
   assert.match(source, /material\.transparent = false/);
   assert.match(source, /material\.opacity = 1/);
   assert.match(source, /material\.depthWrite = true/);
+});
+
+test("samples packed web scene textures in WebGL2 without an RGBA decode", () => {
+  const source = read("src/pages/scene-viewer-page.js");
+  const shader = fs.readFileSync(
+    path.join(assetDirectory, "scene-texture-samplers.glsl"),
+    "utf8",
+  );
+  const webStreams = path.join(assetDirectory, "streams");
+
+  assert.match(shader, /uniform highp usampler2D uSceneBaseStream/);
+  assert.match(shader, /texelFetch\(/);
+  assert.match(shader, /sceneSampleBpal\(/);
+  assert.match(shader, /sceneSampleDctComponent\(/);
+  assert.match(shader, /sceneReadDctBits\(/);
+  assert.match(shader, /sceneStreamByte\(data, 52\) & 16u/);
+  assert.match(shader, /for \(int index = 0; index < 97; \+\+index\)/);
+  assert.match(shader, /sceneSampleAstc\(/);
+  assert.doesNotMatch(shader, /uniform highp sampler2D uSceneBaseStream/);
+  assert.match(source, /streams\/\$\{codec\}\/\$\{identifier\}\.dxtx/);
+
+  for (const codec of ["bpal", "dct", "astc"]) {
+    const files = fs.readdirSync(path.join(webStreams, codec));
+    assert.ok(files.length >= 17);
+    assert.ok(files.every((file) => file.endsWith(".dxtx")));
+    for (const file of files) {
+      const bytes = fs.readFileSync(path.join(webStreams, codec, file));
+      assert.equal(bytes.subarray(0, 4).toString("ascii"), "DXTX");
+      assert.equal(bytes.readUInt32LE(8), { bpal: 1, dct: 2, astc: 3 }[codec]);
+      assert.equal(bytes.length, 80 + bytes.readUInt32LE(20));
+    }
+  }
 });
 
 test("downloads the original scene from Blender into ignored temporary storage", () => {

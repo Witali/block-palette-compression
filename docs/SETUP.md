@@ -39,8 +39,10 @@ and calls `tools/setup-local-cuda.ps1`. The scene is extracted to
 source files remain ignored by Git. Setup then runs
 `tools/build-blender-scene-assets.py` and `tools/build-win32-scene-assets.mjs`
 to produce original-resolution BC1/BC7, BPAL, DCTBS2, and ASTC textures for the
-web and native viewers. Repeated runs reuse the source scene and portable
-Blender, then rebuild the generated scene assets. Existing CUDA archives are
+web and native viewers. It also builds shared packed GPU streams so both
+viewers sample BPAL, DCTBS2, and ASTC per fragment without a full RGBA decode.
+Repeated runs reuse the source scene and portable Blender, then rebuild the
+generated scene assets. Existing CUDA archives are
 reused only after their SHA-256 hashes match the official NVIDIA manifest.
 
 ## Downloaded CUDA components
